@@ -1,0 +1,43 @@
+[package]
+name = "genetics_rust"
+version = "0.1.0"
+authors = ["rickyota <22293266+rickyota@users.noreply.github.com>"]
+description = "General Genetics Crate"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+cmatrix={package="cmatrix_rust", path="../cmatrix_rust"}
+maligned="0"
+sysinfo="0"
+clap="2"
+rayon="1.5"
+crossbeam="0.8"
+rand="0.8"
+
+
+
+[dev-dependencies]
+criterion = "0.3"
+
+[[bench]]
+name = "set_count"
+harness = false
+
+[[bench]]
+name = "set_bed"
+harness = false
+
+[[bench]]
+name = "pred_to_count"
+harness = false
+
+[[bench]]
+name = "load_plink"
+harness = false
+
+
+[[bench]]
+name = "load_plink_use_samples"
+harness = false

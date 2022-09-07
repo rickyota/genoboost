@@ -1,0 +1,31 @@
+[package]
+name = "boosting_rust"
+version = "0.1.0"
+authors = ["rickyota <22293266+rickyota@users.noreply.github.com>"]
+description = "Boosting methods for polygenic score"
+edition = "2018"
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+genetics={package="genetics_rust", path="../genetics_rust"}
+cmatrix={package="cmatrix_rust", path="../cmatrix_rust"}
+clap="2"
+rayon="1.5"
+crossbeam="0.8"
+rustc-test="0.3"
+smartcore="0.2.0"
+
+[dev-dependencies]
+criterion = "0.3"
+
+# this runs both default bench and criterion
+# for criterion benches/loss_criterion
+[[bench]]
+name = "loss_criterion"
+harness = false
+
+#[[bench]]
+#name = "set_count_criterion"
+#harness = false

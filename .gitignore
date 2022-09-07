@@ -1,0 +1,7 @@
+
+/target/*
+/test/result/*
+
+!.gitkeep
+!.gitignore
+

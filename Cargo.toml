@@ -1,0 +1,10 @@
+[workspace]
+
+members=[
+    "projects/boosting_rust",
+    "projects/genetics_rust",
+    "projects/cmatrix_rust",
+]
+
+
+
