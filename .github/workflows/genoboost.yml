@@ -21,10 +21,10 @@ jobs:
     - uses: actions/checkout@v2
     - name: Test train
       run: |
-        bash ./boosting.sh
+        bash ./genoboost.sh
     - name: Test score
       run: |
-        bash ./boosting.score.sh
+        bash ./genoboost.score.sh
 
 
 
