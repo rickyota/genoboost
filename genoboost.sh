@@ -4,17 +4,14 @@
 
 set -eux
 
-file_plink="./test/data/1kg_n10000/genot"
-file_cov="./test/data/1kg_n10000/genot.cov"
+# output directory
 dir_wgt="./test/result/1kg_n10000/train/"
-
-# delete wgt
-fwgt="${dir_wgt}wgt/boosting.wgt"
-echo "delete wgt file: ${fwgt}"
-rm -f "$fwgt"
+# prefix of plink1 file
+file_plink="./test/data/1kg_n10000/genot"
+# covariate file
+file_cov="./test/data/1kg_n10000/genot.cov"
 
 export RUST_BACKTRACE=full
-
 cargo run --release --bin boosting_rust -- \
     train \
     --dir "$dir_wgt" \
@@ -24,5 +21,3 @@ cargo run --release --bin boosting_rust -- \
     --learning_rate 0.1 \
     --clip_sample_weight "top0.1" \
     --prune_snv 0.1
-
-

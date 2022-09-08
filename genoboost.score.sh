@@ -4,10 +4,14 @@
 
 set -eux
 
-file_plink="./test/data/1kg_n10000/genot"
-file_cov="./test/data/1kg_n10000/genot.cov"
-dir_wgt="./test/result/1kg_n10000/train/"
+# output directory
 dir_score="./test/result/1kg_n10000/score/"
+# directory of training
+dir_wgt="./test/result/1kg_n10000/train/"
+# prefix of plink1 file
+file_plink="./test/data/1kg_n10000/genot"
+# covariate file
+file_cov="./test/data/1kg_n10000/genot.cov"
 
 ns_iter="1 2 3 5 10 50"
 
