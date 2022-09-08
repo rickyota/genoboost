@@ -4,12 +4,12 @@
 
 set -eux
 
-file_plink="./test/data/toy1/genot"
-file_cov="./test/data/toy1/genot.cov"
-dir_wgt="./test/result/toy1/train/"
-dir_score="./test/result/toy1/score/"
+file_plink="./test/data/1kg_n10000/genot"
+file_cov="./test/data/1kg_n10000/genot.cov"
+dir_wgt="./test/result/1kg_n10000/train/"
+dir_score="./test/result/1kg_n10000/score/"
 
-ns_iter="1 2 3 5 10 100"
+ns_iter="1 2 3 5 10 50"
 
 export RUST_BACKTRACE=full
 
