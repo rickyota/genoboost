@@ -1,6 +1,5 @@
 //! Application of **Genoboost**.
 //! Input plink file to run Genoboost.
-// TODO: rename iter -> iteration, ti
 // TODO: add examples
 // TODO: exclude snv if all genotypes are the same
 // TODO: usually do not consume -> if you have to clone() inside but original can be discarded, then use consume
@@ -9,6 +8,8 @@
 // TODO: input several r2 at once
 // TODO: ensure the same para when resuming
 // TODO: (optional) write down extract snvs from top
+// TODO: align A1, A2
+// TODO: --verbose
 // trimming sample weights: only use samples with large weights on choosing SNVs: Friedman, J., Hastie, T. and Tibshirani, R. (2000) ‘Additive logistic regression: a statistical view of boosting (With discussion and a rejoinder by the authors)’, Annals of statistics, 28(2), pp. 337–407. doi:10.1214/aos/1016218223.
 // split main for genoboost_pruning, ssgenoboost
 
@@ -83,10 +84,11 @@ fn get_matches() -> ArgMatches<'static> {
             .arg(Arg::from_usage("--file_snv [FILE] 'File of SNVs to use.'"))
             .arg(Arg::from_usage("--file_cov [FILE] 'File of covariates to use.'"))
             .arg(Arg::from_usage("--file_loss [FILE] 'File of loss function, which required only for --ss'"))
-            .arg(Arg::from_usage("--dom_and_rec 'Choose both dominant model and recessive model at one iteration'"))
-            .arg(Arg::from_usage("--learning_rate [VAL] 'Learning rate.'").default_value("None").validator(check_f64_none))
+            .arg(Arg::from_usage("--learning_rates [VALS] 'Learning rates.'").default_value("None").multiple(true))
+            //.arg(Arg::from_usage("--learning_rate [VAL] 'Learning rate.'").default_value("None").validator(check_f64_none))
             .arg(Arg::from_usage("--clip_sample_weight [VAL] 'Proportion and method of clipped samples.'").default_value("None")) // TODO: validator
-            .arg(Arg::from_usage("--prune_snv [VAL] 'Proportion of SNVs to be prunened from the candidate SNVs.'").default_value("0.1").validator(check_f64_none))
+            .arg(Arg::from_usage("--dom_and_rec 'Choose both dominant model and recessive model at one iteration.'"))
+            .arg(Arg::from_usage("--prune_snv [VAL] 'Proportion of SNVs to be pruned from the candidate SNVs.'").default_value("None").validator(check_f64_none))
             .arg(Arg::from_usage("--clump_r2 [VAL] 'Threshold of clump correlation.'").default_value("0.1").validator(check_f64))
             // use .required_if() for r2 for pruning-genoboost
         )
@@ -97,14 +99,15 @@ fn get_matches() -> ArgMatches<'static> {
             .arg(Arg::from_usage("--file_plink <FILE> 'Prefix of a plink file. If those files are separated into chromosomes, set '*' where chromosome number is.'"))
             .arg(Arg::from_usage("--file_sample [FILE] 'File of samples to use.'"))
             .arg(Arg::from_usage("--file_cov [FILE] 'File of covariates to use.'"))
-            // TODO: allow to input file_wgt too
-            .arg(Arg::from_usage("--dir_wgt <FILE> 'Prefix of a weight file.'"))
+            .arg(Arg::from_usage("--dir_wgt [FILE] 'Directory of a weight file. Must use either --dir_wgt or --file_wgt.'"))
+            .arg(Arg::from_usage("--file_wgt [FILE] 'Prefix of a weight file. Must use either --dir_wgt or --file_wgt.'"))
             //.arg(Arg::from_usage("--fin_wgt <FILE> 'Prefix of a weight file.'"))
             // FIXME: default=None
             .arg(Arg::from_usage("--iters [NUMS] 'Numbers of iterations and number of SNVs.'").multiple(true))
             //.arg(Arg::from_usage("--iters [NUMS] 'Numbers of iterations.'").default_value("10").min_values(1))
             //.arg( Arg::from_usage("--iters [NUMS] 'Numbers of iterations.'").default_values(&["1", "10"]).min_values(1))
-            .arg(Arg::from_usage("--use_iter 'Use iterations. Otherwise, only output number of SNVs.'"))
+            .arg(Arg::from_usage("--learning_rates [VALS] 'Learning rates. Necessary when use --dir_wgt'").default_value("None").multiple(true))
+            .arg(Arg::from_usage("--use_iter 'Output score on iterations. Otherwise, only output number of SNVs.'"))
         )
         .get_matches();
     matches
@@ -137,14 +140,19 @@ fn main() {
         //let fin_cov = matches.value_of("fin_cov");
         let iteration = matches.value_of("iter").unwrap().parse::<usize>().unwrap();
         let boost_type = matches.value_of("boost_type").unwrap();
-        let learning_rate = parse_arg_f64_none(matches.value_of("learning_rate").unwrap());
+        let learning_rates: Vec<Option<f64>> = matches
+            .values_of("learning_rates")
+            .unwrap()
+            .map(|s| parse_arg_f64_none(s))
+            .collect();
+        //let learning_rate = parse_arg_f64_none(matches.value_of("learning_rate").unwrap());
         let prune_snv = parse_arg_f64_none(matches.value_of("prune_snv").unwrap());
 
         let is_write_loss = matches.is_present("write_loss");
         //let is_write_loss = true;
 
         // make this Option<> here? or in Boostingparam?
-        // should be here, or there should eb option to make Option<> as deafult
+        // should be here, or there should eb option to make Option<> as default
         let clip_sample_weight = match matches.value_of("clip_sample_weight").unwrap() {
             "None" => None,
             z => Some(z),
@@ -152,12 +160,13 @@ fn main() {
 
         let is_dom_rec = matches.is_present("dom_and_rec");
 
-        // TODO: add
+        // set learning rate later
         let boost_param = BoostParam::new_str(
             iteration,
             boost_type,
             "logistic",
-            learning_rate,
+            None,
+            //learning_rate,
             "medcase2allcell",
             clip_sample_weight,
             is_dom_rec,
@@ -210,15 +219,23 @@ fn main() {
             is_resume,
             is_write_loss,
             prune_snv,
+            &learning_rates,
         );
     } else if let Some(ref matches) = matches.subcommand_matches("score") {
         let dout_score = PathBuf::from(matches.value_of("dir_score").unwrap());
         let fin = PathBuf::from(matches.value_of("file_plink").unwrap());
         let fin_sample = matches.value_of("file_sample").map(|x| PathBuf::from(x));
         let fin_cov = matches.value_of("file_cov").map(|x| PathBuf::from(x));
-        let dout_wgt = PathBuf::from(matches.value_of("dir_wgt").unwrap());
+        let dout_wgt = matches.value_of("dir_wgt").map(|x| PathBuf::from(x));
+        let fout_wgt = matches.value_of("file_wgt").map(|x| PathBuf::from(x));
+        //let dout_wgt = PathBuf::from(matches.value_of("dir_wgt").unwrap());
+        if dout_wgt.is_some() & fout_wgt.is_some() {
+            panic!("Do not indicate both --dir_wgt and --file_wgt.");
+        } else if dout_wgt.is_none() & fout_wgt.is_none() {
+            panic!("Indicate either --dir_wgt or --file_wgt.");
+        }
         let use_iter = matches.is_present("use_iter");
-        // FIXME: allwo iter=None for fixed wgt
+        // FIXME: allow iter=None for fixed wgt
         let mut iterations: Vec<usize> = matches
             .values_of("iters")
             .unwrap()
@@ -231,6 +248,11 @@ fn main() {
         iterations.sort();
         iterations.dedup();
         println!("iters {:?}", iterations);
+        let learning_rates: Vec<Option<f64>> = matches
+            .values_of("learning_rates")
+            .unwrap()
+            .map(|s| parse_arg_f64_none(s))
+            .collect();
 
         // FIXME: remove later by getting boost_type from wgt config
         let boost_param = BoostParam::new_type2();
@@ -239,10 +261,12 @@ fn main() {
             &dout_score,
             &fin,
             &iterations,
-            &dout_wgt,
+            dout_wgt.as_deref(), // use enum?
+            fout_wgt.as_deref(),
             fin_cov.as_deref(),
             fin_sample.as_deref(),
             boost_param,
+            &learning_rates,
             use_iter,
         );
     }

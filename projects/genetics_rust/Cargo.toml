@@ -9,6 +9,7 @@ edition = "2018"
 
 [dependencies]
 cmatrix={package="cmatrix_rust", path="../cmatrix_rust"}
+#cmatrix_rust={path="../cmatrix_rust"}
 maligned="0"
 sysinfo="0"
 clap="2"

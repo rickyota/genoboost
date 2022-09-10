@@ -102,7 +102,7 @@ fn clip_ws_top(ws: &mut [f64], phe: &Phe, prop: f64) {
         let n = ws_label.len();
         let top_n = ((n as f64) * (1.0 - prop)) as usize;
         let ws_lim = ws_label[top_n];
-        println!("cliptop ws_lim {}", ws_lim);
+        println!("cliptop ws_lim {:.6e}", ws_lim);
         ws.iter_mut()
             .zip(phe.iter())
             .filter(|(w, b)| (**w > ws_lim) & (*b == is_case))

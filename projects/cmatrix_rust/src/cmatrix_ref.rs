@@ -7,7 +7,6 @@ use super::B8;
 /// Compressed Matrix
 /// Mainly used for genotype and phenotype.
 ///
-
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct CMatrixRef<'a> {
     inner: &'a [B8],

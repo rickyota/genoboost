@@ -13,15 +13,31 @@ use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-pub fn get_dname_wgt(dout: &Path) -> PathBuf {
+pub fn get_file_wgt(dout: &Path, learning_rate: &Option<f64>) -> PathBuf {
+    let p = get_dname_para(dout, learning_rate);
+    get_fname_wgt(&p)
+}
+
+// when increase para, add them
+pub fn get_dname_para(dout: &Path, learning_rate: &Option<f64>) -> PathBuf {
     let mut d = dout.to_owned();
-    let dwgt = "wgt/";
-    d.push(dwgt);
+    let mut dpara = String::from("para");
+    if let Some(lr) = learning_rate {
+        dpara += &(String::from(".lr") + &lr.to_string());
+    }
+    d.push(dpara);
     d
 }
 
-pub fn get_fname_wgt(dout: &Path) -> PathBuf {
-    let mut fwgt = get_dname_wgt(dout);
+pub fn get_dname_wgt(dout: &Path) -> PathBuf {
+    let d = dout.to_owned();
+    //let dwgt = "wgt/";
+    //d.push(dwgt);
+    d
+}
+
+pub fn get_fname_wgt(dout_para: &Path) -> PathBuf {
+    let mut fwgt = get_dname_wgt(dout_para);
 
     fwgt.push("boosting.wgt");
     //fwgt.set_file_name("boosting.wgt");
@@ -56,20 +72,28 @@ pub fn get_fname_loss(dout: &Path, ti: usize) -> PathBuf {
     fout.to_owned() + ".ws"
 } */
 
-pub fn check_file_wgt_not_exist(dout: &Path) {
-    let fwgt = get_fname_wgt(dout);
+pub fn check_file_wgt_not_exist(dout: &Path, learning_rate: &Option<f64>) {
+    let fwgt = get_file_wgt(dout, learning_rate);
     let exist_fwgt = text::exist_file(&fwgt);
     if exist_fwgt {
-        panic!("fwgt already exists: {:?}.", &fwgt);
+        panic!(
+            "Weight file already exists: {:?}. Delete it or use --resume option.",
+            &fwgt
+        );
     }
 }
 
-pub fn check_file_wgt_exist(fout: &Path) {
-    let fwgt = get_fname_wgt(fout);
+pub fn check_file_wgt_exist(fwgt: &Path) {
     let exist_fwgt = text::exist_file(&fwgt);
     if !exist_fwgt {
         panic!("fwgt does not exist: {:?}.", &fwgt);
     }
+}
+
+#[allow(dead_code)]
+pub fn check_file_wgt_exist_dir(dout: &Path) {
+    let fwgt = get_fname_wgt(dout);
+    check_file_wgt_exist(&fwgt)
 }
 
 pub fn bufwriter_floss(dout: &Path, ti: usize) -> BufWriter<File> {
@@ -169,9 +193,8 @@ pub fn bufwriter_file(file: File) -> BufWriter<File> {
 
 pub fn bufwriter_fwgt_append(dout: &Path) -> BufWriter<File> {
     // create dwgt
-
-    let dwgt = get_dname_wgt(dout);
-    create_dir(&dwgt);
+    //let dwgt = get_dname_wgt(dout);
+    //create_dir(&dwgt);
 
     let fwgt = get_fname_wgt(dout);
     // allow exist for resume
@@ -396,7 +419,8 @@ pub fn load_wgt_cov(fin_wgt_cov: Option<&str>, covs: Option<Vec<Var>>, n: usize)
 }
      */
 
-fn load_num_iteration(dout: &Path) -> usize {
+#[allow(dead_code)]
+fn load_num_iteration_dir(dout: &Path) -> usize {
     let fwgt = get_fname_wgt(dout);
     let iter_col = 0;
     let iters = text::load_table_col(&fwgt, iter_col, true).unwrap();
@@ -405,13 +429,23 @@ fn load_num_iteration(dout: &Path) -> usize {
     num_iteration
 }
 
-pub fn valid_iterations(iterations_in: &[usize], dout: &Path) -> Vec<usize> {
+fn load_num_iteration(fwgt: &Path) -> usize {
+    //let fwgt = get_fname_wgt(dout);
+    let iter_col = 0;
+    let iters = text::load_table_col(&fwgt, iter_col, true).unwrap();
+    let iters: Vec<usize> = iters.iter().map(|s| s.parse::<usize>().unwrap()).collect();
+    let num_iteration = iters.iter().max().unwrap() + 1;
+    num_iteration
+}
+
+#[allow(dead_code)]
+pub fn valid_iterations_dir(iterations_in: &[usize], dout: &Path) -> Vec<usize> {
     //let fwgt = get_fname_wgt(dout);
 
     let mut iterations = iterations_in.to_vec();
     iterations.sort();
 
-    let num_iteration = load_num_iteration(&dout);
+    let num_iteration = load_num_iteration_dir(dout);
 
     let iterations = iterations
         .into_iter()
@@ -421,15 +455,37 @@ pub fn valid_iterations(iterations_in: &[usize], dout: &Path) -> Vec<usize> {
     iterations
 }
 
-// TODO: binary of cov and linear of snv
+pub fn valid_iterations(iterations_in: &[usize], fwgt: &Path) -> Vec<usize> {
+    //let fwgt = get_fname_wgt(dout);
+
+    let mut iterations = iterations_in.to_vec();
+    iterations.sort();
+
+    let num_iteration = load_num_iteration(fwgt);
+
+    let iterations = iterations
+        .into_iter()
+        .filter(|&v| v <= num_iteration)
+        .collect();
+
+    iterations
+}
+
 pub fn load_wgts(dout: &Path, boost_type: BoostType) -> Vec<WgtBoost> {
     let fwgt = get_fname_wgt(dout);
+
+    load_wgts_file(&fwgt, boost_type)
+}
+
+// TODO: binary of cov and linear of snv
+pub fn load_wgts_file(fwgt: &Path, boost_type: BoostType) -> Vec<WgtBoost> {
+    //let fwgt = get_fname_wgt(dout);
 
     let mut wgts: Vec<WgtBoost> = Vec::new();
 
     // also load header
     let vss: Vec<Vec<String>> =
-        text::load_table(&fwgt, false).expect(&format!("Cannot load wgt from {:?}", fwgt));
+        text::load_table(fwgt, false).expect(&format!("Cannot load wgt from {:?}", fwgt));
 
     let col_n = vss.len();
     let mut columns: Vec<String> = Vec::new();
@@ -708,3 +764,24 @@ pub fn set_covs(wgts: &mut [WgtBoost], covs_in: Option<&[Var]>, n: usize) {
     }
 }
  */
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_dname_para() {
+        let dout = PathBuf::from("./abc");
+        let lr = Some(0.1);
+        let dout_para = get_dname_para(&dout, &lr);
+        assert_eq!(dout_para, PathBuf::from("./abc/para.lr0.1/"));
+    }
+
+    #[test]
+    fn test_get_dname_para_lrnone() {
+        let dout = PathBuf::from("./abc");
+        let lr = None;
+        let dout_para = get_dname_para(&dout, &lr);
+        assert_eq!(dout_para, PathBuf::from("./abc/para/"));
+    }
+}

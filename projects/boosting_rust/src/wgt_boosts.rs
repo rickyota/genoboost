@@ -42,7 +42,22 @@ impl WgtBoosts {
     }
 
     // TODO: estimate boost_type from column
-    pub fn new_from_file(dout: &Path, boost_type: BoostType) -> Self {
+    pub fn new_from_file(fwgt: &Path, boost_type: BoostType) -> Self {
+        let wgts: Vec<WgtBoost> = wgt_boost::io::load_wgts_file(fwgt, boost_type);
+        let wgts_len = wgts.len();
+
+        // TODO: check colums match io::wgt_columns()
+
+        WgtBoosts {
+            wgts,
+            boost_type,
+            columns: io::wgt_columns(boost_type),
+            index_next_write: wgts_len,
+        }
+    }
+
+    // TODO: estimate boost_type from column
+    pub fn new_from_file_dir(dout: &Path, boost_type: BoostType) -> Self {
         let wgts: Vec<WgtBoost> = wgt_boost::io::load_wgts(dout, boost_type);
         let wgts_len = wgts.len();
 

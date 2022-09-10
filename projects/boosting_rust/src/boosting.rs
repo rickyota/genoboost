@@ -295,7 +295,7 @@ pub fn boosting<W: std::io::Write>(
         // assume cov is done when resume
         println!("resume");
 
-        wgts = WgtBoosts::new_from_file(dout.unwrap(), boost_param.boost_type());
+        wgts = WgtBoosts::new_from_file_dir(dout.unwrap(), boost_param.boost_type());
         set_wgt_m(wgts.wgts_mut(), snvs);
 
         for wgt in wgts.wgts().iter() {

@@ -19,9 +19,23 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v2
-      - name: train
+      - name: test
         run: |
           bash ./genoboost.sh
-      - name: score
+  test_1kg_cv:
+    runs-on: ubuntu-latest
+    needs: build
+    defaults:
+      run:
+        shell: bash -l {0}
+    steps:
+      - uses: actions/checkout@v2
+      - uses: conda-incubator/setup-miniconda@v2
+        with:
+          activate-environment: genoboost
+          environment-file: ./etc/env.yml
+          auto-activate-base: false
+          auto-update-conda: true
+      - name: test
         run: |
-          bash ./genoboost.score.sh
+          bash ./genoboost.cv.sh

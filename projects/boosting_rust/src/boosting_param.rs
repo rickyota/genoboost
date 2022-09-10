@@ -60,6 +60,16 @@ impl BoostParam {
         bp.check();
         bp
     }
+
+    pub fn set_lr(self, learning_rate: Option<f64>) -> Self {
+        let bp = BoostParam {
+            learning_rate,
+            ..self
+        };
+        bp.check();
+        bp
+    }
+
     // for test
     pub fn new_type1() -> Self {
         BoostParam {

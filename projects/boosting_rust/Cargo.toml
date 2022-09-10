@@ -11,6 +11,8 @@ edition = "2018"
 [dependencies]
 genetics={package="genetics_rust", path="../genetics_rust"}
 cmatrix={package="cmatrix_rust", path="../cmatrix_rust"}
+#genetics_rust={path="../genetics_rust"}
+#cmatrix_rust={path="../cmatrix_rust"}
 clap="2"
 rayon="1.5"
 crossbeam="0.8"

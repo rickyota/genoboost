@@ -1,18 +1,12 @@
 //! Application of **Genoboost**.
 //! Input plink file to run Genoboost.
-// split lib.rs to lib/lib1.rs, lib/lib2.rs
 //
-// FIXME: how to deal with const?
-// in training and score
-//
-// make add_score common in train and score
 
 pub mod boosting; // pub for bench
 mod boosting_param;
 mod boosting_score;
 mod wgt_boost;
 mod wgt_boosts;
-//mod boosting_classifier;
 
 use std::path::Path;
 
@@ -41,10 +35,13 @@ pub fn run_boosting(
     is_write_loss: bool,
     //dloss: Option<&Path>,
     prune_snv: Option<f64>,
+    learning_rates: &[Option<f64>],
 ) {
     // check fwgt does not exist.
     if !is_resume {
-        wgt_boost::io::check_file_wgt_not_exist(dout);
+        for learning_rate in learning_rates.iter() {
+            wgt_boost::io::check_file_wgt_not_exist(dout, learning_rate);
+        }
     }
 
     plink::check_valid_fin(fin);
@@ -91,8 +88,10 @@ pub fn run_boosting(
         dataset_ext = dataset;
     }
 
+    wgt_boost::io::create_dir(&dout);
+
     //let (file, _) = wgt_boost::io::bufwriter_file_wgt(fout);
-    let mut writer = wgt_boost::io::bufwriter_fwgt_append(dout);
+    //let mut writer = wgt_boost::io::bufwriter_fwgt_append(dout);
     //let mut writer = wgt_boost::io::bufwriter_fwgt(fout);
     //wgt_boost::io::write_cols(&mut writer, boost_param.boost_type());
 
@@ -105,6 +104,29 @@ pub fn run_boosting(
     //    None
     //};
 
+    for learning_rate in learning_rates.iter() {
+        println!("learning rate: {:?}", learning_rate);
+        let dout_para = wgt_boost::io::get_dname_para(dout, learning_rate);
+        wgt_boost::io::create_dir(&dout_para);
+        let mut writer = wgt_boost::io::bufwriter_fwgt_append(&dout_para);
+        match boost_method {
+            BoostMethod::Classic => {
+                println!("Run boosting");
+                boosting::boosting(
+                    &mut writer,
+                    iteration,
+                    boost_param,
+                    &dataset_ext,
+                    is_resume,
+                    is_write_loss,
+                    Some(&dout_para),
+                )
+            }
+            _ => unimplemented!(),
+        }
+    }
+
+    /*
     match boost_method {
         BoostMethod::Classic => {
             println!("Run boosting");
@@ -166,71 +188,35 @@ pub fn run_boosting(
           //    )
           //}
     }
+    */
 }
 
-/// if SNV in fin_wgt is not in fin, then
-pub fn run_boosting_score(
+pub fn run_boosting_score_para(
     dout_score: &Path,
     fin: &Path,
     iterations_in: &[usize],
-    dout_wgt: &Path,
+    file_wgt: &Path,
     fin_cov: Option<&Path>,
     fin_sample: Option<&Path>,
     boost_param: BoostParam,
     use_iter: bool,
 ) {
     // check fwgt exist.
-    wgt_boost::io::check_file_wgt_exist(dout_wgt);
-
-    //let fwgt = wgt::io::get_fname_wgt(fin_wgt);
-
-    plink::check_valid_fin(fin);
+    wgt_boost::io::check_file_wgt_exist(&file_wgt);
+    //wgt_boost::io::check_file_wgt_exist_dir(&dout_wgt_para);
 
     // TODO: check format of wgt
 
-    //let iters = wgt::io::valid_iters(iters_in, &fwgt);
-    let iterations = wgt_boost::io::valid_iterations(iterations_in, dout_wgt);
-    //let iters = wgt::io::valid_iters(iters_in, fin_wgt);
+    let iterations = wgt_boost::io::valid_iterations(iterations_in, &file_wgt);
+    //let iterations = wgt_boost::io::valid_iterations_dir(iterations_in, &dout_wgt_para);
     println!("valid iters {:?}", iterations);
 
+    // FIXME
     // assume a1 and a2 could be flipped
     // -> DO NOT flip alpha, rather flip prediction
 
-    /*
-    let m_in: usize = plink::compute_num_snv(fin).unwrap();
-    println!("{}", m_in);
-    let n_in: usize = plink::compute_num_sample(fin).unwrap();
-    println!("{}", n_in);
-
-    let (n, use_samples) = plink::make_use_samples(fin_sample, fin, n_in);
-    if n == 0 {
-        panic!("Using samples are zero. Please check fin_sample.")
-    }
-
-    let samples_id = plink::load_samples_id(fin, &use_samples);
-
-    let sample_id_to_n = sample::create_sample_id_to_n(fin, &use_samples);
-    // covs could not exist
-    let covs: Option<Vec<Var>> = cov::load_vars(fin_cov, n_in, &sample_id_to_n, cov::CovKind::Cov);
-
-
-    let ys_bool = plink::load_ys(fin, n, &use_samples);
-
-
-    let mut wgts: Vec<WgtBoost> = wgt_boost::io::load_wgts(fin_wgt);
-
-    wgt_boost::io::set_covs(&mut wgts, covs.as_deref(), n);
-
     // input cov or not
-    let has_cov = covs.is_some();
-
-    // set genotype index in wgt
-    let genotypes = genotype::load_genotypes_for_score(fin, &mut wgts, n, &use_samples);
-
-     */
-
-    // input cov or not
-    // TODO
+    // FIXME: if fin_cov is None, then has_cov=false
     let has_cov = true;
     //let has_cov = covs.is_some();
 
@@ -238,11 +224,9 @@ pub fn run_boosting_score(
     let (_, use_samples) = plink::make_use_samples(fin_sample, fin, n_in);
     let samples_id = plink::load_samples_id(fin, &use_samples);
 
-    let mut wgts = WgtBoosts::new_from_file(dout_wgt, boost_param.boost_type());
-    //let mut wgts: Vec<WgtBoost> = wgt_boost::io::load_wgts(fin_wgt);
-    //let dataset: DatasetSingle = DatasetSingle::new_score(fin, fin_sample, fin_cov, &mut wgts);
+    let mut wgts = WgtBoosts::new_from_file(&file_wgt, boost_param.boost_type());
+    //let mut wgts = WgtBoosts::new_from_file_dir(&dout_wgt_para, boost_param.boost_type());
     let dataset = Dataset::new_score(fin, fin_sample, fin_cov, wgts.wgts_mut());
-    //let dataset = Dataset::new_score(fin, fin_sample, fin_cov, &mut wgts);
 
     boosting_score::boosting_score(
         dout_score,
@@ -256,13 +240,101 @@ pub fn run_boosting_score(
         has_cov,
         use_iter,
     );
+}
 
-    //let X;
-    // if load as epi8
-    // _mm_loadu_si32()
-    // _mm256_cvtepu8_epi64() : 128 to 256
+/*
+enum WgtArgFileType {
+    Dir(PathBuf, Vec<Option<f64>>),
+    File(PathBuf),
+}
+ */
 
-    //wgt::io::set_wgts(wgts);
+/// if SNV in fin_wgt is not in fin, then
+pub fn run_boosting_score(
+    dout_score: &Path,
+    fin: &Path,
+    iterations_in: &[usize],
+    dout_wgt: Option<&Path>,
+    fout_wgt: Option<&Path>,
+    fin_cov: Option<&Path>,
+    fin_sample: Option<&Path>,
+    boost_param: BoostParam,
+    learning_rates: &[Option<f64>],
+    use_iter: bool,
+) {
+    plink::check_valid_fin(fin);
+
+    if let Some(dout_wgt) = dout_wgt {
+        for learning_rate in learning_rates.iter() {
+            println!("learning rate: {:?}", learning_rate);
+
+            let file_wgt_para = wgt_boost::io::get_file_wgt(dout_wgt, learning_rate);
+            run_boosting_score_para(
+                dout_score,
+                fin,
+                iterations_in,
+                &file_wgt_para,
+                fin_cov,
+                fin_sample,
+                boost_param,
+                use_iter,
+            );
+            //let dout_wgt_para = wgt_boost::io::get_dname_para(dout_wgt, learning_rate);
+            /*
+            // check fwgt exist.
+            wgt_boost::io::check_file_wgt_exist(&file_wgt_para);
+            //wgt_boost::io::check_file_wgt_exist_dir(&dout_wgt_para);
+
+            // TODO: check format of wgt
+
+            let iterations = wgt_boost::io::valid_iterations(iterations_in, &file_wgt_para);
+            //let iterations = wgt_boost::io::valid_iterations_dir(iterations_in, &dout_wgt_para);
+            println!("valid iters {:?}", iterations);
+
+            // FIXME
+            // assume a1 and a2 could be flipped
+            // -> DO NOT flip alpha, rather flip prediction
+
+            // input cov or not
+            // FIXME: if fin_cov is None, then has_cov=false
+            let has_cov = true;
+            //let has_cov = covs.is_some();
+
+            let n_in: usize = plink::compute_num_sample(fin).unwrap();
+            let (_, use_samples) = plink::make_use_samples(fin_sample, fin, n_in);
+            let samples_id = plink::load_samples_id(fin, &use_samples);
+
+            let mut wgts = WgtBoosts::new_from_file(&file_wgt_para, boost_param.boost_type());
+            //let mut wgts = WgtBoosts::new_from_file_dir(&dout_wgt_para, boost_param.boost_type());
+            let dataset = Dataset::new_score(fin, fin_sample, fin_cov, wgts.wgts_mut());
+
+            boosting_score::boosting_score(
+                dout_score,
+                &iterations,
+                &wgts,
+                &dataset,
+                //&genotypes,
+                //&ys_bool,
+                &samples_id,
+                //n,
+                has_cov,
+                use_iter,
+            ); */
+        }
+    } else if let Some(file_wgt) = fout_wgt {
+        run_boosting_score_para(
+            dout_score,
+            fin,
+            iterations_in,
+            &file_wgt,
+            fin_cov,
+            fin_sample,
+            boost_param,
+            use_iter,
+        );
+    } else {
+        panic!("sth wrong.")
+    }
 }
 
 /*
