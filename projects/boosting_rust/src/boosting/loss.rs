@@ -285,21 +285,23 @@ pub fn calculate_loss_gt(
         if is_x86_feature_detected!("avx2") {
             println!("Use SIMD.");
             //panic!("simd results in bug");
-            match boost_param.boost_type() {
-                BoostType::ConstAda => {
-                    calc::calculate_loss_gt_constada_simd(loss_gt, genot, ps, phe, boost_param);
-                }
-                BoostType::FreeModelMissing => {
-                    calc::calculate_loss_gt_freemodelmissing_simd(
-                        loss_gt,
-                        genot,
-                        ps,
-                        phe,
-                        boost_param,
-                    );
-                }
-                _ => {}
-            };
+            unsafe {
+                match boost_param.boost_type() {
+                    BoostType::ConstAda => {
+                        calc::calculate_loss_gt_constada_simd(loss_gt, genot, ps, phe, boost_param);
+                    }
+                    BoostType::FreeModelMissing => {
+                        calc::calculate_loss_gt_freemodelmissing_simd(
+                            loss_gt,
+                            genot,
+                            ps,
+                            phe,
+                            boost_param,
+                        );
+                    }
+                    _ => {}
+                };
+            }
             return;
         }
     }

@@ -1,16 +1,18 @@
 #!/bin/bash
 #
 # GenoBoost 5-fold cross-validation
-# requires `conda` and `cargo`
 
 set -eux
 
+# mount to this path
+dir_data="/work/data/"
+dir_result="/work/result/"
 # output directory
-dir="./test/result/1kg_n10000_cv/"
+dir="${dir_result}"
 # prefix of plink1 file
-file_plink="./test/data/1kg_n10000/genot"
+file_plink="${dir_data}genot"
 # covariate file
-file_cov="./test/data/1kg_n10000/genot.cov"
+file_cov="${dir_data}genot.cov"
 # learning rate parameters
 learning_rates="0.1 0.5"
 
@@ -19,23 +21,15 @@ dir_sample="${dir}samples/"
 # output directory of cross-validation
 dir_cv="${dir}cross_validation/"
 
-# create conda env
-
 # create cv dataset
 mkdir -p "$dir_sample"
 eval "$(conda shell.bash hook)"
-conda env create --force -n genoboost -f ./etc/env.yml
 conda activate genoboost
 python -m projects.genetics_py.src.dataset \
     --cross_validation \
     --cross_validation_n 5 \
     --dout "${dir_sample}" \
     --fplink "$file_plink"
-
-# compile
-export RUST_BACKTRACE=full
-cargo build --release -p boosting_rust
-cp ./target/release/boosting_rust ./genoboost
 
 # train
 for cvi in {0..4}; do

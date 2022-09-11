@@ -245,8 +245,10 @@ unsafe fn calculate_loss_gt_constada_simd_sm(
     (loss_s0, loss_s1)
 }
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
 /// losss[..,2m,2mi+1..] 2mi: dom, 2mi+1: rec
-pub fn calculate_loss_gt_constada_simd(
+pub unsafe fn calculate_loss_gt_constada_simd(
     losss: &mut LossStruct,
     genot: &Genot,
     ps: &[f64],
@@ -266,7 +268,7 @@ pub fn calculate_loss_gt_constada_simd(
         .inner()
         .par_chunks_mut(2)
         .enumerate()
-        .for_each(|(mi, loss)| unsafe {
+        .for_each(|(mi, loss)| {
             let loss_ = calculate_loss_gt_constada_simd_sm(
                 &genot.to_genot_snv(mi),
                 ps,
@@ -599,7 +601,9 @@ unsafe fn calculate_loss_gt_freemodelmissing_simd_sm(
     loss_
 }
 
-pub fn calculate_loss_gt_freemodelmissing_simd(
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+pub unsafe fn calculate_loss_gt_freemodelmissing_simd(
     losss: &mut LossStruct,
     genot: &Genot,
     ps: &[f64],
@@ -615,18 +619,31 @@ pub fn calculate_loss_gt_freemodelmissing_simd(
         .inner()
         .par_iter_mut()
         .enumerate()
-        .for_each(|(mi, loss)| unsafe {
-            //if mi % 100000 == 0 {
-            //    println!("loss mi {}", mi);
-            //}
+        .for_each(|(mi, loss)| {
             *loss = calculate_loss_gt_freemodelmissing_simd_sm(
                 &genot.to_genot_snv(mi),
                 ps,
                 phe,
                 epsilons,
                 boost_param.eps(),
-            );
+            )
         });
+    /*     losss
+    .inner()
+    .par_iter_mut()
+    .enumerate()
+    .for_each(|(mi, loss)| unsafe {
+        //if mi % 100000 == 0 {
+        //    println!("loss mi {}", mi);
+        //}
+        *loss = calculate_loss_gt_freemodelmissing_simd_sm(
+            &genot.to_genot_snv(mi),
+            ps,
+            phe,
+            epsilons,
+            boost_param.eps(),
+        );
+    }); */
 }
 
 /* pub fn calculate_loss_gt_freemodelmissing_simd(
@@ -945,6 +962,8 @@ mod tests {
         (genot, phe, ps)
     }
 
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[target_feature(enable = "avx2")]
     #[test]
     fn test_calculate_loss_gt_constada_simd_2() {
         // This error below means SIMD memory is not aligned.
@@ -980,6 +999,8 @@ mod tests {
         assert!(is_eq_f64(losss.inner()[1], 1.67261622, 1e-7));
     }
 
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[target_feature(enable = "avx2")]
     #[test]
     fn test_calculate_loss_gt_constada_nosimd_2() {
         let (predictions, phe, ps) = setup_test2();
@@ -1009,6 +1030,8 @@ mod tests {
         assert!(is_eq_f64(losss_nosimd.inner()[1], losss.inner()[1], 1e-7));
     }
 
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[target_feature(enable = "avx2")]
     #[test]
     fn test_calculate_loss_gt_freemodelmissing_simd_3() {
         // This error below means SIMD memory is not aligned.
@@ -1035,6 +1058,8 @@ mod tests {
         assert!(is_eq_f64(losss.inner()[0], 1.21090513, 1e-7));
     }
 
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[target_feature(enable = "avx2")]
     #[test]
     fn test_calculate_loss_gt_freemodelmissing_nosimd_3() {
         let (predictions, phe, ps) = setup_test2();

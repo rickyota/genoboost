@@ -10,7 +10,7 @@
 // TODO: (optional) write down extract snvs from top
 // TODO: align A1, A2
 // TODO: --verbose
-// trimming sample weights: only use samples with large weights on choosing SNVs: Friedman, J., Hastie, T. and Tibshirani, R. (2000) ‘Additive logistic regression: a statistical view of boosting (With discussion and a rejoinder by the authors)’, Annals of statistics, 28(2), pp. 337–407. doi:10.1214/aos/1016218223.
+// TODO: trimming sample weights: only use samples with large weights on choosing SNVs: Friedman, J., Hastie, T. and Tibshirani, R. (2000) ‘Additive logistic regression: a statistical view of boosting (With discussion and a rejoinder by the authors)’, Annals of statistics, 28(2), pp. 337–407. doi:10.1214/aos/1016218223.
 // split main for genoboost_pruning, ssgenoboost
 
 #[macro_use]
@@ -114,6 +114,19 @@ fn get_matches() -> ArgMatches<'static> {
 }
 
 fn main() {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            println!("Able to use SIMD.")
+        } else {
+            println!("Not able to use SIMD since avx2 is not detected.")
+        }
+    }
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+    {
+        println!("Not able to use SIMD since arch is not x86 or x86_64.")
+    }
+
     let matches = get_matches();
 
     println!("matches {:?}", matches);

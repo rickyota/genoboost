@@ -75,6 +75,8 @@ fn bench_calculate_loss_gt_nosimd(c: &mut Criterion) {
 // https://bheisler.github.io/criterion.rs/book/user_guide/comparing_functions.html
 // output plot could be regressed time or scatter plot. If fast, regressed time is output
 // https://bheisler.github.io/criterion.rs/book/user_guide/advanced_configuration.html
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
 fn bench_calculate_loss_gt_comp(c: &mut Criterion) {
     println!("num_thread set: {}", rayon::current_num_threads());
 
@@ -146,6 +148,9 @@ fn bench_calculate_loss_gt_comp(c: &mut Criterion) {
     */
 }
 
+// dummy
+fn bench_calculate_loss_gt_comp_nosimd(_c: &mut Criterion) {}
+
 /*
 criterion_group!(
     benches,
@@ -154,5 +159,17 @@ criterion_group!(
 );
 */
 
-criterion_group!(benches, bench_calculate_loss_gt_comp);
+fn bench_calculate_loss_gt_comp_common(c: &mut Criterion) {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            bench_calculate_loss_gt_comp(c);
+            return;
+        }
+    }
+    bench_calculate_loss_gt_comp_nosimd(c);
+}
+
+criterion_group!(benches, bench_calculate_loss_gt_comp_common);
+
 criterion_main!(benches);

@@ -1,25 +1,22 @@
 #!/bin/bash
 #
 # GenoBoost training and score
-# requires `cargo`
 
 set -eux
 
+# mount to this path
+dir_data="/work/data/"
+dir_result="/work/result/"
 # output directory of training
-dir_wgt="./test/result/1kg_n10000/train/"
+dir_wgt="${dir_result}train/"
 # output directory of score
-dir_score="./test/result/1kg_n10000/score/"
+dir_score="${dir_result}score/"
 # prefix of plink1 file
-file_plink="./test/data/1kg_n10000/genot"
+file_plink="${dir_data}genot"
 # covariate file
-file_cov="./test/data/1kg_n10000/genot.cov"
+file_cov="${dir_data}genot.cov"
 # learning rate parameters
 learning_rates="0.1 0.5"
-
-# compile
-export RUST_BACKTRACE=full
-cargo build --release -p boosting_rust
-cp ./target/release/boosting_rust ./genoboost
 
 # train
 ./genoboost train \
