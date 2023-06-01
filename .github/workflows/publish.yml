@@ -16,21 +16,21 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
-            artifact_name: genoboost-linux-x86_64-musl
-            asset_name: genoboost-linux-x86_64-musl.zip
-          #- os: windows-latest
-            #artifact_name: mything.exe
-            #asset_name: mything-windows-amd64
-          #- os: macos-latest
-            #artifact_name: mything
-            #asset_name: mything-macos-amd64
+            artifact_name: genoboost-linux
+            asset_name: genoboost-linux.zip
+          - os: windows-latest
+            target: x86_64-pc-windows-gnu
+            artifact_name: genoboost-windows
+            asset_name: genoboost-windows.zip
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: genoboost-macos
+            asset_name: genoboost-macos.zip
 
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
         with:
-          #targets: x86_64-unknown-linux-musl
-          # not working?
           targets: ${{ matrix.target }}
       - name: Build
         run: |
