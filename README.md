@@ -1,4 +1,4 @@
-# GenoBoost v0.1.0
+# GenoBoost v0.2.0
 
 [![GenoBoost](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml)
 
@@ -6,11 +6,18 @@ Polygenic score method for non-additive models.
 
 ## Usage
 
-### Docker
+### Download program
+
+Download program for [linux](https://github.com/rickyota/genoboost/releases).
+
+Other versions are available [Release](https://github.com/rickyota/genoboost/releases).
+
+
+### Docker (Advanced)
 
 Using docker or singularity is recommended.
 
-Run GenoBoost on a given example (1000 samples x 10000 SNVs).
+Run GenoBoost on a example dataset in `./test/data/1kg_n10000` (1000 samples x 10000 SNVs).
 
 ```bash
 $ docker run -td \
@@ -31,7 +38,7 @@ $ singularity exec \
 
 Result files are now in `./result/` .
 
-### Advanced
+### Rust (Advanced)
 
 Otherwise, you can directly run GenoBoost with `cargo` and `conda`.
 

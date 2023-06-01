@@ -1,7 +1,7 @@
 FROM --platform=linux/amd64 rust:1.63 AS builder
 
-# TODO: install from github url
 WORKDIR /opt/genoboost
+# TODO: install from github url
 COPY ../ .
 # export RUST_BACKTRACE=full
 RUN cargo build --release -p boosting_rust &&\
