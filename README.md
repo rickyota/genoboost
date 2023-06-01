@@ -6,14 +6,47 @@ Polygenic score method for non-additive models.
 
 ## Usage
 
-### Download program
+Download a folder including program and toy example [here](https://github.com/rickyota/genoboost/releases).
+See toy example for file format.
 
-Download program for [linux](https://github.com/rickyota/genoboost/releases).
+### Train GenoBoost model
+```bash
+$ genoboost train \
+    --dir ./result \
+    --file_plink ./example/toy \
+    --file_cov ./example/toy.cov \
+    --file_sample ./example/toy.train.sample
+```
 
-Other versions are available [Release](https://github.com/rickyota/genoboost/releases).
+--dir: Directory to output.
+--file_plink: Prefix of a plink1 file (.bed, .bim, .fam should exist).
+--file_cov: Covariate file.
+--file_sample: Sample file for training.
+--file_phe: [optional] Phenotype file. If not set, phenotype in --file_plink is used.
+--phe: [optional] Phenotype name indicated in --file_phe.
 
 
-### Docker (Advanced)
+### Calculate sample scores:
+```bash
+$ genoboost score \
+    --dir_score ./result_score \
+    --dir_wgt ./result \
+    --file_plink ./example/toy \
+    --file_cov ./example/toy.cov \
+    --file_sample ./example/toy.train.sample
+```
+
+--dir_score: Directory to output.
+--dir_wgt: Same directory indicated on training. 
+--file_plink: Prefix of a plink1 file (.bed, .bim, .fam should exist).
+--file_cov: Covariate file.
+--file_sample: Sample file for training.
+
+
+
+## Advanced Usage
+
+### Docker
 
 Using docker or singularity is recommended.
 
@@ -38,7 +71,7 @@ $ singularity exec \
 
 Result files are now in `./result/` .
 
-### Rust (Advanced)
+### Rust
 
 Otherwise, you can directly run GenoBoost with `cargo` and `conda`.
 
