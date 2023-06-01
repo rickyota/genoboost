@@ -1,8 +1,10 @@
 #!/bin/bash
 
+# assumed to be called by github workflows
+
 set -eu
 
-d_publish="./publish_tmp/"
+d_publish="./${1}/"
 
 bash ./build.static.sh
 mkdir -p ${d_publish}

@@ -16,7 +16,7 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
-            artifact_name: genoboost
+            artifact_name: genoboost-linux-amd64
             asset_name: genoboost-linux-amd64.zip
           #- os: windows-latest
             #artifact_name: mything.exe
@@ -34,7 +34,7 @@ jobs:
           #targets: ${{ matrix.platform.target }}
       - name: Build
         run: |
-          bash ./create.publish.sh
+          bash ./create.publish.sh ${{ matrix.artifact_name }}
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
