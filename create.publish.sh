@@ -1,5 +1,6 @@
 #!/bin/bash
 
+set -eu
 
 d_publish="./publish_tmp/"
 
