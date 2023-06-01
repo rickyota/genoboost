@@ -4,7 +4,10 @@
 
 set -eu
 
-d_publish="./${1}/"
+# ex. genoboost-linux-musl
+artifact_name="$1"
+
+d_publish="./${artifact_name}/"
 
 bash ./build.static.sh
 mkdir -p ${d_publish}
@@ -14,5 +17,5 @@ mkdir -p ${d_publish}/sample/
 cp ./test/data/toy1/* ${d_publish}/sample/
 
 
-zip -r ./genoboost.zip ${d_publish}
+zip -r ./${artifact_name}.zip ${d_publish}
 
