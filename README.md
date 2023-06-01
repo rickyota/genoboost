@@ -3,7 +3,9 @@
 [![GenoBoost](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml)
 [![Release](https://github.com/rickyota/genoboost/actions/workflows/publish.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/publish.yml)
 
-Polygenic score method to capture non-additive effects.
+GenoBoost is a polygenic score method to capture non-additive genetic inheritance effects.
+So far, most polygenic score methods use the additive model.
+GenoBoost exploits three SNV scores for each SNV to model general non-additive effects.
 
 ## Usage
 
