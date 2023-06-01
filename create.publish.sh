@@ -22,5 +22,9 @@ mkdir -p ${d_publish}/sample/
 cp ./test/data/toy1/* ${d_publish}/sample/
 
 
-zip -r ./${artifact_name}.zip ${d_publish}
+if [[ ${target} == *"windows"* ]]; then
+	tar -cvzf  ./${artifact_name}.zip ${d_publish}
+else
+	zip -r ./${artifact_name}.zip ${d_publish}
+fi
 
