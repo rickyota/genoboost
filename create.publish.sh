@@ -6,12 +6,17 @@ set -eu
 
 # ex. genoboost-linux-musl
 artifact_name="$1"
+target="$2"
 
 d_publish="./${artifact_name}/"
 
-bash ./build.static.sh
+
+cargo build --manifest-path ./projects_rust/Cargo.toml \
+    --release --target=${target} \
+    --bin genoboost
+
 mkdir -p ${d_publish}
-cp ./projects_rust/target/x86_64-unknown-linux-musl/release/genoboost ${d_publish}/genoboost
+cp ./projects_rust/target/${target}/release/genoboost ${d_publish}/genoboost
 
 mkdir -p ${d_publish}/sample/
 cp ./test/data/toy1/* ${d_publish}/sample/

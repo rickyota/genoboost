@@ -34,7 +34,7 @@ jobs:
           targets: ${{ matrix.target }}
       - name: Build
         run: |
-          bash ./create.publish.sh ${{ matrix.artifact_name }}
+          bash ./create.publish.sh ${{ matrix.artifact_name }} ${{ matrix.target }} 
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
