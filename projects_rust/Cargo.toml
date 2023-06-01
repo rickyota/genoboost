@@ -1,0 +1,13 @@
+[workspace]
+
+
+members=[
+    "boosting_rust",
+    "genetics_rust",
+    "cmatrix_rust",
+    "test_rust",
+    "test_pyo3_rust",
+]
+
+
+
