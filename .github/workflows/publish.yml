@@ -30,6 +30,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-musl
+          # not working?
           #targets: ${{ matrix.platform.target }}
       - name: Build
         run: |
