@@ -2,7 +2,7 @@
 
 [![GenoBoost](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml)
 
-Polygenic score method for non-additive models.
+Polygenic score method to capture non-additive effects.
 
 ## Usage
 
@@ -19,10 +19,15 @@ $ genoboost train \
 ```
 
 --dir: Directory to output.
+
 --file_plink: Prefix of a plink1 file (.bed, .bim, .fam should exist).
+
 --file_cov: Covariate file.
+
 --file_sample: Sample file for training.
+
 --file_phe: [optional] Phenotype file. If not set, phenotype in --file_plink is used.
+
 --phe: [optional] Phenotype name indicated in --file_phe.
 
 
@@ -37,9 +42,13 @@ $ genoboost score \
 ```
 
 --dir_score: Directory to output.
+
 --dir_wgt: Same directory indicated on training. 
+
 --file_plink: Prefix of a plink1 file (.bed, .bim, .fam should exist).
+
 --file_cov: Covariate file.
+
 --file_sample: Sample file for training.
 
 
