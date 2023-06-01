@@ -17,7 +17,7 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             artifact_name: genoboost
-            asset_name: genoboost-linux-amd64
+            asset_name: genoboost-linux-amd64.zip
           #- os: windows-latest
             #artifact_name: mything.exe
             #asset_name: mything-windows-amd64
