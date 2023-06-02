@@ -5,6 +5,7 @@
 
 set -eux
 
+
 # output directory of training
 dir_wgt="./test/result/1kg_n10000/train/"
 # output directory of score

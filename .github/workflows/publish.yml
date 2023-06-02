@@ -1,0 +1,44 @@
+# [ref](https://github.com/marketplace/actions/upload-files-to-a-github-release)
+
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    name: Publish for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            artifact_name: genoboost-linux
+            asset_name: genoboost-linux.zip
+          - os: windows-latest
+            target: x86_64-pc-windows-gnu
+            artifact_name: genoboost-windows
+            asset_name: genoboost-windows.zip
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: genoboost-macos
+            asset_name: genoboost-macos.zip
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Build
+        run: |
+          bash ./create.publish.sh ${{ matrix.artifact_name }} ${{ matrix.target }} 
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ./${{ matrix.artifact_name }}.zip
+          asset_name: ${{ matrix.asset_name }}
+          tag: ${{ github.ref }}

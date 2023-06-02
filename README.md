@@ -1,6 +1,7 @@
-# GenoBoost v0.2.0
+# GenoBoost v0.3.0
 
 [![GenoBoost](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml)
+[![Release](https://github.com/rickyota/genoboost/actions/workflows/publish.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/publish.yml)
 
 GenoBoost is a polygenic score method to capture non-additive genetic inheritance effects.
 So far, most polygenic score methods use the additive model.
@@ -17,9 +18,9 @@ See toy example for file format.
 ```bash
 $ genoboost train \
     --dir ./result \
-    --file_plink ./example/toy \
-    --file_cov ./example/toy.cov \
-    --file_sample ./example/toy.train.sample
+    --file_plink ./example/genot \
+    --file_cov ./example/genot.cov \
+    --file_sample ./example/genot.train.sample
 ```
 
 --dir: Directory to output.
@@ -43,9 +44,9 @@ $ genoboost train \
 $ genoboost score \
     --dir_score ./result_score \
     --dir_wgt ./result \
-    --file_plink ./example/toy \
-    --file_cov ./example/toy.cov \
-    --file_sample ./example/toy.train.sample
+    --file_plink ./example/genot \
+    --file_cov ./example/genot.cov \
+    --file_sample ./example/genot.train.sample
 ```
 
 --dir_score: Directory to output.
