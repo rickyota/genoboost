@@ -6,14 +6,13 @@
 
 GenoBoost is a polygenic score method to capture additive and non-additive genetic inheritance effects.
 So far, most polygenic score methods use the additive model, which exploits an effect size ($\alpha$) and a constant value for each SNV.
-GenoBoost exploits three SNV scores ($s_0, s_1, s_2$) for each SNV, corresponding to SNV score for major homozygotes, heterozygotes, and homozygotes. Additive GenoBoost uses linear score for the SNV scores ($s_2-s_1=s_1-s_0$), and non-additive GenoBoost uses three independent scores to model general non-additive effects.
+GenoBoost exploits three SNV scores ($s_0, s_1, s_2$) for each SNV, corresponding to SNV score for major homozygotes, heterozygotes, and homozygotes. Additive GenoBoost uses linear scores for the SNV scores ($s_2-s_1=s_1-s_0$), and non-additive GenoBoost uses three independent scores to model general non-additive effects.
 
-To fit the model, boosting method is used. GenoBoost iteratively selects the most associated SNV with the phenotype and adding the variant to the polygenic score function. When calculating the association, the effects already in polygenic score function is excluded to avoid selecting SNVs with duplicated effects.
+To fit the model, boosting method is used. GenoBoost iteratively selects the most associated SNV with the phenotype and adds the variant to the polygenic score function. When calculating the association, the effects already in the polygenic score function are excluded to avoid selecting SNVs with duplicated effects.
 After the fitting, the SNV scores for selected SNVs are written in the output folder.
 
-There are two parameters: a iteration number and learning rates. The default values are 10,000 and (0.05, 0.1, 0.2, 0.5).
-
-Covariate effects are fitted only once before starting fitting SNVs using multi-variable logistic regression.
+There are two parameters: iteration number and learning rates. The default values are 10,000 and (0.05, 0.1, 0.2, 0.5).
+Covariate effects are fitted only once before starting fitting SNVs using multivariable logistic regression.
 
 
 ## Usage
