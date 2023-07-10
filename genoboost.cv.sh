@@ -34,8 +34,8 @@ python -m projects.genetics_py.src.dataset \
 
 # compile
 export RUST_BACKTRACE=full
-cargo build --release -p boosting_rust
-cp ./target/release/boosting_rust ./genoboost
+cargo build --manifest-path ./projects_rust/Cargo.toml --release -p boosting
+cp ./target/release/boosting ./genoboost
 
 # train
 for cvi in {0..4}; do

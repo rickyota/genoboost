@@ -19,8 +19,8 @@ learning_rates="0.1 0.5"
 
 # compile
 export RUST_BACKTRACE=full
-cargo build --release -p boosting_rust
-cp ./target/release/boosting_rust ./genoboost
+cargo build --manifest-path ./projects_rust/Cargo.toml --release -p boosting
+cp ./target/release/boosting ./genoboost
 
 # train
 ./genoboost train \

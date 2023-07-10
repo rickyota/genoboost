@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Build
-        run: cargo build --verbose
+        run: cargo build --manifest-path ./projects_rust/Cargo.toml --verbose
 
   test_1kg:
     runs-on: ubuntu-latest
