@@ -26,7 +26,7 @@ mkdir -p "$dir_sample"
 eval "$(conda shell.bash hook)"
 conda env create --force -n genoboost -f ./etc/env.yml
 conda activate genoboost
-python -m projects.genetics_py.src.dataset \
+python -m projects_py.genetics_py.src.dataset \
     --cross_validation \
     --cross_validation_n 5 \
     --dout "${dir_sample}" \
@@ -34,8 +34,8 @@ python -m projects.genetics_py.src.dataset \
 
 # compile
 export RUST_BACKTRACE=full
-cargo build --release -p boosting_rust
-cp ./target/release/boosting_rust ./genoboost
+cargo build --manifest-path ./projects_rust/Cargo.toml --release -p boosting
+cp ./projects_rust/target/release/boosting ./genoboost
 
 # train
 for cvi in {0..4}; do

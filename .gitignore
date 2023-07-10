@@ -5,3 +5,6 @@ save/
 
 !.gitkeep
 !.gitignore
+
+*.sif
+

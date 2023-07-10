@@ -20,6 +20,7 @@ Download a folder including program and toy example [here](https://github.com/ri
 See toy example for the file format.
 
 ### Train GenoBoost model
+
 ```bash
 $ genoboost train \
     --dir ./result \
@@ -34,14 +35,17 @@ $ genoboost train \
 
 --file_cov: Covariate file.
 
---file_sample: Sample file for training.
+--file_sample: [optional] Sample file for training.
 
 --file_phe: [optional] Phenotype file. If not set, phenotype in --file_plink is used.
 
 --phe: [optional] Phenotype name indicated in --file_phe.
 
+--boost_type: Genetic inheritance model to use. "nonadd" or "add". Default is "nonadd".
 
-### Calculate sample scores:
+
+### Calculate sample scores
+
 ```bash
 $ genoboost score \
     --dir_score ./result_score \
@@ -59,7 +63,7 @@ $ genoboost score \
 
 --file_cov: Covariate file.
 
---file_sample: Sample file for training.
+--file_sample: [optional] Sample file for training.
 
 
 
