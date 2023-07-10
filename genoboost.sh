@@ -28,9 +28,7 @@ cp ./projects_rust/target/release/genoboost ./genoboost
     --file_plink "$file_plink" \
     --file_cov "$file_cov" \
     --learning_rates $learning_rates \
-    --iter 100 \
-    --clip_sample_weight "top0.1" \
-    --prune_snv 0.1
+    --iter_snv 10 
 
 # score
 ./genoboost score \

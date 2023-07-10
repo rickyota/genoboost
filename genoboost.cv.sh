@@ -47,9 +47,7 @@ for cvi in {0..4}; do
         --file_cov "$file_cov" \
         --file_sample "$fin_sample" \
         --learning_rates $learning_rates \
-        --iter 100 \
-        --clip_sample_weight "top0.1" \
-        --prune_snv 0.1
+        --iter_snv 10  
 done
 
 # score
