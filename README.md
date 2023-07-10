@@ -2,6 +2,7 @@
 
 [![GenoBoost](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml)
 [![Release](https://github.com/rickyota/genoboost/actions/workflows/publish.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/publish.yml)
+[![Build](https://github.com/rickyota/genoboost/actions/workflows/build.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/build.yml)
 
 GenoBoost is a polygenic score method to capture additive and non-additive genetic inheritance effects.
 So far, most polygenic score methods use the additive model, which exploits an effect size ($\alpha$) and a constant value for each SNV.
