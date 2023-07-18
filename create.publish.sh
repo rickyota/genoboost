@@ -22,8 +22,8 @@ cargo build --manifest-path ./projects_rust/Cargo.toml \
 mkdir -p ${d_publish}
 cp ./projects_rust/target/${target}/release/genoboost ${d_publish}/genoboost
 
-mkdir -p ${d_publish}/sample/
-cp ./test/data/toy1/* ${d_publish}/sample/
+mkdir -p ${d_publish}/example/
+cp ./example/* ${d_publish}/example/
 
 
 if [[ ${target} == *"windows"* ]]; then
