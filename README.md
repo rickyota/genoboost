@@ -14,7 +14,6 @@ $ genoboost train \
     --file-genot ./example/genot \
     --file-phe ./example/genot.cov \
     --cov age,sex
-
 ```
 
 ## Table of Contents
@@ -25,6 +24,7 @@ $ genoboost train \
     - [Installation](#install)
         - [Plink1 Input](#install-plink1)
         - [Plink2 Input](#install-plink2)
+        - [Advaned install](#install-advanced)
     - [Train GenoBoost Model](#train)
         - [Simplest Usage](#train-simple)
         - [Without Validation](#train-train-only)
@@ -80,6 +80,11 @@ cp ./projects_rust/target/release/genoboost ./genoboost
 ```
 
 and you can use `genoboost` program.
+
+
+#### <a name="install-advanced"></a>Advanced Install
+
+See [Advanced Guide](#advanced-guide) for docker or singularity users.
 
 ### <a name="train"></a>Train GenoBoost Model
 
