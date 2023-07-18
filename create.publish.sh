@@ -14,10 +14,16 @@ target="$2"
 
 d_publish="./${artifact_name}/"
 
-
-cargo build --manifest-path ./projects_rust/Cargo.toml \
-    --release --target=${target} \
+cargo build \
+    --release \
+     --target=${target} \
+    --manifest-path ./projects_rust/Cargo.toml \
+    --no-default-features \
     --bin genoboost
+
+#cargo build --manifest-path ./projects_rust/Cargo.toml \
+#    --release --target=${target} \
+#    --bin genoboost
 
 mkdir -p ${d_publish}
 cp ./projects_rust/target/${target}/release/genoboost ${d_publish}/genoboost
