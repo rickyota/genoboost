@@ -19,9 +19,10 @@ jobs:
             artifact_name: genoboost-linux
             asset_name: genoboost-linux.zip
           #- os: windows-latest
-          #  target: x86_64-pc-windows-gnu
-          #  artifact_name: genoboost-windows
-          #  asset_name: genoboost-windows.zip
+          - os: ubuntu-latest
+            target: x86_64-pc-windows-gnu
+            artifact_name: genoboost-windows
+            asset_name: genoboost-windows.zip
           #- os: macos-latest
           #  target: x86_64-apple-darwin
           #  artifact_name: genoboost-macos
@@ -38,7 +39,7 @@ jobs:
           version: 1.0
       - name: Build
         run: |
-          bash ./create.publish.sh ${{ matrix.artifact_name }} ${{ matrix.target }} 
+          bash ./create.publish.sh ${{ matrix.artifact_name }} ${{ matrix.target }}
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
