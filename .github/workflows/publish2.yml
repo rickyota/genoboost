@@ -1,6 +1,6 @@
 # [ref](https://github.com/marketplace/actions/upload-files-to-a-github-release)
 
-name: Publish Docker
+name: Publish2
 
 on:
   push:
@@ -32,6 +32,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      - uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: musl-tools
+        version: 1.0
       - name: Build
         run: |
           bash ./create.publish.sh ${{ matrix.artifact_name }} ${{ matrix.target }} 
