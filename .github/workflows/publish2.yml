@@ -35,7 +35,7 @@ jobs:
       - uses: awalsh128/cache-apt-pkgs-action@v1
         with:
           packages: musl-tools
-        version: 1.0
+          version: 1.0
       - name: Build
         run: |
           bash ./create.publish.sh ${{ matrix.artifact_name }} ${{ matrix.target }} 
