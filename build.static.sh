@@ -2,8 +2,9 @@
 
 set -eu
 
-cargo build --manifest-path ./projects_rust/Cargo.toml \
-    --release --target=x86_64-unknown-linux-musl \
+cargo build \
+    --release \
+    --target=x86_64-unknown-linux-musl \
+    --manifest-path ./projects_rust/Cargo.toml \
+    --no-default-features \
     --bin genoboost
-
-
