@@ -89,7 +89,14 @@ pub fn read_file_to_end(fin: &Path, compress: Option<&str>) -> Result<Vec<u8>, B
         }
         Some(compress) => match compress {
             "zst" => {
-                buf = zstd::stream::decode_all(File::open(fin)?)?;
+                #[cfg(feature = "plink2")]
+                {
+                    buf = zstd::stream::decode_all(File::open(fin)?)?;
+                }
+                #[cfg(not(feature = "plink2"))]
+                {
+                    panic!("Use feature=plink2");
+                }
             }
             _ => panic!("Unsupported compress type {}", compress),
         },

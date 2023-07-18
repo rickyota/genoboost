@@ -280,6 +280,8 @@ pub fn run_boosting_integrate_cv(
 ) {
     match cross_validation {
         Some(cvn) => {
+            // FIXME: if fin_sample is Some(), extract samples only from them
+            // FIXME: write down sample id 
             let n_in: usize = io_genot::compute_num_sample(fin, gfmt).unwrap();
             // create cv samples
             let sample_idx_cvs: Vec<(Vec<usize>, Vec<usize>)> = if cvn == 1 {
