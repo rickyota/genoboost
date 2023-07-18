@@ -7,37 +7,38 @@ edition = "2021"
 
 [features]
 default = ["plink2"]
-plink2 = ["dep:pgenlib","dep:bindgen"]
+plink2 = ["dep:pgenlib","dep:bindgen","dep:zstd"]
 # TODO: introduce "simd" ?
 # then, easy to test simd and non-simd
 
 [dependencies]
 pgenlib = {package="pgenlib_rust", path = "../../lib/pgenlib_rust", optional = true}
 bindgen = {version="0.65.1", optional = true}
+zstd = {version="0.12", optional=true}
+#zstd = "0.12"
 cmatrix={path="../cmatrix"}
 mysmartcore={ path="../../lib/mysmartcore"}
 maligned="0"
 sysinfo="0"
 clap={version="4.3.4", features = ["derive"]}
 rayon="1.5"
-#crossbeam="0.8"
 ndarray = "0.15"
+log="0.4"
+env_logger="0.9"
+assert_float_eq = "1"
+csv = "1.1"
+serde = { version = "1", features = ["derive"] }
+
+#crossbeam="0.8"
 #linfa = "0.6.1"
 #linfa-logistic = "0.6.1"
 #smartcore="0.3.2"
 #smartcore="0.2.0"
 #rand="0.8"
-log="0.4"
-env_logger="0.9"
-# for pyo3
-#numpy="0.17.2"
-assert_float_eq = "1"
 #argmin="0.4"
 #nalgebra="0.31.4"
-zstd = "0.12"
-csv = "1.1"
-serde = { version = "1", features = ["derive"] }
-
+# for pyo3
+#numpy="0.17.2"
 
 
 #[dependencies.pyo3]

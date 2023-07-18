@@ -309,6 +309,9 @@ fn main() {
             } else if args.iter_snv.is_some() {
                 boost_params.set_iteration_snv(args.iter_snv.unwrap())
             } else {
+                if args.train_only{
+                    panic!("You have to use --iter-snv or --iter with --train-only");
+                }
                 // else: integrate
                 boost_params
             };
