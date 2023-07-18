@@ -1,4 +1,5 @@
 # [ref](https://github.com/marketplace/actions/upload-files-to-a-github-release)
+# TODO: windows and macos
 
 name: Publish
 
@@ -18,23 +19,27 @@ jobs:
             target: x86_64-unknown-linux-musl
             artifact_name: genoboost-linux
             asset_name: genoboost-linux.zip
-          - os: windows-latest
-            target: x86_64-pc-windows-gnu
-            artifact_name: genoboost-windows
-            asset_name: genoboost-windows.zip
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            artifact_name: genoboost-macos
-            asset_name: genoboost-macos.zip
+          #- os: windows-latest
+          #  target: x86_64-pc-windows-gnu
+          #  artifact_name: genoboost-windows
+          #  asset_name: genoboost-windows.zip
+          #- os: macos-latest
+          #  target: x86_64-apple-darwin
+          #  artifact_name: genoboost-macos
+          #  asset_name: genoboost-macos.zip
 
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      - uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: musl-tools
+          version: 1.0
       - name: Build
         run: |
-          bash ./create.publish.sh ${{ matrix.artifact_name }} ${{ matrix.target }} 
+          bash ./create.publish.sh ${{ matrix.artifact_name }} ${{ matrix.target }}
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
