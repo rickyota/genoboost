@@ -25,17 +25,22 @@ cargo build \
 #    --release --target=${target} \
 #    --bin genoboost
 
-# FIXME: need genoboost.exe for windows?
 mkdir -p ${d_publish}
-cp ./projects_rust/target/${target}/release/genoboost ${d_publish}/genoboost
+if [[ ${target} == *"windows"* ]]; then
+	cp ./projects_rust/target/${target}/release/genoboost.exe ${d_publish}/
+else
+	cp ./projects_rust/target/${target}/release/genoboost ${d_publish}/
+fi
 
 mkdir -p ${d_publish}/example/
 cp ./example/* ${d_publish}/example/
 
 
-if [[ ${target} == *"windows"* ]]; then
-	tar -cvzf  ./${artifact_name}.zip ${d_publish}
-else
-	zip -r ./${artifact_name}.zip ${d_publish}
-fi
+zip -r ./${artifact_name}.zip ${d_publish}
+
+#if [[ ${target} == *"windows"* ]]; then
+#	tar -cvzf  ./${artifact_name}.zip ${d_publish}
+#else
+#	zip -r ./${artifact_name}.zip ${d_publish}
+#fi
 
