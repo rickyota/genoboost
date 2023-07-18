@@ -25,6 +25,7 @@ cargo build \
 #    --release --target=${target} \
 #    --bin genoboost
 
+# FIXME: need genoboost.exe for windows?
 mkdir -p ${d_publish}
 cp ./projects_rust/target/${target}/release/genoboost ${d_publish}/genoboost
 

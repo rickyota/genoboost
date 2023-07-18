@@ -19,6 +19,10 @@ jobs:
             target: x86_64-unknown-linux-musl
             artifact_name: genoboost-linux
             asset_name: genoboost-linux.zip
+          - os: ubuntu-latest
+            target: x86_64-pc-windows-gnu
+            artifact_name: genoboost-windows
+            asset_name: genoboost-windows.zip
           #- os: windows-latest
           #  target: x86_64-pc-windows-gnu
           #  artifact_name: genoboost-windows
