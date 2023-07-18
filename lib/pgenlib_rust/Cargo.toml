@@ -1,0 +1,15 @@
+[package]
+name = "pgenlib_rust"
+version = "0.1.0"
+authors = ["name"]
+edition = "2021"
+build = "build.rs"
+#crate-type = ["staticlib"]
+
+[dependencies]
+libc = "0.2.94"
+
+[build-dependencies]
+cmake = "0.1.50"
+bindgen = "0.65.1"
+#cmake = "0.1"

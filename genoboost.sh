@@ -7,15 +7,13 @@ set -eux
 
 
 # output directory of training
-dir_wgt="./test/result/1kg_n10000/train/"
+dir_wgt="./result/train/"
 # output directory of score
-dir_score="./test/result/1kg_n10000/score/"
+dir_score="./result/score/"
 # prefix of plink1 file
-file_plink="./test/data/1kg_n10000/genot"
+file_plink="./test/data/1kg_maf0.1_m1k/genot"
 # covariate file
-file_cov="./test/data/1kg_n10000/genot.cov"
-# learning rate parameters
-learning_rates="0.1 0.5"
+file_cov="./test/data/1kg_maf0.1_m1k/genot.cov"
 
 # compile
 export RUST_BACKTRACE=full
@@ -25,16 +23,16 @@ cp ./projects_rust/target/release/genoboost ./genoboost
 # train
 ./genoboost train \
     --dir "$dir_wgt" \
-    --file_plink "$file_plink" \
-    --file_cov "$file_cov" \
-    --learning_rates $learning_rates \
-    --iter_snv 10 
+    --file-genot "$file_plink" \
+    --file-phe "$file_cov" \
+    --cov age,sex \
+    --cross-validation 1
 
 # score
 ./genoboost score \
-    --dir_score "$dir_score" \
-    --iters 10 30 50 100 \
-    --file_plink "$file_plink" \
-    --file_cov "$file_cov" \
-    --dir_wgt "$dir_wgt" \
-    --learning_rates $learning_rates
+    --dir-score "$dir_score" \
+    --dir-wgt "$dir_wgt"  \
+    --file-genot "$file_plink" \
+    --file-phe "$file_cov" \
+    --cov age,sex   \
+    --cross-validation 1

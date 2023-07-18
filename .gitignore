@@ -2,6 +2,11 @@
 target/
 result/
 save/
+old/
+
+
+# binary
+genoboost
 
 !.gitkeep
 !.gitignore

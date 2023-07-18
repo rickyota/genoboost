@@ -1,0 +1,71 @@
+[package]
+name = "genetics"
+version = "0.1.0"
+authors = ["rickyota <22293266+rickyota@users.noreply.github.com>"]
+description = "General Genetics Crate"
+edition = "2021"
+
+[features]
+default = ["plink2"]
+plink2 = ["dep:pgenlib","dep:bindgen"]
+# TODO: introduce "simd" ?
+# then, easy to test simd and non-simd
+
+[dependencies]
+pgenlib = {package="pgenlib_rust", path = "../../lib/pgenlib_rust", optional = true}
+bindgen = {version="0.65.1", optional = true}
+cmatrix={path="../cmatrix"}
+mysmartcore={ path="../../lib/mysmartcore"}
+maligned="0"
+sysinfo="0"
+clap={version="4.3.4", features = ["derive"]}
+rayon="1.5"
+#crossbeam="0.8"
+ndarray = "0.15"
+#linfa = "0.6.1"
+#linfa-logistic = "0.6.1"
+#smartcore="0.3.2"
+#smartcore="0.2.0"
+#rand="0.8"
+log="0.4"
+env_logger="0.9"
+# for pyo3
+#numpy="0.17.2"
+assert_float_eq = "1"
+#argmin="0.4"
+#nalgebra="0.31.4"
+zstd = "0.12"
+csv = "1.1"
+serde = { version = "1", features = ["derive"] }
+
+
+
+#[dependencies.pyo3]
+#version="0.17.3"
+## comment for static link
+##features=["auto-initialize"]
+
+
+[dev-dependencies]
+criterion = "0.3"
+
+[[bench]]
+name = "set_count"
+harness = false
+
+[[bench]]
+name = "set_bed"
+harness = false
+
+[[bench]]
+name = "pred_to_count"
+harness = false
+
+[[bench]]
+name = "load_plink"
+harness = false
+
+
+[[bench]]
+name = "load_plink_use_samples"
+harness = false

@@ -2,12 +2,15 @@
 
 
 members=[
-    "boosting_rust",
-    "genetics_rust",
-    "cmatrix_rust",
-    "test_rust",
-    "test_pyo3_rust",
+    "boosting",
+    "genetics",
+    "cmatrix",
+    #"playground",
+    #"test_pgenlib",
+    #"test_rust",
+    #"test_pyo3",
 ]
+
 
 
 

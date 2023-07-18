@@ -1,6 +1,10 @@
 #!/bin/bash
 
+# DO NOT HAVE TO RUN THIS locally.
 # assumed to be called by github workflows
+
+# After `git tag -a v0.3.0 -m "v0.3.0" ` and push to github,
+# then github workflows will automatically publish.
 
 set -eu
 
