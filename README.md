@@ -49,7 +49,7 @@ GenoBoost exploits three SNV scores ($s_0, s_1, s_2$) for each SNV, correspondin
 
 <img src='readme/img/genoboost-score.png' width=300>
 
-To fit the model, boosting method is used. GenoBoost iteratively selects the most associated SNV with the phenotype and adding the variant to the polygenic score function. When aalculating the association, the effects already in polygenic score function is excluded to avoid selecting SNVs with duplicated effects.
+To fit the model, boosting method is used. GenoBoost iteratively selects the most associated SNV with the phenotype and adds the variant to the polygenic score function. When calculating the association, the effects already in polygenic score function are excluded to avoid selecting SNVs with duplicated effects.
 After the fitting, the SNV scores for selected SNVs are written in the output folder.
 
 There are two parameters: iteration numbers and learning rates. The default values for learning rates are (0.05, 0.1, 0.2, 0.5).
@@ -58,7 +58,7 @@ Covariate effects are fitted only once before starting fitting SNVs using multi-
 
 ## <a name="user-guide"></a>Users' Guide
 
-For now, input genotype format is allowed for plink1 or plink2 only.
+For now, the input genotype format is allowed for plink1 or plink2 only.
 
 ### <a name="install"></a>Installation
 
@@ -68,9 +68,9 @@ If you want to input plink1, download a program for your computer from [here][re
 
 #### <a name="install-plink2"></a>Plink2 Input
 
-If you want to input plink2 genotype file, you have to compile by yourself as below. You can use plink1 format as well.
+If you want to input plink2 genotype file, you have to compile it by yourself as below. You can use plink1 format as well.
 
-First, install `rust` as instructed [here][rust-install] if not installed. Then,
+First, install `rust` as instructed [here][rust-install], `cmake>=3.14`, and `clang` if not installed. Then,
 
 ```bash
 git clone https://github.com/rickyota/genoboost.git
@@ -88,22 +88,22 @@ See [Advanced Guide](#advanced-guide) for docker or singularity users.
 
 ### <a name="train"></a>Train GenoBoost Model
 
-GenoBoost returns SNV weights file with $s_0, s_1, s_2$ for each SNV in one line.
+GenoBoost returns the SNV weights file with $s_0, s_1, s_2$ for each SNV in one line.
 
 <img src='readme/img/wgt.png' width=800>
 
 
 #### <a name="train-simple"></a>Simplest Usage
 
-You can run GenoBoost at least with plink1 genotype files and, in most cases, covariates file.
+You can run GenoBoost at least with plink1 genotype files and, in most cases, a covariates file.
 
-See `./example/` for reference of file format. For example, covariates file should be tab-deliminated containing `iid` header corresponding to sample id in plink1 fam file.
+See `./example/` for reference of file format. For example, the covariates file should be tab-delimited containing `iid` header corresponding to the sample id in plink1 fam file.
 
 <img src='readme/img/cov.png' width=300>
 
 With the minimum options, GenoBoost produces SNV weights list with the best parameter.
 SNV weights list is computed from randomly extracted training samples, and the best parameter is determined in the remaining validation samples.
-Write column name to be used in covariates file after `--cov`.
+Write the column name to be used in covariates file after `--cov`.
 
 ```bash
 $ genoboost train \
@@ -115,7 +115,7 @@ $ genoboost train \
 
 #### <a name="train-train-only"></a>Without Validation
 
-If you want to treat all samples as training dataset, use `--train-only` option. GenoBoost produces SNV weights each for learning rate. Use `--iter-snv` or `--iter` to control the maximum number of SNVs or iterations for training.
+If you want to treat all samples as a training dataset, use `--train-only` option. GenoBoost produces SNV weights each for learning rate. Use `--iter-snv` or `--iter` to control the maximum number of SNVs or iterations for training.
 
 ```bash
 $ genoboost train \
@@ -131,7 +131,7 @@ $ genoboost train \
 
 If you use plink2 genotype file (`.pgen`, `.psam` and `.pvar` or `.pvar.zst`), use `--genot-format plink2` or `--genot-format plink2-vzs`.
 
-If phenotype is accompanied with covariates in phenotype file, use `--phe-name` for the phenotype name. If phenotypes and covariates are in plink2 psam file, do not use `--file-phe`.
+If the phenotype is accompanied by covariates in the phenotype file, use `--phe-name` for the phenotype name. If phenotypes and covariates are in plink2 psam file, do not use `--file-phe`.
 
 Control/case format should be `0/1` or `1/2`.
 
@@ -147,7 +147,7 @@ $ genoboost train \
 
 #### <a name="train-cv"></a>Cross-validation
 
-If you want to run k-fold cross-validation, use `--cross-validation (k)`. GenoBoost will split the samples into k chunks and run k times training with one of chunks be the validation samples. You can control how to split the samples with random seed.
+If you want to run k-fold cross-validation, use `--cross-validation (k)`. GenoBoost will split the samples into k chunks and run k times training with one of the chunks being the validation samples. You can control how to split the samples with a random seed.
 
 ```bash
 $ genoboost train \
@@ -193,7 +193,7 @@ $ genoboost train \
 
 ### <a name="score"></a> Calculate Sample Scores
 
-GenoBoost returns polygenic score for each sample. GenoBoost outputs scores without covariates (`score.tsv`) and with covariates (`score.withcov.tsv`).
+GenoBoost returns a polygenic score for each sample. GenoBoost outputs scores without covariates (`score.tsv`) and with covariates (`score.withcov.tsv`).
 
 <img src='readme/img/score.png' width=200>
 
@@ -212,7 +212,7 @@ $ genoboost score \
 
 #### <a name="score-train-only"></a>Without Validation
 
-If you did not use validation dataset in training phase, GenoBoost will output sample scores for all parameters. You have to specify the number of SNVs in `--iters`.
+If you did not use the validation dataset in the training phase, GenoBoost will output sample scores for all parameters. You have to specify the number of SNVs in `--iters`.
 
 ```bash
 $ genoboost score \
@@ -241,7 +241,7 @@ $ genoboost score \
 
 #### <a name="score-cv"></a>Cross-validation
 
-If you used cross-validation in training phase, use `--cross-validation (k)`.
+If you used cross-validation in the training phase, use `--cross-validation (k)`.
 
 ```bash
 $ genoboost score \
@@ -273,7 +273,7 @@ $ genoboost score \
 
 `--iters [NUMBERS]` : Number of SNVs used as a parameter.
 
-`--use-iter`: Also output sample score with number of iterations as a parameter in addition to number of SNVs.
+`--use-iter`: Also output sample score with the number of iterations as a parameter in addition to the number of SNVs.
 
 `--learning-rates [NUMBERS]`: Learning rates in space-delimited format. Default value is `"0.5 0.2 0.1 0.05"`.
 
