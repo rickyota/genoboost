@@ -46,10 +46,6 @@ jobs:
           asset_name: ${{ matrix.asset_name }}
           tag: ${{ github.ref }}
 
-          #- os: windows-latest
-          #  target: x86_64-pc-windows-gnu
-          #  artifact_name: genoboost-windows
-          #  asset_name: genoboost-windows.zip
 # [ref](https://github.com/marketplace/actions/upload-files-to-a-github-release)
 # TODO: windows and macos
 # apt windows gcc
