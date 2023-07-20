@@ -1,4 +1,4 @@
-# GenoBoost v0.4.0
+# GenoBoost v0.4.1
 
 [![GenoBoost](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml)
 [![Release](https://github.com/rickyota/genoboost/actions/workflows/publish.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/publish.yml)
@@ -288,30 +288,32 @@ $ genoboost score \
 
 ## <a name="advanced-guide"></a>Advanced Guide
 
-### <a name="docker"></a>Docker
-
 Using docker or singularity is recommended.
 
-Run GenoBoost on an example dataset in `./test/data/1kg_n10000` (1000 samples x 10000 SNVs).
+### <a name="docker"></a>Docker
 
 ```bash
-$ docker run -td \
-    -v "$(pwd)/test/data/1kg_n10000":/work/data:ro -v "$(pwd)/result":/work/result \
-    rickyota/genoboost:latest \
-    bash ./genoboost.docker.cv.sh
+$ docker pull rickyota/genoboost:latest \
+$ docker run -it rickyota/genoboost:latest \
+    train \
+    --dir ./result \
+    --file-genot ./example/genot \
+    --file-phe ./example/genot.cov \
+    --cov age,sex
 ```
 
 ### <a name="singularity"></a>Singularity
 
 ```bash
-$ singularity build geno.sif docker://rickyota/genoboost:latest
-$ singularity exec \
-    --bind "$(pwd)/test/data/1kg_n10000":/work/data,"$(pwd)/result":/work/result \
-    --no-home --pwd /opt/genoboost geno.sif \
-    bash ./genoboost.docker.cv.sh
+$ singularity build genoboost.sif  ./docker/genoboost.def
+$ singularity run genoboost.sif \
+    train \
+    --dir ./result \
+    --file-genot ./example/genot \
+    --file-phe ./example/genot.cov \
+    --cov age,sex
 ```
 
-Result files are now in `./result/` .
 
 
 [release]: https://github.com/rickyota/genoboost/releases

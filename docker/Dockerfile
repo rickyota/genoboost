@@ -1,19 +1,23 @@
-FROM --platform=linux/amd64 rust:1.63 AS builder
+FROM --platform=linux/amd64 rust:1.68 AS builder
+
+RUN apt-get update &&
+	apt-get install -y --no-install-recommends \
+		clang
 
 WORKDIR /opt/genoboost
-# TODO: install from github url
 COPY ../ .
-# export RUST_BACKTRACE=full
-RUN cargo build --release -p boosting_rust &&\
-	cp ./target/release/boosting_rust ./genoboost
 
+#export RUSTFLAGS='-C target-cpu=native'
+RUN cargo build \
+	--release \
+	--manifest-path ./projects_rust/Cargo.toml \
+	--bin genoboost
 
-FROM --platform=linux/amd64 continuumio/miniconda3 AS runner
+ENTRYPOINT ["./projects_rust/target/genoboost"]
 
-WORKDIR /opt/genoboost
-# TODO: copy only necessary files
-COPY --from=builder /opt/genoboost ./
-RUN conda env create --force -n genoboost -f ./etc/env.yml
-
-
-
+#FROM --platform=linux/amd64 debian:buster-slim AS runner
+#
+#WORKDIR /opt/genoboost
+## TODO: copy only necessary files
+#COPY --from=builder /opt/genoboost/projects_rust/target/release/genoboost ./
+#CMD ["./genoboost"]
