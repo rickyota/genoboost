@@ -18,26 +18,28 @@ $ genoboost train \
 
 ## Table of Contents
 
-- [Getting Started](#started)
-- [Introduction](#introduction)
-- [Users' Guide](#user-guide)
-    - [Installation](#install)
-        - [Plink1 Input](#install-plink1)
-        - [Plink2 Input](#install-plink2)
-        - [Advaned install](#install-advanced)
-    - [Train GenoBoost Model](#train)
-        - [Simplest Usage](#train-simple)
-        - [Without Validation](#train-train-only)
-        - [Input Plink2](#train-plink2)
-        - [Cross-validation](#train-cv)
-        - [Options for Training](#train-option)
-    - [Calculate Sample Scores](#score)
-        - [Simplest Usage](#score-simple)
-        - [Without Validation](#score-train-only)
-        - [Input Plink2](#score-plink2)
-        - [Cross-validation](#score-cv)
-        - [Options for Score](#score-option)
-- [Advanced Guide](#advanced-guide)
+- [GenoBoost v0.4.0](#genoboost-v040)
+  - [Getting Started](#getting-started)
+  - [Table of Contents](#table-of-contents)
+  - [Introduction](#introduction)
+  - [Users' Guide](#users-guide)
+    - [Installation](#installation)
+      - [Plink1 Input](#plink1-input)
+      - [Plink2 Input](#plink2-input)
+      - [Advanced Install](#advanced-install)
+    - [Train GenoBoost Model](#train-genoboost-model)
+      - [Simplest Usage](#simplest-usage)
+      - [Without Validation](#without-validation)
+      - [Input Plink2](#input-plink2)
+      - [Cross-validation](#cross-validation)
+      - [ Options for Training](#-options-for-training)
+    - [ Calculate Sample Scores](#-calculate-sample-scores)
+      - [Simplest Usage](#simplest-usage-1)
+      - [Without Validation](#without-validation-1)
+      - [Input Plink2](#input-plink2-1)
+      - [Cross-validation](#cross-validation-1)
+      - [ Options for Score](#-options-for-score)
+  - [Advanced Guide](#advanced-guide)
     - [Docker](#docker)
     - [Singularity](#singularity)
 
@@ -61,6 +63,9 @@ Covariate effects are fitted only once before starting fitting SNVs using multi-
 For now, the input genotype format is allowed for plink1 or plink2 only.
 
 ### <a name="install"></a>Installation
+
+Using arm architecture including Macbook M1, M2 chip will slow down due to unavailability of SIMD.
+I plan to deal with it in the future.
 
 #### <a name="install-plink1"></a>Plink1 Input
 
@@ -102,7 +107,7 @@ See `./example/` for reference of file format. For example, the covariates file 
 <img src='readme/img/cov.png' width=300>
 
 With the minimum options, GenoBoost produces SNV weights list with the best parameter.
-SNV weights list is computed from randomly extracted training samples, and the best parameter is determined in the remaining validation samples.
+SNV weights list is computed from randomly extracted 80% training samples, and the best parameter is determined in the remaining 20% validation samples.
 Write the column name to be used in covariates file after `--cov`.
 
 ```bash
