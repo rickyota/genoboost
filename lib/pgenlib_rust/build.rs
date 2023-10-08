@@ -23,8 +23,13 @@ fn main() {
     // should be same as project name in CMakeLists.txt
     println!("cargo:rustc-link-lib=static=pgenlib");
     
+    // [ref](https://stackoverflow.com/questions/50642574/how-can-i-specify-linker-flags-arguments-in-a-build-script)
     println!("cargo:rustc-link-arg=-fopenmp");
+
     println!("cargo:rustc-link-lib=gomp");
+    // added 230823
+    // [ref](https://github.com/rust-or/highs-sys/blob/master/build.rs)
+    //println!("cargo:rustc-link-lib=dylib=gomp");
 
 
 

@@ -29,8 +29,6 @@
 // samples indicate both fid and iid
 // TODO: trimming sample weights: only use samples with large weights on choosing SNVs: Friedman, J., Hastie, T. and Tibshirani, R. (2000) ‘Additive logistic regression: a statistical view of boosting (With discussion and a rejoinder by the authors)’, Annals of statistics, 28(2), pp. 337–407. doi:10.1214/aos/1016218223.
 // split main for genoboost_pruning, ssgenoboost
-// TODO: use ref/alt not A1/A2 and fix lims2
-// TODO: format of use_snvs, use_sample should be the same as plink --extract
 
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 //use crate::boosting::{BoostMethod, BoostParam, IterationNumber};
