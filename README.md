@@ -1,4 +1,4 @@
-# GenoBoost v1.0.0
+# GenoBoost v1.0.2
 
 [![GenoBoost](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml)
 [![Release](https://github.com/rickyota/genoboost/actions/workflows/publish.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/publish.yml)
@@ -13,7 +13,8 @@ $ genoboost train \
     --dir ./result \
     --file-genot ./example/genot \
     --file-phe ./example/genot.cov \
-    --cov age,sex
+    --cov age,sex \
+    --major-a2-train
 ```
 
 ## Table of Contents
@@ -21,26 +22,26 @@ $ genoboost train \
 - [Getting Started](#started)
 - [Introduction](#introduction)
 - [Users' Guide](#user-guide)
-    - [Installation](#install)
-        - [Plink1 Input](#install-plink1)
-        - [Plink2 Input](#install-plink2)
-        - [Advaned install](#install-advanced)
-    - [Train GenoBoost Model](#train)
-        - [Simplest Usage](#train-simple)
-        - [Without Validation](#train-train-only)
-        - [Input Plink2](#train-plink2)
-        - [Cross-validation](#train-cv)
-        - [Options for Training](#train-option)
-    - [Calculate Sample Scores](#score)
-        - [Simplest Usage](#score-simple)
-        - [Without Validation](#score-train-only)
-        - [Input Plink2](#score-plink2)
-        - [Cross-validation](#score-cv)
-        - [Options for Score](#score-option)
+  - [Installation](#install)
+    - [Plink1 Input](#install-plink1)
+    - [Plink2 Input](#install-plink2)
+    - [Advaned install](#install-advanced)
+  - [Train GenoBoost Model](#train)
+    - [Simplest Usage](#train-simple)
+    - [Without Validation](#train-train-only)
+    - [Input Plink2](#train-plink2)
+    - [Cross-validation](#train-cv)
+    - [Options for Training](#train-option)
+  - [Calculate Sample Scores](#score)
+    - [Simplest Usage](#score-simple)
+    - [Without Validation](#score-train-only)
+    - [Input Plink2](#score-plink2)
+    - [Cross-validation](#score-cv)
+    - [Options for Score](#score-option)
 - [Advanced Guide](#advanced-guide)
-    - [Installation](#advanced-install)
-        - [Docker](#docker)
-        - [Singularity](#singularity)
+  - [Installation](#advanced-install)
+    - [Docker](#docker)
+    - [Singularity](#singularity)
 
 ## <a name="introduction"></a>Introduction
 
@@ -82,7 +83,6 @@ cp ./projects_rust/target/release/genoboost ./genoboost
 
 and you can use `genoboost` program. This should take less than 5 minutes.
 
-
 #### <a name="install-advanced"></a>Advanced Install
 
 See [Advanced Guide](#advanced-guide) for docker or singularity users.
@@ -92,7 +92,6 @@ See [Advanced Guide](#advanced-guide) for docker or singularity users.
 GenoBoost returns the SNV weights file with $s_0, s_1, s_2$ for each SNV in one line.
 
 <img src='readme/img/wgt.png' width=800>
-
 
 #### <a name="train-simple"></a>Simplest Usage
 
@@ -105,13 +104,15 @@ See `./example/` for reference of file format. For example, the covariates file 
 With the minimum options, GenoBoost produces SNV weights list with the best parameter.
 SNV weights list is computed from randomly extracted training samples, and the best parameter is determined in the remaining validation samples.
 Write the column name to be used in covariates file after `--cov`.
+It is important that major allele is set to a2 by `--major-a2-train`since $s_2$ is winsorized. This option is unnecessary if major allele is already set as reference allele in genotype file.
 
 ```bash
 $ genoboost train \
     --dir ./result \
     --file-genot ./example/genot \
     --file-phe ./example/genot.cov \
-    --cov age,sex
+    --cov age,sex \
+    --major-a2-train
 ```
 
 #### <a name="train-train-only"></a>Without Validation
@@ -124,6 +125,7 @@ $ genoboost train \
     --file-genot ./example/genot \
     --file-phe ./example/genot.cov \
     --cov age,sex \
+    --major-a2-train \
     --train-only \
     --iter-snv 10000
 ```
@@ -143,7 +145,8 @@ $ genoboost train \
     --genot-format plink2-vzs \
     --file-phe ./example/genot2.phe \
     --phe-name PHENO1 \
-    --cov age,sex
+    --cov age,sex \
+    --major-a2-train
 ```
 
 #### <a name="train-cv"></a>Cross-validation
@@ -156,6 +159,7 @@ $ genoboost train \
     --file-genot ./example/genot \
     --file-phe ./example/genot.cov \
     --cov age,sex \
+    --major-a2-train \
     --cross-validation 5 \
     --seed 51
 ```
@@ -179,6 +183,8 @@ $ genoboost train \
 `--file-sample-val [FILE]`: Sample file for validation.
 
 `--file-snv [FILE]`: Snv file for training. One line for one SNV id.
+
+`--major-a2-train`: Set major allele as a2 in training dataset.
 
 `--iter-snv [NUMBER]`, `--iter [NUMBER]` : Maximum number of SNVs or iterations for training.
 
@@ -226,7 +232,6 @@ $ genoboost score \
     --iters "10 20 50"
 ```
 
-
 #### <a name="score-plink2"></a>Input Plink2
 
 Use `--genot-format`, `--file-phe` etc. for plink2 as shown in [training phase](#train-plink2).
@@ -253,20 +258,19 @@ $ genoboost score \
     --cross-validation 5
 ```
 
-
 #### <a name="score-option"></a> Options for Score
 
 `--dir <DIR>` : Directory to output score files.
 
-`--dir-wgt [DIR]` :  Same directory specified on training.
+`--dir-wgt [DIR]` : Same directory specified on training.
 
-`--file-wgt [FILE]` :  Use this specific SNV weight file.
+`--file-wgt [FILE]` : Use this specific SNV weight file.
 
 `--file-genot <FILE>`: Prefix of a plink1 or plink2 file (.bed, .fam, .bim or .pgen, .psam, .pvar/.pvar.zst should exist).
 
 `--genot-format [FORMAT]`: {`plink`, `plink2`, `plink2-vzs`}. Genotype format. Default is `plink`.
 
-`--file-phe [FILE]`:  Covariates file.
+`--file-phe [FILE]`: Covariates file.
 
 `--cov [NAMES]`: Covariates names in comma-delimited format. ex. `age,sex,PC1-PC10`.
 
@@ -286,10 +290,10 @@ $ genoboost score \
 
 `--verbose`: Let GenoBoost speak more!
 
-
 ## <a name="advanced-guide"></a>Advanced Guide
 
 ### <a name="advanced-installation"></a>Advanced Installation
+
 Using docker or singularity is recommended.
 
 #### <a name="docker"></a>Docker
@@ -301,7 +305,8 @@ $ docker run -it rickyota/genoboost:latest \
     --dir ./result \
     --file-genot ./example/genot \
     --file-phe ./example/genot.cov \
-    --cov age,sex
+    --cov age,sex \
+    --major-a2-train
 ```
 
 #### <a name="singularity"></a>Singularity
@@ -313,13 +318,13 @@ $ singularity run genoboost.sif \
     --dir ./result \
     --file-genot ./example/genot \
     --file-phe ./example/genot.cov \
-    --cov age,sex
+    --cov age,sex \
+    --major-a2-train
 ```
 
 ### <a name="computational-time"></a>Computational Time
 
 For ~216 thousands training samples and ~1.1 million SNVs for 10,000 unique SNVs, GenoBoost would take 10 hours.
-
 
 [release]: https://github.com/rickyota/genoboost/releases
 [rust-install]: https://www.rust-lang.org/tools/install
