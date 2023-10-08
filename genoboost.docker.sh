@@ -22,7 +22,8 @@ function genoboost-docker() {
     --dir "$dir_wgt" \
     --file-genot "$file_plink" \
     --file-phe "$file_cov" \
-    --cov age,sex
+    --cov age,sex \
+    --major-a2-train
 
 # score
 ./genoboost-docker score \
