@@ -228,7 +228,6 @@ pub fn vals_align_id(
     let n = sample_id_to_n.len();
     // TODO: better way?
     let mut vals_align: Vec<String> = vec![String::from(""); n];
-    //let mut vals_align: Vec<String> = vec![String::from(""); n];
 
     for (n_in_i, val) in vals.iter().enumerate() {
         let sample_id = ids[n_in_i].clone();
@@ -243,15 +242,23 @@ pub fn vals_align_id(
     // panic if any value is not assigned
     if vals_align.iter().any(|v| *v == "") {
         for n_in_i in 0..vals.len() {
-            let sample_id = ids[n_in_i].clone();
-            //let sample_id = samples::sample_id(ids.0[n_in_i].clone(), &ids.1[n_in_i]);
-
-            if let Some(ni) = sample_id_to_n.get(&sample_id) {
-                if vals_align[*ni] == "" {
-                    panic!("Some sample is not found in fin_phe: {}.", sample_id);
-                }
+            if vals_align[n_in_i] == "" {
+                let sample_id = &ids[n_in_i];
+                panic!("sample in genotype file is not in cov file: {}", sample_id);
             }
         }
+
+        // this cannot raise error when value is nan and the sample is not in sample_id.
+        //for n_in_i in 0..vals.len() {
+        //    let sample_id = ids[n_in_i].clone();
+        //    //let sample_id = samples::sample_id(ids.0[n_in_i].clone(), &ids.1[n_in_i]);
+
+        //    if let Some(ni) = sample_id_to_n.get(&sample_id) {
+        //        if vals_align[*ni] == "" {
+        //            panic!("Some sample is not found in fin_phe: {}.", sample_id);
+        //        }
+        //    }
+        //}
     }
 
     vals_align
@@ -273,5 +280,18 @@ mod tests {
 
         let vals = vals_align_id(&vals, &ids, &id_to_n);
         assert_eq!(vals, vec!["3", "1"]);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_vals_align_id2() {
+        let vals: Vec<String> = ["1", "2", "3"].iter().map(|x| x.to_string()).collect();
+        let ids: Vec<String> = ["id1", "id2", "id3"]
+            .iter()
+            .map(|x| x.to_string())
+            .collect();
+        let id_to_n: HashMap<String, usize> = HashMap::from([("id4".to_string(), 0)]);
+
+        let vals = vals_align_id(&vals, &ids, &id_to_n);
     }
 }

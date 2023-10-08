@@ -2,8 +2,8 @@
 //! It is important that all vector values can be extract without constructing. ex. mafs: Vec<f64> not Vec<Info>
 //! Must use fn to access data so that it is easy to use Trait
 
-use crate::{SnvId, GenotFormat};
 use crate::{io_genot, snv};
+use crate::{GenotFormat, SnvId};
 use std::path::Path;
 
 #[derive(Clone)]
@@ -116,6 +116,10 @@ impl Snvs {
     }
     pub fn snv_indexs(&self) -> &[SnvId] {
         &self.snv_indexs
+    }
+
+    pub fn snv_indexs_mut(&mut self) -> &mut [SnvId] {
+        &mut self.snv_indexs
     }
 }
 

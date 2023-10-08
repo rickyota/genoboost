@@ -238,12 +238,12 @@ fn calculate_write_score(
     item_last_indexs_write: &[usize], // this should indicate the last index, not number of items
     wgts: &WgtBoosts,
     dataset: &Dataset,
-    samples_id: &[String],
+    //samples_id: &[String],
     //samples_id: &[(String, String)],
     nocov: bool,
     is_nsnv: bool,                   // for fout name
     item_ns_fname: Option<&[usize]>, // when fname = items_write
-    integrate:bool
+    integrate: bool,
 ) {
     let item_ns_fname = match item_ns_fname {
         Some(v) => v,
@@ -252,8 +252,13 @@ fn calculate_write_score(
 
     let n = dataset.genot().n();
     let genot = dataset.genot();
-    let phe = dataset.samples().phe();
-    let covs = dataset.samples().covs().unwrap();
+    //let phe = dataset.samples().phe_unwrap();
+    let covs = dataset.samples().covs();
+    //let covs = dataset.samples().covs().unwrap();
+    let samples_id = dataset.samples().names();
+
+    let mut score_paras: Vec<Vec<f64>> = vec![];
+    let mut paras: Vec<String> = vec![];
 
     let mut scores = vec![0.0f64; n];
 
@@ -267,19 +272,18 @@ fn calculate_write_score(
         //log::debug!("wgt {:?}", wgt);
 
         if !(nocov && wgt.wgt().is_cov()) {
-            add_score(&mut scores, wgt, genot, Some(covs));
+            add_score(&mut scores, wgt, genot, covs);
         }
         //log::debug!("iter_next,use{},{}", iter_next, iter_use);
         if item_i == *item_next {
-            //log::debug!("Write iter {}", iter_next);
             //write
-            let fout_iteration =
-                super::io::fname_score_createdir(dout, *item_fname, nocov, is_nsnv,integrate);
-            log::debug!("Write iteration {}: {:?}", item_fname, fout_iteration);
+            //let fout_iteration =
+            //super::io::fname_score_createdir(dout, *item_fname, nocov, is_nsnv, integrate);
+            log::debug!("Save iteration: {}", item_fname);
+            paras.push(item_fname.to_string());
 
-            super::io::write_scores(&fout_iteration, &scores, phe, samples_id);
-
-            //log::debug!("Done write iteration {}: {:?}", item_fname, fout_iteration);
+            score_paras.push(scores.clone());
+            //super::io::write_scores(&fout_iteration, &scores, samples_id);
 
             // raise error...
             //(iter_next, iter_fname) = match iters_write_pair.next() {
@@ -293,7 +297,86 @@ fn calculate_write_score(
             item_fname = v.1;
         }
     }
+
+    // write
+    let fout_concat = super::io::fname_score_concat_createdir(dout, nocov, is_nsnv, integrate);
+    log::debug!("Write score: {:?}", fout_concat);
+    super::io::write_scores_concat(
+        &fout_concat,
+        &score_paras,
+        &paras,
+        samples_id,
+        is_nsnv,
+        integrate,
+    );
 }
+
+// /// a item refer to a wgt, which is different from iter
+// fn calculate_write_score(
+//     dout: &Path,
+//     item_last_indexs_write: &[usize], // this should indicate the last index, not number of items
+//     wgts: &WgtBoosts,
+//     dataset: &Dataset,
+//     //samples_id: &[String],
+//     //samples_id: &[(String, String)],
+//     nocov: bool,
+//     is_nsnv: bool,                   // for fout name
+//     item_ns_fname: Option<&[usize]>, // when fname = items_write
+//     integrate: bool,
+// ) {
+//     let item_ns_fname = match item_ns_fname {
+//         Some(v) => v,
+//         None => item_last_indexs_write,
+//     };
+
+//     let n = dataset.genot().n();
+//     let genot = dataset.genot();
+//     //let phe = dataset.samples().phe_unwrap();
+//     let covs = dataset.samples().covs();
+//     //let covs = dataset.samples().covs().unwrap();
+//     let samples_id = dataset.samples().names();
+
+//     let mut scores = vec![0.0f64; n];
+
+//     let mut items_write_pair = item_last_indexs_write.iter().zip(item_ns_fname.iter());
+//     //let mut iters_write = iters_write.clone().iter();
+//     let (mut item_next, mut item_fname) = items_write_pair.next().unwrap();
+//     //let (mut iter_i, mut iter_next) = iters_write.enumerate().next().unwrap();
+//     //let mut iter_next = *iters_write.next().unwrap();
+
+//     for (item_i, wgt) in wgts.wgts().iter().enumerate() {
+//         //log::debug!("wgt {:?}", wgt);
+
+//         if !(nocov && wgt.wgt().is_cov()) {
+//             add_score(&mut scores, wgt, genot, covs);
+//             //add_score(&mut scores, wgt, genot, Some(covs));
+//         }
+//         //log::debug!("iter_next,use{},{}", iter_next, iter_use);
+//         if item_i == *item_next {
+//             //log::debug!("Write iter {}", iter_next);
+//             //write
+//             let fout_iteration =
+//                 super::io::fname_score_createdir(dout, *item_fname, nocov, is_nsnv, integrate);
+//             log::debug!("Write iteration {}: {:?}", item_fname, fout_iteration);
+
+//             super::io::write_scores(&fout_iteration, &scores, samples_id);
+//             //super::io::write_scores(&fout_iteration, &scores, phe, samples_id);
+
+//             //log::debug!("Done write iteration {}: {:?}", item_fname, fout_iteration);
+
+//             // raise error...
+//             //(iter_next, iter_fname) = match iters_write_pair.next() {
+//             let v = match items_write_pair.next() {
+//                 Some(v) => v,
+//                 None => break,
+//             };
+//             // raise error...
+//             //(iter_next, iter_fname) = v;
+//             item_next = v.0;
+//             item_fname = v.1;
+//         }
+//     }
+// }
 
 /// Iteration and item number are different.
 /// return corresponding items index to given iterations.
@@ -336,7 +419,7 @@ pub fn calculate_write_score_iterations(
     iterations_write: &[usize],
     wgts: &WgtBoosts,
     dataset: &Dataset,
-    samples_id: &[String],
+    //samples_id: &[String],
     //samples_id: &[(String, String)],
     nocov: bool,
 ) {
@@ -369,11 +452,11 @@ pub fn calculate_write_score_iterations(
         &item_last_indexs_write,
         wgts,
         dataset,
-        samples_id,
+        //samples_id,
         nocov,
         false,
         Some(iterations_write),
-        false
+        false,
     );
 }
 
@@ -383,7 +466,7 @@ pub fn calculate_write_score_nsnvs(
     wgts: &WgtBoosts,
     dataset: &Dataset,
     //samples_id: &[(String, String)],
-    samples_id: &[String],
+    //samples_id: &[String],
     nocov: bool,
 ) {
     // first, count when (at which iteration) to write score
@@ -424,7 +507,7 @@ pub fn calculate_write_score_nsnvs(
         &item_last_indexs_write,
         wgts,
         dataset,
-        samples_id,
+        //samples_id,
         nocov,
         true,
         Some(nsnvs_write),
@@ -436,7 +519,7 @@ pub fn calculate_write_score_para_best(
     dout: &Path,
     wgts: &WgtBoosts,
     dataset: &Dataset,
-    samples_id: &[String],
+    //samples_id: &[String],
     nocov: bool,
 ) {
     let iterations_write = [wgts.wgts().len()];
@@ -470,7 +553,7 @@ pub fn calculate_write_score_para_best(
         &item_last_indexs_write,
         wgts,
         dataset,
-        samples_id,
+        //samples_id,
         nocov,
         false,
         Some(&iterations_write),

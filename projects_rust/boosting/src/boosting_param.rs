@@ -260,14 +260,15 @@ impl BoostParams {
             panic!("Cannot assign is_dom_and_rec in freemodelmissing")
         }
 
-        if self.boost_type().is_type_ada() & self.eps().is_none() {
-            panic!("Cannot assign Eps::None in freemodelmissing")
-        }
+        // use effeps instead
+        //if self.boost_type().is_type_ada() & self.eps().is_none() {
+        //    panic!("Cannot assign Eps::None in freemodelmissing")
+        //}
 
-        if self.boost_type().is_logit() & self.sample_weight_clip().is_none() {
-            log::info!("WARNING: Cannot assign SampleWeightClip::None in Logit")
-            //panic!("Cannot assign SampleWeightClip::None in Logit")
-        }
+        //if self.boost_type().is_logit() & self.sample_weight_clip().is_none() {
+        //    log::info!("WARNING: Cannot assign SampleWeightClip::None in Logit")
+        //    //panic!("Cannot assign SampleWeightClip::None in Logit")
+        //}
 
         if self.boost_type().is_type_logit() & !self.cov_way().unwrap().is_first() {
             // since now ps is not renewed for iteration
@@ -283,7 +284,6 @@ impl BoostParams {
         //    }
         //}
     }
-
 
     // or itegrate with set_iteration_snv?
     pub fn set_iteration(self, iteration: usize) -> Self {
@@ -665,14 +665,26 @@ impl BoostType {
         }
     }
 
+    // FIXME: remove
     // allow missing value in dataset
-    pub fn use_missing(self) -> bool {
+    //pub fn use_missing(self) -> bool {
+    //    match self {
+    //        BoostType::Ada
+    //        | BoostType::ConstAda
+    //        | BoostType::LogitAdd
+    //        | BoostType::LogitNoMissing => false,
+    //        BoostType::FreeModelMissing | BoostType::Logit => true,
+    //    }
+    //}
+
+    // fill missing value in dataset
+    pub fn fill_missing(self) -> bool {
         match self {
             BoostType::Ada
             | BoostType::ConstAda
             | BoostType::LogitAdd
-            | BoostType::LogitNoMissing => false,
-            BoostType::FreeModelMissing | BoostType::Logit => true,
+            | BoostType::LogitNoMissing => true,
+            BoostType::FreeModelMissing | BoostType::Logit => false,
         }
     }
 
@@ -1139,6 +1151,8 @@ impl FromStr for EffEps {
 
 impl EffEps {
     pub fn is_on_update(self) -> bool {
+        // true: only apply adjusting in PGS not selecting on loss
+        // false: apply adjusting in PGS and loss
         match self {
             Self::LimS12GmodelPropOnUpdate(..) | Self::LimS2GmodelOverPropOnUpdate(..) => true,
             Self::LimScore(..)

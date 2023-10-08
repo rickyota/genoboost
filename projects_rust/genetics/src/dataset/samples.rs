@@ -30,7 +30,7 @@ type Name = String;
 #[derive(Clone)]
 pub struct Samples {
     // change to Labels for several phenotypes
-    phe: Phe,
+    phe: Option<Phe>,
     names: Option<Vec<Name>>,
     // move to Dataset? -> put here for a while because covs also needs names
     // also, Samples only can be input of fn
@@ -43,12 +43,12 @@ pub struct Samples {
 
 impl Samples {
     pub fn new(
-        ys: &[bool],
+        ys: Option<&[bool]>,
         names: Option<Vec<Name>>,
         covs: Option<Covs>,
         samples_n: usize,
     ) -> Samples {
-        let phe = Phe::new(ys);
+        let phe = ys.map(|x| Phe::new(x));
         Samples {
             phe,
             names,
@@ -59,15 +59,29 @@ impl Samples {
     pub fn new_data(ys: &[bool], names: Option<Vec<Name>>, samples_n: usize) -> Samples {
         let phe = Phe::new(ys);
         Samples {
-            phe,
+            phe: Some(phe),
             names,
             covs: None,
             samples_n,
         }
     }
+
+    /// for score
+    pub fn new_nophe(names: Option<Vec<Name>>, covs: Option<Covs>, samples_n: usize) -> Samples {
+        //let phe = Phe::new_empty(samples_n);
+        Samples {
+            //phe,
+            phe: None,
+            names,
+            covs,
+            samples_n,
+        }
+    }
+
     pub fn new_empty() -> Samples {
         Samples {
-            phe: Phe::new_empty(0),
+            phe: None,
+            //phe: Phe::new_empty(0),
             names: None,
             covs: None,
             samples_n: 0,
@@ -91,11 +105,30 @@ impl Samples {
     pub fn samples_n(&self) -> usize {
         self.samples_n
     }
-    pub fn phe(&self) -> &Phe {
-        &self.phe
+
+    // TMP: merge to phe_unwrap();
+    //pub fn phe(&self) -> &Phe {
+    //    self.phe_unwrap()
+    //    //self.phe.as_ref().unwrap()
+    //    //&self.phe
+    //}
+
+    pub fn phe(&self) -> Option<&Phe> {
+        self.phe.as_ref()
+        //self.phe.as_ref().unwrap()
+        //&self.phe
     }
-    pub fn ys(&self) -> &[B8] {
-        self.phe.phe_inner().inner()
+
+    pub fn phe_unwrap(&self) -> &Phe {
+        self.phe().unwrap()
+        //self.phe.as_ref().unwrap()
+        //&self.phe
+    }
+
+    pub fn ys_unwrap(&self) -> &[B8] {
+        self.phe_unwrap().phe_inner().inner()
+        //self.phe_unwrap().phe_inner().inner()
+        //self.phe.phe_inner().inner()
         //&self.phe
     }
     /*     pub fn ys_f64(&self) -> Vec<f64> {
@@ -223,6 +256,9 @@ pub fn create_sample_id_to_n(
     let mut sample_id_to_n: HashMap<String, usize> = HashMap::new();
 
     for n_in_i in 0..samples_in.len() {
+        if sample_id_to_n.contains_key(&samples_in[n_in_i]) {
+            panic!("Sample id is duplicated: {}", samples_in[n_in_i])
+        }
         sample_id_to_n.insert(samples_in[n_in_i].clone(), n_in_i);
     }
 

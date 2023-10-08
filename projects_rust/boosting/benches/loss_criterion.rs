@@ -95,7 +95,7 @@ unsafe fn bench_calculate_loss_gt_comp(c: &mut Criterion) {
                 &mut losss,
                 &dataset.genot(),
                 &sample_weight,
-                &dataset.samples().phe(),
+                &dataset.samples().phe_unwrap(),
                 BoostParam::new_type1(),
                 &HashSet::new(),
             )
@@ -108,7 +108,7 @@ unsafe fn bench_calculate_loss_gt_comp(c: &mut Criterion) {
                 &mut losss,
                 &dataset.genot(),
                 &sample_weight,
-                &dataset.samples().phe(),
+                &dataset.samples().phe_unwrap(),
                 BoostParam::new_type1(),
             )
         })
@@ -124,7 +124,7 @@ unsafe fn bench_calculate_loss_gt_comp(c: &mut Criterion) {
                 &mut losss,
                 &dataset.genot(),
                 &sample_weight,
-                &dataset.samples().phe(),
+                &dataset.samples().phe_unwrap(),
                 BoostParam::new_type1(),
                 &HashSet::new(),
             )
@@ -137,7 +137,7 @@ unsafe fn bench_calculate_loss_gt_comp(c: &mut Criterion) {
                 &mut losss,
                 &dataset.genot(),
                 &sample_weight,
-                &dataset.samples().phe(),
+                &dataset.samples().phe_unwrap(),
                 BoostParam::new_type1(),
             )
         })

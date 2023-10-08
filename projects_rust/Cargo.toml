@@ -1,16 +1,6 @@
 [workspace]
-
-
 members=[
     "boosting",
     "genetics",
     "cmatrix",
-    #"playground",
-    #"test_pgenlib",
-    #"test_rust",
-    #"test_pyo3",
 ]
-
-
-
-

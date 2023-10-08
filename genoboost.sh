@@ -25,7 +25,8 @@ cp ./projects_rust/target/release/genoboost ./genoboost
     --dir "$dir_wgt" \
     --file-genot "$file_plink" \
     --file-phe "$file_cov" \
-    --cov age,sex 
+    --cov age,sex \
+    --major_a2_train
 
 # score
 ./genoboost score \
@@ -33,4 +34,4 @@ cp ./projects_rust/target/release/genoboost ./genoboost
     --dir-wgt "$dir_wgt"  \
     --file-genot "$file_plink" \
     --file-phe "$file_cov" \
-    --cov age,sex   
+    --cov age,sex

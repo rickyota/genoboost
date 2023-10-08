@@ -47,7 +47,7 @@ pub fn run_boosting(
     gfmt: GenotFormat,
     fin_phe: Option<&Path>,
     phe_name: Option<&str>,
-    cov_name: &str,
+    cov_name: Option<&str>,
     boost_method: BoostMethod,
     boost_params: &BoostParams,
     fin_snv: Option<&Path>,
@@ -63,6 +63,7 @@ pub fn run_boosting(
     //learning_rates: &[f64],
     is_monitor: bool,
     //nsnvs_monitor: Option<Vec<usize>>,
+    make_major_a2_train: bool,
 ) {
     // check fwgt does not exist.
     if !is_resume {
@@ -99,6 +100,7 @@ pub fn run_boosting(
         //fin_sample_val,
         use_adjloss,
         prune_snv,
+        make_major_a2_train,
     );
     log::info!("Created dataset: {} sec", start_time.elapsed().as_secs());
 
@@ -163,7 +165,8 @@ pub fn run_boosting(
             .zip(learning_rates.iter())
             .max_by(|((_, acc_a), _), ((_, acc_b), _)| acc_a.partial_cmp(acc_b).unwrap())
             .map(|((nsnv, _), lr)| (nsnv, lr))
-            .expect("Cannot determine the highest accuracy.");
+            .unwrap_or_else(|| panic!("Cannot determine the highest accuracy."));
+        //.expect("Cannot determine the highest accuracy.");
         log::info!(
             "The best parameter is #SNVs={:?}, learning rate={:?}.",
             nsnv_acc_max,
@@ -260,7 +263,7 @@ pub fn run_boosting_integrate_cv(
     gfmt: GenotFormat,
     fin_phe: Option<&Path>,
     phe_name: Option<&str>,
-    cov_name: &str,
+    cov_name: Option<&str>,
     boost_method: BoostMethod,
     boost_params_types: &BoostParamsTypes,
     fin_snv: Option<&Path>,
@@ -275,13 +278,14 @@ pub fn run_boosting_integrate_cv(
     prune_snv: Option<f64>,
     //learning_rates: &[f64],
     is_monitor: bool,
+    make_major_a2_train: bool,
     cross_validation: Option<usize>,
     seed: Option<u64>,
 ) {
     match cross_validation {
         Some(cvn) => {
             // FIXME: if fin_sample is Some(), extract samples only from them
-            // FIXME: write down sample id 
+            // FIXME: write down sample id
             let n_in: usize = io_genot::compute_num_sample(fin, gfmt).unwrap();
             // create cv samples
             let sample_idx_cvs: Vec<(Vec<usize>, Vec<usize>)> = if cvn == 1 {
@@ -327,21 +331,13 @@ pub fn run_boosting_integrate_cv(
                     &fin,
                     gfmt,
                     phe_buf.as_deref(),
-                    //fin_phe.as_deref(),
                     phe_name.as_deref(),
-                    &cov_name,
+                    cov_name.as_deref(),
                     boost_method,
                     &boost_params_types,
                     snv_buf.as_deref(),
-                    //fin_snv,
                     Some(&sample_buf),
-                    //fin_sample,
                     Some(&sample_val_buf),
-                    //fin_sample_val,
-                    //fin_snv.as_deref(),
-                    //fin_sample.as_deref(),
-                    //fin_cov.as_deref(),
-                    //fin_sample_val.as_deref(),
                     use_adjloss,
                     use_const_for_loss,
                     is_resume,
@@ -349,6 +345,7 @@ pub fn run_boosting_integrate_cv(
                     prune_snv,
                     //&learning_rates,
                     true, //is_monitor,
+                    make_major_a2_train,
                 );
             }
         }
@@ -367,21 +364,13 @@ pub fn run_boosting_integrate_cv(
                 &fin,
                 gfmt,
                 phe_buf.as_deref(),
-                //fin_phe.as_deref(),
                 phe_name.as_deref(),
-                &cov_name,
+                cov_name.as_deref(),
                 boost_method,
                 &boost_params_types,
                 snv_buf.as_deref(),
-                //fin_snv,
                 sample_buf.as_deref(),
-                //fin_sample,
                 sample_val_buf.as_deref(),
-                //fin_sample_val,
-                //fin_snv.as_deref(),
-                //fin_sample.as_deref(),
-                //fin_cov.as_deref(),
-                //fin_sample_val.as_deref(),
                 use_adjloss,
                 use_const_for_loss,
                 is_resume,
@@ -389,6 +378,7 @@ pub fn run_boosting_integrate_cv(
                 prune_snv,
                 //&learning_rates,
                 is_monitor,
+                make_major_a2_train,
             );
         }
     }
@@ -403,7 +393,7 @@ pub fn run_boosting_integrate(
     phe_buf: Option<&[u8]>,
     //fin_phe: Option<&Path>,
     phe_name: Option<&str>,
-    cov_name: &str,
+    cov_name: Option<&str>,
     boost_method: BoostMethod,
     boost_params_types: &BoostParamsTypes,
     snv_buf: Option<&[u8]>,
@@ -421,6 +411,7 @@ pub fn run_boosting_integrate(
     prune_snv: Option<f64>,
     //learning_rates: &[f64],
     is_monitor: bool,
+    make_major_a2_train: bool,
 ) {
     // TODO: if all wgt exceeds #SNVs, then exit here.
     io_genot::check_valid_fin(fin, gfmt);
@@ -456,6 +447,7 @@ pub fn run_boosting_integrate(
             //fin_sample_val,
             use_adjloss,
             prune_snv,
+            make_major_a2_train,
         );
         log::info!("Created dataset: {} sec", start_time.elapsed().as_secs());
 
@@ -693,7 +685,7 @@ fn load_dataset_boosting(
     //fin_phe: Option<&Path>,
     phe_buf: Option<&[u8]>,
     phe_name: Option<&str>,
-    cov_name: &str,
+    cov_name: Option<&str>,
     boost_params: &BoostParams,
     snv_buf: Option<&[u8]>,
     //fin_snv: Option<&Path>,
@@ -704,6 +696,7 @@ fn load_dataset_boosting(
     //fin_sample_val: Option<&Path>,
     use_adjloss: bool,
     prune_snv: Option<f64>,
+    make_major_a2_train: bool,
 ) -> (Dataset, Option<Dataset>) {
     //let phe_buf = fin_phe.map(|x| genetics::textfile::read_file_to_end(x, None).unwrap());
     //let snv_buf = fin_snv.map(|x| genetics::textfile::read_file_to_end(x, None).unwrap());
@@ -712,14 +705,16 @@ fn load_dataset_boosting(
 
     // FIXME: check if in .fam or .phe, col=0 is not duplicated
     let boost_param = boost_params.param_lr_none();
-    let use_missing = boost_param.boost_type().use_missing();
+    //let use_missing = boost_param.boost_type().use_missing();
+    let fill_missing = boost_param.boost_type().fill_missing();
     // create dataset
     // extract snvs by loss function
     if let Some(prop_prune_snv) = prune_snv {
         log::info!("Prune SNVs by decreasing loss: {}", prop_prune_snv);
         let start = Instant::now();
 
-        sample_val_buf.expect("Not Implemented");
+        sample_val_buf.unwrap_or_else(|| panic!("Not Implemented"));
+        //.expect("Not Implemented");
         //fin_sample_val.expect("Not Implemented");
 
         // TODO: better
@@ -755,28 +750,13 @@ fn load_dataset_boosting(
                 cov_name,
                 snv_buf.as_deref(),
                 sample_buf.as_deref(),
-                use_missing,
                 Some(&filt_snv),
+                fill_missing,
+                make_major_a2_train,
                 None,
             );
 
-            /*             let dataset = Dataset::new_old(
-                           fin,
-                           gfmt,
-                           fin_phe,
-                           phe_name,
-                           cov_name,
-                           fin_snv,
-                           fin_sample,
-                           fin_cov,
-                           use_missing,
-                           Some(&filt_snv),
-                           None,
-                       );
-            */
-            //TODO: mv boostmethod::classic
             let n = dataset.samples().samples_n();
-            //let mut pred: Vec<u8> = vec![0u8; n];
 
             let mut scores: Vec<f64> = vec![0.0; n];
 
@@ -787,7 +767,7 @@ fn load_dataset_boosting(
                 boost_param.sample_weight_clip(),
                 boost_param.sample_weight_wls_clip(),
             );
-            sample_weight.renew_sample_weight(&scores, dataset.samples().phe());
+            sample_weight.renew_sample_weight(&scores, dataset.samples().phe_unwrap());
 
             let mut wgts = WgtBoosts::new(boost_param.boost_type());
             let _ = boosting_train::boosting_covs(
@@ -806,7 +786,7 @@ fn load_dataset_boosting(
                 &mut loss,
                 dataset.genot(),
                 &sample_weight,
-                dataset.samples().phe(),
+                dataset.samples().phe_unwrap(),
                 boost_param,
                 &HashSet::<usize>::new(),
                 use_adjloss,
@@ -832,7 +812,7 @@ fn load_dataset_boosting(
 
         log::debug!("created use_snvs_loss {}", use_snvs_loss.len());
 
-        let dataset = Dataset::new(
+        let dataset = Dataset::new_boost_training(
             fin,
             gfmt,
             phe_buf.as_deref(),
@@ -843,9 +823,10 @@ fn load_dataset_boosting(
             sample_buf.as_deref(),
             //fin_snv,
             //fin_sample,
-            use_missing,
+            fill_missing,
             Some(&use_snvs_loss),
             None,
+            make_major_a2_train,
         );
 
         log::debug!(
@@ -859,7 +840,7 @@ fn load_dataset_boosting(
         //let phe_buf = fin_phe.map(|x| genetics::textfile::read_file_to_end(x, None).unwrap());
         //let snv_buf = fin_snv.map(|x| genetics::textfile::read_file_to_end(x, None).unwrap());
         //let sample_buf = fin_sample.map(|x| genetics::textfile::read_file_to_end(x, None).unwrap());
-        let dataset = Dataset::new(
+        let dataset = Dataset::new_boost_training(
             fin,
             gfmt,
             phe_buf.as_deref(),
@@ -870,9 +851,11 @@ fn load_dataset_boosting(
             sample_buf.as_deref(),
             //fin_snv,
             //fin_sample,
-            use_missing,
+            //use_missing,
+            fill_missing,
             None,
             None,
+            make_major_a2_train,
         );
         //dataset_ext = dataset;
 
@@ -882,7 +865,7 @@ fn load_dataset_boosting(
             // need to align and sort snv
             //let sample_val_buf =
             //    fin_sample_val.map(|x| genetics::textfile::read_file_to_end(x, None).unwrap());
-            let dataset_val = Dataset::new(
+            let dataset_val = Dataset::new_boost_training(
                 fin,
                 gfmt,
                 phe_buf.as_deref(),
@@ -893,9 +876,11 @@ fn load_dataset_boosting(
                 sample_val_buf.as_deref(),
                 //fin_snv,
                 //fin_sample_val,
-                use_missing,
+                //use_missing,
+                fill_missing,
                 None,
                 Some(dataset.snvs()),
+                make_major_a2_train,
             );
             //dataset_ext_val = Some(dataset_val);
             Some(dataset_val)
@@ -920,7 +905,7 @@ pub fn run_boosting_score_cv(
     gfmt: GenotFormat,
     fin_phe: Option<&Path>,
     //fin_phe: &Path,
-    phe_name: Option<&str>,
+    //phe_name: Option<&str>,
     cov_name: Option<&str>,
     is_every_para: bool,
     iterations_in: Option<&[usize]>,
@@ -931,6 +916,7 @@ pub fn run_boosting_score_cv(
     learning_rates: &[f64],
     use_iter: bool,
     cross_vali: Option<usize>,
+    use_snv_pos: bool,
 ) {
     match cross_vali {
         Some(cvn) => {
@@ -953,7 +939,7 @@ pub fn run_boosting_score_cv(
                     gfmt,
                     phe_buf.as_deref(),
                     //fin_phe.as_deref(),
-                    phe_name.as_deref(),
+                    //phe_name.as_deref(),
                     cov_name,
                     is_every_para,
                     iterations_in,
@@ -965,6 +951,7 @@ pub fn run_boosting_score_cv(
                     //boost_param,
                     &learning_rates,
                     use_iter,
+                    use_snv_pos,
                 );
             }
         }
@@ -979,7 +966,7 @@ pub fn run_boosting_score_cv(
                 gfmt,
                 phe_buf.as_deref(),
                 //fin_phe.as_deref(),
-                phe_name.as_deref(),
+                //phe_name.as_deref(),
                 cov_name,
                 is_every_para,
                 iterations_in,
@@ -991,6 +978,7 @@ pub fn run_boosting_score_cv(
                 //boost_param,
                 &learning_rates,
                 use_iter,
+                use_snv_pos,
             );
         }
     }
@@ -1004,7 +992,7 @@ pub fn run_boosting_score(
     phe_buf: Option<&[u8]>,
     //fin_phe: Option<&Path>,
     //fin_phe: &Path,
-    phe_name: Option<&str>,
+    //phe_name: Option<&str>,
     cov_name: Option<&str>,
     is_every_para: bool,
     iterations_in: Option<&[usize]>,
@@ -1015,6 +1003,7 @@ pub fn run_boosting_score(
     //boost_param: BoostParam,
     learning_rates: &[f64],
     use_iter: bool,
+    use_snv_pos: bool,
 ) {
     io_genot::check_valid_fin(fin, gfmt);
 
@@ -1022,6 +1011,7 @@ pub fn run_boosting_score(
     //let sample_buf = fin_sample.map(|x| genetics::textfile::read_file_to_end(x, None).unwrap());
 
     if !is_every_para {
+        // score of the best para
         let dout_wgt = dout_wgt.unwrap();
 
         let file_wgt_para = wgt_boost::io::get_file_wgt_best(dout_wgt);
@@ -1037,12 +1027,13 @@ pub fn run_boosting_score(
             gfmt,
             phe_buf.as_deref(),
             //fin_phe,
-            phe_name,
+            //phe_name,
             cov_name,
             &file_wgt_para,
             sample_buf.as_deref(),
             //fin_sample,
             //boost_param,
+            use_snv_pos,
         );
     } else {
         if let Some(dout_wgt) = dout_wgt {
@@ -1066,7 +1057,7 @@ pub fn run_boosting_score(
                     gfmt,
                     phe_buf.as_deref(),
                     //fin_phe,
-                    phe_name,
+                    //phe_name,
                     cov_name,
                     iterations_in.unwrap(),
                     &file_wgt_para,
@@ -1074,6 +1065,7 @@ pub fn run_boosting_score(
                     //fin_sample,
                     //boost_param,
                     use_iter,
+                    use_snv_pos,
                 );
                 //let dout_wgt_para = wgt_boost::io::get_dname_para(dout_wgt, learning_rate);
                 /*
@@ -1124,7 +1116,7 @@ pub fn run_boosting_score(
                 gfmt,
                 phe_buf.as_deref(),
                 //fin_phe,
-                phe_name,
+                //phe_name,
                 cov_name,
                 iterations_in.unwrap(),
                 &file_wgt,
@@ -1132,6 +1124,7 @@ pub fn run_boosting_score(
                 //fin_sample,
                 //boost_param,
                 use_iter,
+                use_snv_pos,
             );
         } else {
             panic!("sth wrong.")

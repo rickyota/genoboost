@@ -1,8 +1,6 @@
 //! General lib and application of general functions
 //! - Polygenic score
 //!
-//!
-//!
 
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 //#[macro_use]
@@ -18,7 +16,7 @@ struct Cli {
     #[command(subcommand)]
     command: Commands,
 
-    // globa=true makes you able to `-- trian --verbose`
+    // global=true makes you able to `-- train --verbose`
     #[arg(long, global = true, help = "Number of threads")]
     threads: Option<usize>,
     #[arg(long, global = true, help = "Verbose")]
@@ -48,12 +46,34 @@ struct ScoreArgs {
     file_sample: Option<String>,
     #[arg(long)]
     file_phe: Option<String>,
-    #[arg(long)]
-    phe: Option<String>,
+    //#[arg(long)]
+    //phe: Option<String>,
     #[arg(long)]
     cov: Option<String>,
     #[arg(long)]
     resume: bool,
+    #[arg(
+        long,
+        help = "Concat parameters into one file. Only use wgt file name is *_n-[#snv].wgt for --concat 'n'. "
+    )]
+    concat: Option<String>,
+    #[arg(
+        long,
+        help = "Opposite of --concat. Use wgts not calculated in --concat."
+    )]
+    no_concat: Option<String>,
+    #[arg(
+        long,
+        help = "Allow snvs or alleles not in genot. The score is ignored."
+    )]
+    allow_nonexist_snv: bool,
+    #[arg(
+        long,
+        help = "When matching snvs in wgt and genot, use chromosome and posotion not variant id to match."
+    )]
+    use_snv_pos: bool,
+    #[arg(long, help = "Use column score0-score2.")]
+    nonadd: bool,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, ValueEnum)]
@@ -116,7 +136,7 @@ fn main() {
             let fin = PathBuf::from(args.file_genot);
             let genot_format = args.genot_format.to_naive();
             let fin_phe = args.file_phe.map(|x| PathBuf::from(x));
-            let phe_name = args.phe;
+            //let phe_name = args.phe;
             let cov_name = args.cov;
             let fin_sample = args.file_sample.map(|x| PathBuf::from(x));
 
@@ -125,18 +145,34 @@ fn main() {
 
             let is_resume = args.resume;
 
+            let concat = args.concat;
+            let no_concat = args.no_concat;
+
+            if concat.is_some() & no_concat.is_some() {
+                panic!("--concat and --no-concat cannot be used together.");
+            }
+
+            let allow_nonexist_snv = args.allow_nonexist_snv;
+            let use_snv_pos = args.use_snv_pos;
+            let is_nonadd = args.nonadd;
+
             genetics::run_score(
                 &dout_score,
                 &fin,
                 genot_format,
                 fin_phe.as_deref(),
-                phe_name.as_deref(),
+                //phe_name.as_deref(),
                 cov_name.as_deref(),
                 dout_wgt.as_deref(), // use enum?
                 fout_wgt.as_deref(),
                 //fin_cov.as_deref(),
                 fin_sample.as_deref(),
+                concat.as_deref(),
+                no_concat.as_deref(),
                 is_resume,
+                allow_nonexist_snv,
+                use_snv_pos,
+                is_nonadd,
             );
         }
     }

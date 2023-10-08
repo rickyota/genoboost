@@ -87,7 +87,7 @@ struct TrainArgs {
     phe: Option<String>,
     // parse later
     #[arg(long)]
-    cov: String,
+    cov: Option<String>,
     //#[arg(long)]
     //file_cov: Option<String>,
     #[arg(long)]
@@ -115,6 +115,11 @@ struct TrainArgs {
     resume: bool,
     #[arg(long)]
     write_loss: bool,
+    #[arg(
+        long,
+        help = "Set major allele in training dataset as a2 allele. Otherwise, set ref allele as a2 allele."
+    )]
+    major_a2_train: bool,
     // --integrate-only
     //#[arg(long, default_value_t = true)]
     //integrate: bool,
@@ -147,11 +152,11 @@ struct ScoreArgs {
     file_sample: Option<String>,
     #[arg(long)]
     file_phe: Option<String>,
-    #[arg(long)]
-    phe: Option<String>,
+    //#[arg(long)]
+    //phe: Option<String>,
     // TODO: remove --cov and read from wgt?
     #[arg(long)]
-    cov: String,
+    cov: Option<String>,
     //#[arg(long)]
     //file_cov: Option<String>,
     // if indicated, do not use para_best and calc score of all paras
@@ -309,7 +314,7 @@ fn main() {
             } else if args.iter_snv.is_some() {
                 boost_params.set_iteration_snv(args.iter_snv.unwrap())
             } else {
-                if args.train_only{
+                if args.train_only {
                     panic!("You have to use --iter-snv or --iter with --train-only");
                 }
                 // else: integrate
@@ -327,6 +332,8 @@ fn main() {
             //log::info!("file_cov {:?}", fin_cov);
             log::info!("file_sample {:?}", fin_sample);
             log::info!("boost_params {:?}", boost_params);
+
+            let make_major_a2_train = args.major_a2_train;
 
             let use_adjloss = true;
             //let use_adjloss = args.use_adjloss;
@@ -347,7 +354,7 @@ fn main() {
                 genot_format,
                 fin_phe.as_deref(),
                 phe_name.as_deref(),
-                &cov_name,
+                cov_name.as_deref(),
                 boost_method,
                 &boost_params,
                 fin_snv.as_deref(),
@@ -361,6 +368,7 @@ fn main() {
                 None, //prune_snv,
                 //&learning_rates,
                 is_monitor,
+                make_major_a2_train,
                 cross_vali,
                 seed,
             );
@@ -370,7 +378,7 @@ fn main() {
             let fin = PathBuf::from(args.file_genot);
             let genot_format = args.genot_format.to_naive();
             let fin_phe = args.file_phe.map(|x| PathBuf::from(x));
-            let phe_name = args.phe;
+            //let phe_name = args.phe;
             let cov_name = args.cov;
             let fin_sample = args.file_sample.map(|x| PathBuf::from(x));
             //let fin_cov = args.file_cov.map(|x| PathBuf::from(x));
@@ -407,8 +415,8 @@ fn main() {
                 &fin,
                 genot_format,
                 fin_phe.as_deref(),
-                phe_name.as_deref(),
-                Some(&cov_name),
+                //phe_name.as_deref(),
+                cov_name.as_deref(),
                 is_every_para,
                 iterations.as_deref(),
                 dout_wgt.as_deref(), // use enum?
@@ -419,6 +427,7 @@ fn main() {
                 &learning_rates,
                 use_iter,
                 cross_vali,
+                false,
             );
         }
     }

@@ -1,11 +1,11 @@
 //! Application of **Genoboost**.
 //! Input plink file to run Genoboost.
-//! 
+//!
 //! Logitnomissing
 //! When the denominator of s2 is 0.0, (no eps and no samples for minor homozygotes), s2 is set the same as s1 (=dominant model).
 //! When the denominator of s1, s0 is 0.0, (no samples for major homozygotes or heterozygotes), s0, s1 is set to 0.0
-//! 
-//! 
+//!
+//!
 // TODO: ensure the same para when resuming
 // TODO: (optional) write down extract snvs from top
 // TODO: how to get memory?
@@ -189,7 +189,7 @@ fn main() {
         let fin_sample_val = matches
             .value_of("file_sample_val")
             .map(|x| PathBuf::from(x));
-        let is_monitor=fin_sample_val.is_some();
+        let is_monitor = fin_sample_val.is_some();
 
         //let boost_type = matches.value_of("boost_type").unwrap();
         let learning_rates: Vec<Option<f64>> = matches
@@ -201,7 +201,6 @@ fn main() {
 
         let is_write_loss = matches.is_present("write_loss");
         //let is_write_loss = true;
-
 
         // make this Option<> here? or in Boostingparam?
         // should be here, or there should be option to make Option<> as default
@@ -288,7 +287,7 @@ fn main() {
 
         boost_param.check();
 
-        log::debug!("boost_param {:?}",boost_param);
+        log::debug!("boost_param {:?}", boost_param);
 
         /*         // set learning rate later
         let boost_param = BoostParam::new_str(
@@ -387,8 +386,9 @@ fn main() {
             .values_of("iters")
             .unwrap()
             .map(|s| {
-                s.parse::<usize>()
-                    .expect("Iters should be able to be parsed to non-negative integer")
+                s.parse::<usize>().unwrap_or_else(|| {
+                    panic!("Iters should be able to be parsed to non-negative integer")
+                })
             })
             .collect();
         // sort and deduplication

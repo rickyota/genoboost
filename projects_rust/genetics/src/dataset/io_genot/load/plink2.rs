@@ -1,12 +1,13 @@
 use crate::genot::prelude::*;
 use crate::genot_index;
-use crate::GenotFormat;
+use crate::{alloc, GenotFormat};
 use crate::{io_genot, vec, Chrom};
 use pgenlib;
 use rayon::prelude::*;
 use std::ffi::CString;
 use std::os::unix::prelude::OsStrExt;
 use std::path::Path;
+use std::time::Instant;
 
 fn fgenot_pgenlib(fin: &Path, gfmt: GenotFormat, chrom: Option<&Chrom>) -> CString {
     let fin_genot = io_genot::fname_plinks_genot(fin, gfmt, chrom);
@@ -35,13 +36,9 @@ pub fn generate_genot_snv_plink2(
     mi: usize,
     n: usize,
     use_samples: Option<&[bool]>,
-    use_missing: bool,
+    //use_missing: bool,
+    fill_missing: bool,
 ) -> GenotSnv {
-    //let n_in = match use_samples {
-    //    None => n,
-    //    Some(usev) => usev.len(),
-    //};
-
     let n_in = match use_samples {
         None => n,
         Some(usev) => usev.len(),
@@ -52,14 +49,16 @@ pub fn generate_genot_snv_plink2(
 
     let fin_genot = fgenot_pgenlib(fin, gfmt, None);
 
-    let genot_v = load_genot_snv_buf(fin_genot, mi, n_in, use_samples_idx, n);
+    let genot_v = load_genot_snv_buf(fin_genot, mi, n_in, &use_samples_idx, n);
     //println!("genot_v {:?}", genot_v);
 
     let mut g_snv = GenotSnv::new_empty(n);
-    assign_pred_from_genot(&mut g_snv.as_genot_snv_mut_snv(), &genot_v);
+    assign_pred_from_genot_i8(&mut g_snv.as_genot_snv_mut_snv(), &genot_v);
 
-    if !use_missing {
-        super::fill_missing(&mut g_snv.as_genot_snv_mut_snv());
+    //if !use_missing {
+    if fill_missing {
+        //super::fill_missing_snv(&mut g_snv.as_genot_snv_mut_snv());
+        g_snv.as_genot_snv_mut_snv().fill_missing_mode();
     }
 
     g_snv
@@ -69,10 +68,30 @@ fn load_genot_snv_buf(
     fin_genot: CString,
     mi: usize,
     n_in: usize,
-    mut use_samples_idx: Vec<i32>,
+    use_samples_idx: &[i32],
+    //mut use_samples_idx: Vec<i32>,
     n: usize,
-) -> Vec<f64> {
-    let nthr = rayon::current_num_threads();
+    //) -> Vec<f64> {
+) -> Vec<i8> {
+    let m_start = mi;
+    let m_end = mi + 1;
+    let use_snvs = vec![true; 1];
+
+    let mut genot_v = vec![0i8; n];
+
+    load_genot_snvs_extract_buf(
+        fin_genot,
+        m_start,
+        m_end,
+        &use_snvs,
+        n_in,
+        use_samples_idx,
+        n,
+        &mut genot_v,
+    );
+    genot_v
+
+    /*     let nthr = rayon::current_num_threads();
     let mut genot_v = vec![0.0f64; n];
     unsafe {
         let _ = pgenlib::pgenreader_load_snv(
@@ -85,10 +104,10 @@ fn load_genot_snv_buf(
             nthr.try_into().unwrap(),
         );
     }
-    genot_v
+    genot_v */
 }
 
-// {0:0, 1:1, 2:2, -3:3}
+/* // {0:0, 1:1, 2:2, -3:3}
 pub fn assign_pred_from_genot(pred: &mut GenotSnvMut, buf_mi: &[f64]) {
     for (ni, dosage) in buf_mi.iter().enumerate() {
         if *dosage < 0.0 {
@@ -99,23 +118,69 @@ pub fn assign_pred_from_genot(pred: &mut GenotSnvMut, buf_mi: &[f64]) {
             pred.set_unchecked(d, ni);
         }
     }
+} */
+
+pub fn assign_pred_from_genot_i8(pred: &mut GenotSnvMut, buf_mi: &[i8]) {
+    for (ni, dosage) in buf_mi.iter().enumerate() {
+        if *dosage < 0i8 {
+            // missing
+            pred.set_unchecked(3, ni);
+        } else {
+            let d = *dosage as u8;
+            pred.set_unchecked(d, ni);
+        }
+    }
 }
 
 // load whole is fastest
-// TODO: use_missing -> !fill_missing
 // TODO: untest for split_chrom
 pub fn generate_genot_plink2(
     fin: &Path,
     gfmt: GenotFormat,
     m: usize,
     n: usize,
-    use_snvs: &[bool],
+    use_snvs: Option<&[bool]>,
     use_samples: Option<&[bool]>,
-    use_missing: bool,
+    //use_missing: bool,
+    fill_missing: bool,
 ) -> Genot {
     log::debug!("to prepare Genot plink2 m, n: {}, {}", m, n);
+    let start = Instant::now();
 
+    let mem = alloc::get_available_memory();
+    log::debug!("available mem: {:?} bytes", mem);
+    //log::info!("Temporary skip panic even for insufficient memory");
+
+    let genot_byte = Genot::byte(m, n);
+    // panic if available mem < genot_byte + mem_pgen_min
+    let mem_pgenlib_min_check = 1usize * 1024 * 1024 * 1024;
+    //let mem_pgenlib_min = 16usize * 1024 * 1024 * 1024;
+    //log::info!("Temporary skip panic even for insufficient memory");
+    match mem {
+        Some(x) => {
+            log::debug!(
+                "genot + min pgenlib vs available mem, {:.3} GB + {:.3} GB vs {:.3} GB",
+                alloc::mem_gb(genot_byte),
+                alloc::mem_gb(mem_pgenlib_min_check),
+                alloc::mem_gb(x),
+            );
+            if genot_byte + mem_pgenlib_min_check > x {
+                panic!("Memory insufficient on preparing Genot.")
+            }
+        }
+        None => {
+            log::debug!("Could not get available memory.");
+        }
+    };
+
+    // TODO: better way
+    let use_snvs_v = vec![true; m];
+    let use_snvs = match use_snvs {
+        Some(x) => x,
+        None => &use_snvs_v,
+    };
     let m_in = use_snvs.len();
+
     let n_in = match use_samples {
         None => n,
         Some(usev) => usev.len(),
@@ -145,14 +210,14 @@ pub fn generate_genot_plink2(
                 continue;
             }
             let fin_genot = fgenot_pgenlib(fin, gfmt, Some(chrom_i));
-            // TODO: might be able to avoid .clone()
 
             assign_genot(
                 &mut g.as_genot_snvs_mut(m_begin, m_end),
                 fin_genot,
                 m_in,
                 n_in,
-                use_samples_idx.clone(),
+                &use_samples_idx,
+                //use_samples_idx.clone(),
                 n,
                 &use_snvs[m_in_begin..m_in_end],
             );
@@ -174,24 +239,28 @@ pub fn generate_genot_plink2(
             fin_genot,
             m_in,
             n_in,
-            use_samples_idx,
+            &use_samples_idx,
             n,
             use_snvs,
         );
     }
 
     // missing
-    if !use_missing {
+    //if !use_missing {
+    if fill_missing {
         g.iter_snv_mut()
             .par_bridge()
-            .for_each(|mut g_snv| super::fill_missing(&mut g_snv));
+            .for_each(|mut g_snv| g_snv.fill_missing_mode());
+        //.for_each(|mut g_snv| super::fill_missing_snv(&mut g_snv));
     }
+
+    let end = start.elapsed();
+    log::info!("It took {} seconds to generate genot.", end.as_secs());
 
     g
 }
 
 // max size allocated in pgenlib
-// pgenlib occupy 8 byte per one genotype count
 const BUF_SIZE_PGENLIB_LIMIT: usize = 64 * 1024 * 1024 * 1024;
 
 fn assign_genot(
@@ -199,16 +268,32 @@ fn assign_genot(
     fin_genot: CString,
     m_in_chrom: usize,
     n_in: usize,
-    use_samples_idx: Vec<i32>,
+    use_samples_idx: &[i32],
     n: usize,
     use_snvs: &[bool],
-    // TOOD: buf: Option<Vec<i32>> // for chrom
+    // TODO: buf: Option<Vec<i32>> // for chrom
 ) {
-    let buf_size_limit: usize = BUF_SIZE_PGENLIB_LIMIT;
-    // 8 byte per count in pgenlib
-    let byte_per_snv = n * 8;
-    let but_num_snv_limit: usize = buf_size_limit / byte_per_snv;
-    let buf_num_snv: usize = but_num_snv_limit.min(m_in_chrom);
+    //let buf_size_limit: usize = BUF_SIZE_PGENLIB_LIMIT;
+
+    let genot_byte = Genot::byte(vec::count_true(use_snvs), n);
+    let buf_size_limit: usize = match alloc::get_available_memory() {
+        Some(x) => x.min(BUF_SIZE_PGENLIB_LIMIT),
+        None => {
+            log::debug!(
+                "Could not get available memory; assume there is {} GB available memory.",
+                alloc::mem_gb(BUF_SIZE_PGENLIB_LIMIT)
+            );
+            BUF_SIZE_PGENLIB_LIMIT
+        }
+    };
+    log::debug!("buf_size_limit: {} GB", alloc::mem_gb(buf_size_limit));
+
+    // 1 byte (i8) per count in pgenlib
+    let byte_per_snv = n * 1;
+    // f64: 8 byte per count in pgenlib
+    // let byte_per_snv = n * 8;
+    let buf_num_snv_limit: usize = buf_size_limit / byte_per_snv;
+    let buf_num_snv: usize = buf_num_snv_limit.min(m_in_chrom);
     //let buf_size: usize = buf_num_snv * byte_per_snv;
     //assert_eq!(buf_size % byte_per_snv, 0);
     //assert!(buf_size <= buf_size_limit);
@@ -216,8 +301,8 @@ fn assign_genot(
     // TMP
     //let buf_num_snv = 10;
 
-    // vec![] is also fine
-    let mut buf = vec![0.0f64; buf_num_snv * n];
+    let mut buf = vec![0i8; buf_num_snv * n];
+    //let mut buf = vec![0.0f64; buf_num_snv * n];
 
     let mut m_in_begin_loaded = 0;
     let mut m_begin_loaded = 0;
@@ -225,7 +310,6 @@ fn assign_genot(
         log::debug!("m_in_begin_loaded: {}", m_in_begin_loaded);
         let m_in_read = buf_num_snv.min(m_in_chrom - m_in_begin_loaded);
         log::debug!("m_in_read: {}", m_in_read);
-
 
         let m_in_end_loaded = m_in_begin_loaded + m_in_read;
         let use_snvs_loaded = &use_snvs[m_in_begin_loaded..m_in_end_loaded];
@@ -237,15 +321,90 @@ fn assign_genot(
 
         if m_read != 0 {
             //let buf = load_genot_whole_buf(fin_genot, m_in, n_in, use_samples_idx, n);
+            //load_genot_snvs_buf(
+            load_genot_snvs_extract_buf(
+                fin_genot.clone(),
+                m_in_begin_loaded,
+                m_in_end_loaded,
+                use_snvs_loaded,
+                n_in,
+                use_samples_idx,
+                n,
+                &mut buf,
+            );
+            //println!("buf {:?}", &buf[..10]);
+
+            let mut g_chrom_part = g_chrom.as_genot_snvs_mut(m_begin_loaded, m_end_loaded);
+            //assign_genot_buf(&mut g_chrom_part, &buf, use_snvs_loaded);
+            assign_genot_extract_buf(&mut g_chrom_part, &buf);
+        }
+
+        m_begin_loaded = m_end_loaded;
+        m_in_begin_loaded = m_in_end_loaded;
+        assert!(m_in_begin_loaded <= m_in_chrom);
+        if m_in_begin_loaded == m_in_chrom {
+            break;
+        }
+    }
+    assert_eq!(m_in_begin_loaded, m_in_chrom);
+}
+
+/* fn assign_genot(
+    g_chrom: &mut GenotMut,
+    fin_genot: CString,
+    m_in_chrom: usize,
+    n_in: usize,
+    use_samples_idx: Vec<i32>,
+    //use_samples_idx: Vec<i32>,
+    n: usize,
+    use_snvs: &[bool],
+    // TODO: buf: Option<Vec<i32>> // for chrom
+) {
+    let buf_size_limit: usize = BUF_SIZE_PGENLIB_LIMIT;
+    // 8 byte per count in pgenlib
+    let byte_per_snv = n * 8;
+    let buf_num_snv_limit: usize = buf_size_limit / byte_per_snv;
+    let buf_num_snv: usize = buf_num_snv_limit.min(m_in_chrom);
+    //let buf_size: usize = buf_num_snv * byte_per_snv;
+    //assert_eq!(buf_size % byte_per_snv, 0);
+    //assert!(buf_size <= buf_size_limit);
+
+    // TMP
+    //let buf_num_snv = 10;
+
+    let mut buf = vec![0i8; buf_num_snv * n];
+    //let mut buf = vec![0.0f64; buf_num_snv * n];
+
+    let mut m_in_begin_loaded = 0;
+    let mut m_begin_loaded = 0;
+    loop {
+        log::debug!("m_in_begin_loaded: {}", m_in_begin_loaded);
+        let m_in_read = buf_num_snv.min(m_in_chrom - m_in_begin_loaded);
+        log::debug!("m_in_read: {}", m_in_read);
+
+        let m_in_end_loaded = m_in_begin_loaded + m_in_read;
+        let use_snvs_loaded = &use_snvs[m_in_begin_loaded..m_in_end_loaded];
+        let (_, m_read) = genot_index::create_m_to_m_in(use_snvs_loaded);
+        log::debug!("m_read: {}", m_read);
+        log::debug!("m_in_end_loded: {}", m_in_end_loaded);
+
+        let m_end_loaded = m_begin_loaded + m_read;
+
+        if m_read != 0 {
+            //let buf = load_genot_whole_buf(fin_genot, m_in, n_in, use_samples_idx, n);
+            //load_genot_snvs_extract_buf(
             load_genot_snvs_buf(
                 fin_genot.clone(),
                 m_in_begin_loaded,
                 m_in_end_loaded,
                 n_in,
-                use_samples_idx.clone(),
+                //use_samples_idx.clone(),
+                //&mut use_samples_idx,
+                &use_samples_idx,
                 n,
                 &mut buf,
             );
+            //println!("buf {:?}", &buf[..10]);
 
             let mut g_chrom_part = g_chrom.as_genot_snvs_mut(m_begin_loaded, m_end_loaded);
             assign_genot_buf(&mut g_chrom_part, &buf, use_snvs_loaded);
@@ -259,24 +418,78 @@ fn assign_genot(
         }
     }
     assert_eq!(m_in_begin_loaded, m_in_chrom);
+} */
+
+fn load_genot_snvs_extract_buf(
+    fin_genot: CString,
+    m_start: usize,
+    m_end: usize,
+    use_snvs: &[bool],
+    n_in: usize,
+    use_samples_idx: &[i32],
+    n: usize,
+    buf: &mut Vec<i8>,
+    //buf: &mut Vec<f64>,
+) {
+    // too large nthr might leads mem error.
+    let max_threads_pgenlib = 32;
+    let nthr = rayon::current_num_threads().min(max_threads_pgenlib);
+    log::debug!("nthr in rust {}", nthr);
+
+    let m_read = vec::count_true(use_snvs);
+
+    buf.resize(m_read * n, 0i8);
+
+    unsafe {
+        let _ = pgenlib::pgenreader_load_snvs_extract(
+            buf.as_mut_ptr(),
+            fin_genot.as_ptr(),
+            m_start.try_into().unwrap(),
+            m_end.try_into().unwrap(),
+            use_snvs.as_ptr(),
+            n_in.try_into().unwrap(),
+            use_samples_idx.as_ptr(),
+            n.try_into().unwrap(),
+            nthr.try_into().unwrap(),
+        );
+    }
+    //println!("buf_tmp {:?}", &buf_tmp[..10]);
+    //println!("genot_v {:?}", genot_v);
+    //bufv
 }
 
+#[allow(dead_code)]
 fn load_genot_snvs_buf(
     fin_genot: CString,
     m_start: usize,
     m_end: usize,
     n_in: usize,
-    mut use_samples_idx: Vec<i32>,
+    use_samples_idx: &Vec<i32>,
     n: usize,
-    buf: &mut Vec<f64>,
-    //buf: Option<Vec<f64>>,
+    buf: &mut Vec<i8>,
 ) {
-    // large nthr might lead mem error?
-    //let nthr = rayon::current_num_threads();
-    let nthr=4;
-    //let nthr = 1;
+    let m_in = m_end - m_start;
+    let use_snvs = vec![true; m_in];
+
+    load_genot_snvs_extract_buf(
+        fin_genot,
+        m_start,
+        m_end,
+        &use_snvs,
+        n_in,
+        use_samples_idx,
+        n,
+        //&mut buf,
+        buf,
+    );
+    //genot_v
+
+    /*
+    let nthr = rayon::current_num_threads();
+    //let nthr = 4;
     log::debug!("nthr in rust {}", nthr);
 
+    //log::debug!("buf size {}",(m_end - m_start) * n);
     buf.resize((m_end - m_start) * n, 0.0f64);
 
     // TODO: convert f64->i8 in pgenlib
@@ -287,29 +500,45 @@ fn load_genot_snvs_buf(
             m_start.try_into().unwrap(),
             m_end.try_into().unwrap(),
             n_in.try_into().unwrap(),
-            use_samples_idx.as_mut_ptr(),
+            use_samples_idx.as_ptr(),
+            //use_samples_idx.as_mut_ptr(),
             n.try_into().unwrap(),
             nthr.try_into().unwrap(),
         );
     }
     //println!("genot_v {:?}", genot_v);
-    //bufv
+    //bufv */
 }
 
-/// won't work for 1M SNVs x 300K samples
+/// won't work for 1M SNVs x 300K samples for f64
+/// not tried for i8
 #[allow(dead_code)]
 fn load_genot_whole_buf(
     fin_genot: CString,
     m_in: usize,
     n_in: usize,
-    mut use_samples_idx: Vec<i32>,
+    use_samples_idx: &[i32],
     n: usize,
-) -> Vec<f64> {
-    //let nthr = rayon::current_num_threads();
-    let nthr=4;
-    println!("nthr {}", nthr);
+) -> Vec<i8> {
+    let m_start = 0;
+    let m_end = m_in;
+    let use_snvs = vec![true; m_in];
 
-    let mut genot_v = vec![0.0f64; m_in * n];
+    let mut genot_v = vec![0i8; m_in * n];
+
+    load_genot_snvs_extract_buf(
+        fin_genot,
+        m_start,
+        m_end,
+        &use_snvs,
+        n_in,
+        use_samples_idx,
+        n,
+        &mut genot_v,
+    );
+    genot_v
+
+    /*     //let mut genot_v = vec![0.0f64; m_in * n];
     unsafe {
         let _ = pgenlib::pgenreader_load_whole(
             genot_v.as_mut_ptr(),
@@ -322,10 +551,32 @@ fn load_genot_whole_buf(
         );
     }
     //println!("genot_v {:?}", genot_v);
-    genot_v
+    genot_v */
 }
 
-fn assign_genot_buf(g: &mut GenotMut, buf: &[f64], use_snvs: &[bool]) {
+fn assign_genot_extract_buf(g: &mut GenotMut, buf: &[i8]) {
+    //let (m_to_m_in, m_read) = genot_index::create_m_to_m_in(use_snvs);
+
+    //assert
+    //assert_eq!(g.m(), m_read);
+    let n = g.n();
+
+    g.iter_snv_mut()
+        .enumerate()
+        .par_bridge()
+        .for_each(|(mi, mut g_snv)| {
+            //let m_in_i = m_to_m_in[&mi];
+            //let buf_mi = &buf[m_in_i * n..(m_in_i + 1) * n];
+            let buf_mi = &buf[mi * n..(mi + 1) * n];
+
+            //println!("buf_mi {:?}", &buf_mi[..10]);
+            assign_pred_from_genot_i8(&mut g_snv, &buf_mi);
+        });
+}
+
+//fn assign_genot_buf(g: &mut GenotMut, buf: &[f64], use_snvs: &[bool]) {
+#[allow(dead_code)]
+fn assign_genot_buf(g: &mut GenotMut, buf: &[i8], use_snvs: &[bool]) {
     let (m_to_m_in, m_read) = genot_index::create_m_to_m_in(use_snvs);
 
     //assert
@@ -339,7 +590,8 @@ fn assign_genot_buf(g: &mut GenotMut, buf: &[f64], use_snvs: &[bool]) {
             let m_in_i = m_to_m_in[&mi];
             let buf_mi = &buf[m_in_i * n..(m_in_i + 1) * n];
 
-            assign_pred_from_genot(&mut g_snv, &buf_mi);
+            //println!("buf_mi {:?}", &buf_mi[..10]);
+            assign_pred_from_genot_i8(&mut g_snv, &buf_mi);
         });
 }
 
@@ -366,7 +618,7 @@ mod tests {
         let m_in: usize = io_genot::compute_num_snv(&fin, gfmt).unwrap();
         log::debug!("{}", m_in);
         let n_in: usize = io_genot::compute_num_sample(&fin, gfmt).unwrap();
-        println!("{}", n_in);
+        log::debug!("{}", n_in);
         // load snvs
         let snvs_in = io_genot::load_snvs(&fin, gfmt);
         let (m, use_snvs) = snv::make_use_snvs(fin_snv, &snvs_in);
@@ -399,7 +651,7 @@ mod tests {
         let m_in: usize = io_genot::compute_num_snv(&fin, gfmt).unwrap();
         log::debug!("{}", m_in);
         let n_in: usize = io_genot::compute_num_sample(&fin, gfmt).unwrap();
-        println!("{}", n_in);
+        log::debug!("{}", n_in);
         let m = 2;
         let use_snvs = vec![true, false, true];
         let n = 5;
@@ -430,7 +682,7 @@ mod tests {
         let m_in: usize = io_genot::compute_num_snv(&fin, gfmt).unwrap();
         log::debug!("{}", m_in);
         let n_in: usize = io_genot::compute_num_sample(&fin, gfmt).unwrap();
-        println!("{}", n_in);
+        log::debug!("{}", n_in);
         // load snvs
         let snvs_in = io_genot::load_snvs(&fin, gfmt);
         let (m, use_snvs) = snv::make_use_snvs(fin_snv, &snvs_in);
@@ -465,7 +717,7 @@ mod tests {
         let m_in: usize = io_genot::compute_num_snv(&fin, gfmt).unwrap();
         log::debug!("{}", m_in);
         let n_in: usize = io_genot::compute_num_sample(&fin, gfmt).unwrap();
-        println!("{}", n_in);
+        log::debug!("{}", n_in);
         // load snvs
         let snvs_in = io_genot::load_snvs(&fin, gfmt);
         let (m, use_snvs) = snv::make_use_snvs(fin_snv, &snvs_in);
@@ -487,9 +739,10 @@ mod tests {
     fn test_assign_pred_from_bed() {
         let mut g = GenotSnv::new_empty(6);
         // [2, 0, 3, 0, 1, 0]
-        let pbuf = vec![2.0f64, 0.0, 3.0, 0.0, 1.0, 0.0];
+        //let pbuf = vec![2.0f64, 0.0, 3.0, 0.0, 1.0, 0.0];
+        let pbuf = vec![2i8, 0, 3, 0, 1, 0];
 
-        assign_pred_from_genot(&mut g.as_genot_snv_mut_snv(), &pbuf);
+        assign_pred_from_genot_i8(&mut g.as_genot_snv_mut_snv(), &pbuf);
         assert_eq!(g.vals(), vec![2u8, 0, 3, 0, 1, 0]);
     }
 
@@ -500,7 +753,7 @@ mod tests {
         //let use_samples = vec![true; use_samples.len()];
         //let g = generate_genot_plink(&fin, gfmt, m, n, &use_snvs, Some(&use_samples), true);
         let mi = 2;
-        let g = generate_genot_snv_plink2(&fin, gfmt, mi, n, Some(&use_samples), true);
+        let g = generate_genot_snv_plink2(&fin, gfmt, mi, n, Some(&use_samples), false);
         assert_eq!(g.vals(), vec![2, 0, 1, 0, 1, 2, 0, 1, 0, 3]);
     }
 
@@ -511,7 +764,7 @@ mod tests {
         //let use_samples = vec![true; use_samples.len()];
         //let g = generate_genot_plink(&fin, gfmt, m, n, &use_snvs, Some(&use_samples), true);
         let mi = 2;
-        let g = generate_genot_snv_plink2(&fin, gfmt, mi, n, Some(&use_samples), true);
+        let g = generate_genot_snv_plink2(&fin, gfmt, mi, n, Some(&use_samples), false);
         assert_eq!(g.vals(), vec![2, 0, 1, 0, 1, 2, 0, 1, 0, 3]);
     }
 
@@ -519,7 +772,7 @@ mod tests {
     fn test_generate_genot_plink2vzs_ref() {
         let (fin, gfmt, _, _, n, _, use_samples) = setup_test3ref();
         let mi = 2;
-        let g = generate_genot_snv_plink2(&fin, gfmt, mi, n, Some(&use_samples), true);
+        let g = generate_genot_snv_plink2(&fin, gfmt, mi, n, Some(&use_samples), false);
         assert_eq!(g.vals(), vec![0, 2, 1, 2, 1, 0, 2, 1, 2, 3]);
     }
 
@@ -527,14 +780,14 @@ mod tests {
     fn test_generate_genot_snv_plink2vzs_part() {
         let (fin, gfmt, _, _, n, _, use_samples) = setup_test3_part();
         let mi = 2;
-        let g = generate_genot_snv_plink2(&fin, gfmt, mi, n, Some(&use_samples), true);
+        let g = generate_genot_snv_plink2(&fin, gfmt, mi, n, Some(&use_samples),false);
         assert_eq!(g.vals(), vec![0, 0, 2, 1, 3]);
     }
 
     #[test]
     fn test_generate_genot_whole_plink2vzs_part() {
         let (fin, gfmt, _, m, n, use_snvs, use_samples) = setup_test3_part();
-        let g = generate_genot_plink2(&fin, gfmt, m, n, &use_snvs, Some(&use_samples), true);
+        let g = generate_genot_plink2(&fin, gfmt, m, n, Some(&use_snvs), Some(&use_samples), false);
         let mut giter = g.iter_snv();
         // [2,1,0,0,0,2,1,0,0,3]
         assert_eq!(giter.next().unwrap().vals(), vec![1, 0, 2, 0, 3]);
@@ -545,7 +798,7 @@ mod tests {
     #[test]
     fn test_generate_genot_whole_plink2vzs() {
         let (fin, gfmt, _, m, n, use_snvs, use_samples) = setup_test3();
-        let g = generate_genot_plink2(&fin, gfmt, m, n, &use_snvs, Some(&use_samples), true);
+        let g = generate_genot_plink2(&fin, gfmt, m, n, Some(&use_snvs), Some(&use_samples), false);
         let mut giter = g.iter_snv();
         // [2,1,0,0,0,2,1,0,0,3]
         assert_eq!(

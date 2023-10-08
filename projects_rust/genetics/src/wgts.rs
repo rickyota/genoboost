@@ -1,5 +1,4 @@
-
-use super::{wgt,Wgt};
+use super::{wgt, Wgt};
 use std::path::Path;
 
 #[derive(Debug, Clone)]
@@ -10,14 +9,14 @@ pub struct Wgts {
 }
 
 impl Wgts {
-    pub fn new_from_file(fwgt: &Path) -> Self {
-        let wgts: Vec<Wgt> = wgt::io::load_wgts_file(fwgt);
+    //pub fn new_from_file(fwgt: &Path,    use_snv_pos: bool,is_nonadd:bool) -> Self {
+    pub fn new_from_file(fwgt: &Path, is_nonadd: bool) -> Self {
+        let wgts: Vec<Wgt> = wgt::io::load_wgts_file(fwgt, is_nonadd);
+        //let wgts: Vec<Wgt> = wgt::io::load_wgts_file(fwgt,use_snv_pos,is_nonadd);
 
         // TODO: check colums match io::wgt_columns()
 
-        Wgts {
-            wgts,
-        }
+        Wgts { wgts }
     }
 
     pub fn wgts_mut(&mut self) -> &mut [Wgt] {

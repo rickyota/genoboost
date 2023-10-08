@@ -33,103 +33,133 @@ use crate::{wgt::Coef, Wgt};
 
 //mod logistic;
 
-
 //smartcore v3 or mysmartcore
 pub fn logistic_regression_covs(samples: &Samples) -> Vec<Wgt> {
-    let covs_val = samples.covs();
-    // TODO: return None
-    if let None = covs_val {
-        return vec![];
-    }
+    //let covs_val = samples.covs();
+    //// TODO: return None
+    //if let None = covs_val {
+    //    return vec![];
+    //}
+    if let Some(covs) = samples.covs() {
+        // load normed vals
+        let v = covs.vals_row_major_norm();
+        let ys = samples.phe_unwrap().inner_i32();
 
-    let covs_val = covs_val.unwrap();
-    let v = covs_val.vals_row_major_norm();
-    let ys = samples.phe().inner_i32();
+        let cov_n = covs.covs_n();
+        //let cov_n=v.len();
+        log::debug!("cov_n {}", cov_n);
+        log::debug!("ys true count {}", samples.phe_unwrap().count());
+        log::debug!("ys false count {}", samples.phe_unwrap().count_false());
 
-    let cov_n = covs_val.covs_n();
-    //let cov_n=v.len();
-    log::debug!("cov_n {}", cov_n);
-    log::debug!("ys true count {}", samples.phe().count());
-    log::debug!("ys false count {}", samples.phe().count_false());
+        log::debug!("norm v");
+        log::debug!("norm mt {}, {}", v[0][0], v[0][1]);
 
-    log::debug!("norm v");
-    log::debug!("norm mt {}, {}", v[0][0], v[0][1]);
+        // dense_matrix from 2d array
+        // https://docs.rs/smartcore/latest/src/smartcore/linalg/naive/dense_matrix.rs.html#248
+        //let (v, row_n, col_n) = covs_val.vals_row_major_vec();
+        //log::debug!("row, col {}, {}",row_n,col_n);
+        let mt = DenseMatrix::from_2d_vec(&v);
+        //let mt = DenseMatrix::from_2d_vec(&covs_val.vals_row_major());
+        // default: alpha=0.0
+        // confirmed to output the same result as sklearn
+        let lr = LogisticRegression::fit(&mt, &ys, Default::default()).unwrap();
+        log::debug!("logreg");
+        log::debug!("intercept {:?}", lr.intercept());
+        log::debug!("coef {:?}", lr.coefficients());
 
-    // dense_matrix from 2d array
-    // https://docs.rs/smartcore/latest/src/smartcore/linalg/naive/dense_matrix.rs.html#248
-    //let (v, row_n, col_n) = covs_val.vals_row_major_vec();
-    //log::debug!("row, col {}, {}",row_n,col_n);
-    let mt = DenseMatrix::from_2d_vec(&v);
-    //let mt = DenseMatrix::from_2d_vec(&covs_val.vals_row_major());
-    // default: alpha=0.0
-    // confirmed to output the same answer as sklearn
-    let lr = LogisticRegression::fit(&mt, &ys, Default::default()).unwrap();
-    log::debug!("logreg");
-    log::debug!("intercept {:?}", lr.intercept());
-    log::debug!("coef {:?}", lr.coefficients());
+        //revert normalization
+        let means = samples.covs().unwrap().means();
+        let stds = samples.covs().unwrap().stds();
 
-    //revert normalization
-    let means = samples.covs().unwrap().means();
-    let stds = samples.covs().unwrap().stds();
+        let coefs_norm = lr.coefficients().iter().map(|x| *x).collect::<Vec<f64>>();
+        assert_eq!(coefs_norm.len(), covs.covs_n());
 
-    let coefs_norm = lr.coefficients().iter().map(|x| *x).collect::<Vec<f64>>();
-    assert_eq!(coefs_norm.len(), covs_val.covs_n());
-
-    // c=c' / std
-    let coefs = coefs_norm
-        .iter()
-        .zip(stds.iter())
-        .map(|(c, s)| c / s)
-        .collect::<Vec<f64>>();
-    //let coef=coefs_norm.iter().zip(means.iter()).zip(stds.iter()).map(|((c,m),s)| )
-
-    let intercept_norm = lr.intercept().iter().map(|x| *x).collect::<Vec<f64>>();
-    log::debug!("intercept_norm {:?}", intercept_norm);
-    assert_eq!(intercept_norm.len(), 1);
-    let intercept_norm = intercept_norm[0];
-    if intercept_norm.is_nan() {
-        panic!("Intercept is NaN.");
-    }
-
-    // i = i' - sum( c' * m / std) = i' - sum( c * m )
-    let intercept = intercept_norm
-        + coefs
+        // c=c' / std
+        let coefs = coefs_norm
             .iter()
-            .zip(means.iter())
-            .map(|(c, m)| -c * m)
-            .sum::<f64>();
+            .zip(stds.iter())
+            .map(|(c, s)| c / s)
+            .collect::<Vec<f64>>();
+        //let coef=coefs_norm.iter().zip(means.iter()).zip(stds.iter()).map(|((c,m),s)| )
 
-    let mut wgts_cov: Vec<Wgt> = Vec::new();
-
-    //let mut intercept=vec![0.0f64;1];
-    //let mut intercept=Vec::with_capacity(1);
-    //lr.intercept().copy_col_as_vec(0, &mut intercept);
-    //let intercept = lr.intercept().clone().to_row_vector()[0];
-
-    //let intercept=lr.intercept().col_iter().collect::<Vec<f64>>();
-    //let intercept = lr.intercept().iter().map(|x| *x).collect::<Vec<f64>>();
-    //log::debug!("intercept {:?}", intercept);
-    //assert_eq!(intercept.len(), 1);
-    //let intercept = intercept[0];
-    if intercept.is_nan() {
-        panic!("Intercept is NaN.");
-    }
-    let cov_id = CovId::new_const();
-    let wgt_const = Wgt::construct_cov(cov_id, Coef::Linear(intercept));
-    wgts_cov.push(wgt_const);
-
-    let cov_indexs = covs_val.cov_indexs().unwrap();
-    for wgt_i in 0..covs_val.covs_n() {
-        let coef = coefs[wgt_i];
-        if coef.is_nan() {
-            panic!("coef is NaN.");
+        let intercept_norm = lr.intercept().iter().map(|x| *x).collect::<Vec<f64>>();
+        log::debug!("intercept_norm {:?}", intercept_norm);
+        assert_eq!(intercept_norm.len(), 1);
+        let intercept_norm = intercept_norm[0];
+        if intercept_norm.is_nan() {
+            panic!("Intercept is NaN.");
         }
-        let cov_id = CovId::new_cov(cov_indexs[wgt_i].name().to_owned());
-        let wgt_cov = Wgt::construct_cov(cov_id, Coef::Linear(coef));
-        wgts_cov.push(wgt_cov);
-    }
 
-    wgts_cov
+        // i = i' - sum( c' * m / std) = i' - sum( c * m )
+        let intercept = intercept_norm
+            + coefs
+                .iter()
+                .zip(means.iter())
+                .map(|(c, m)| -c * m)
+                .sum::<f64>();
+
+        let mut wgts_cov: Vec<Wgt> = Vec::new();
+
+        //let mut intercept=vec![0.0f64;1];
+        //let mut intercept=Vec::with_capacity(1);
+        //lr.intercept().copy_col_as_vec(0, &mut intercept);
+        //let intercept = lr.intercept().clone().to_row_vector()[0];
+
+        //let intercept=lr.intercept().col_iter().collect::<Vec<f64>>();
+        //let intercept = lr.intercept().iter().map(|x| *x).collect::<Vec<f64>>();
+        //log::debug!("intercept {:?}", intercept);
+        //assert_eq!(intercept.len(), 1);
+        //let intercept = intercept[0];
+        if intercept.is_nan() {
+            panic!("Intercept is NaN.");
+        }
+        let cov_id = CovId::new_const();
+        let wgt_const = Wgt::construct_cov(cov_id, Coef::Linear(intercept));
+        wgts_cov.push(wgt_const);
+
+        let cov_indexs = covs.cov_indexs().unwrap();
+        for wgt_i in 0..covs.covs_n() {
+            let coef = coefs[wgt_i];
+            if coef.is_nan() {
+                panic!("coef is NaN.");
+            }
+            let cov_id = CovId::new_cov(cov_indexs[wgt_i].name().to_owned());
+            let wgt_cov = Wgt::construct_cov(cov_id, Coef::Linear(coef));
+            wgts_cov.push(wgt_cov);
+        }
+
+        wgts_cov
+    } else {
+        //    return vec![];
+        // regress on const
+
+        log::debug!("Regression on const value only.");
+
+        log::debug!("ys true count {}", samples.phe_unwrap().count());
+        log::debug!("ys false count {}", samples.phe_unwrap().count_false());
+
+        let y1_n = samples.phe_unwrap().count() as f64;
+        let y0_n = samples.phe_unwrap().count_false() as f64;
+        // TODO: test
+        let intercept = (y1_n / y0_n).ln();
+
+        // cannot run on smartcore since automatically adds const values
+        //let ys = samples.phe().inner_i32();
+        //let sample_n = samples.samples_n();
+        //let v = vec![vec![1.0f64; sample_n]];
+        //let mt = DenseMatrix::from_2d_vec(&v);
+        //let lr = LogisticRegression::fit(&mt, &ys, Default::default()).unwrap();
+
+        let mut wgts_cov: Vec<Wgt> = Vec::new();
+        if intercept.is_nan() {
+            panic!("Intercept is NaN.");
+        }
+        let cov_id = CovId::new_const();
+        let wgt_const = Wgt::construct_cov(cov_id, Coef::Linear(intercept));
+        wgts_cov.push(wgt_const);
+
+        wgts_cov
+    }
 }
 
 /* // smartcore v0.2.0
@@ -388,11 +418,10 @@ pub fn logistic_regression_covs(samples: &Samples) -> Vec<Wgt> {
     wgts_cov
 } */
 
-
 #[cfg(test)]
 mod tests {
     //use super::*;
-/* 
+    /*
     #[test]
     fn simple_example_1() {
         let log_reg = LogisticRegression::default();

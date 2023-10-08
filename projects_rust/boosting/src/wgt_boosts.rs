@@ -28,9 +28,6 @@ impl WgtBoosts {
             columns: io::wgt_columns(boost_type),
             index_next_write: 0,
         }
-
-
-        
     }
 
     //pub fn new_from_file_pathbuf(fin_wgt: &Path, boost_type: BoostType) -> Self {
@@ -117,9 +114,14 @@ impl WgtBoosts {
         &self.columns
     }
 
-    pub fn use_missing(&self)->bool{
+    //pub fn use_missing(&self) -> bool {
+    //    // TODO: ok?
+    //    self.columns.contains(&"scorem".to_string())
+    //}
+
+    pub fn fill_missing(&self) -> bool {
         // TODO: ok?
-        self.columns.contains(&"scorem".to_string())
+        !self.columns.contains(&"scorem".to_string())
     }
 
     // TODO: test
@@ -133,7 +135,7 @@ impl WgtBoosts {
             .len()
     }
 
-    pub fn last_wgt(&self)->Option<&WgtBoost>{
+    pub fn last_wgt(&self) -> Option<&WgtBoost> {
         self.wgts().last()
         //if self.wgts_n()==0{
         //    return None;

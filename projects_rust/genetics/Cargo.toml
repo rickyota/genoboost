@@ -15,7 +15,6 @@ plink2 = ["dep:pgenlib","dep:bindgen","dep:zstd"]
 pgenlib = {package="pgenlib_rust", path = "../../lib/pgenlib_rust", optional = true}
 bindgen = {version="0.65.1", optional = true}
 zstd = {version="0.12", optional=true}
-#zstd = "0.12"
 cmatrix={path="../cmatrix"}
 mysmartcore={ path="../../lib/mysmartcore"}
 maligned="0"

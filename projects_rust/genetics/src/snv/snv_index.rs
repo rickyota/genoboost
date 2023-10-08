@@ -11,13 +11,17 @@ type Alleles = (String, String);
 /// all programs uses minor/major but input plink might have different one
 #[derive(Clone, Hash, Debug, Default)]
 pub struct SnvId {
+    // TODO: rs->id
     rs: String,
     chrom: Chrom,
     pos: usize,
     alleles: Alleles,
     // only for one letter
     alleles_flip: Alleles,
+    //alleles_ref_alt: Alleles,
     sida: String,
+    sid: String,
+    //vid: String,
 }
 
 // how to implement?
@@ -42,6 +46,8 @@ impl SnvId {
         pos: &str,
         a1: String,
         a2: String,
+        // this is ok but need changes all over the codes; instead use in vid()
+        //use_snv_pos: bool,
     ) -> SnvId {
         let mut snv = SnvId {
             rs,
@@ -50,10 +56,14 @@ impl SnvId {
             alleles: (a1, a2),
             alleles_flip: ("".to_owned(), "".to_owned()),
             sida: "".to_string(),
+            sid: "".to_string(),
+            //vid: "".to_string(),
         };
         //snv.check_alleles();
         snv.set_alleles_flip();
         snv.set_sida();
+        snv.set_sid();
+        //snv.set_vid(use_snv_pos);
         snv
     }
 
@@ -67,6 +77,7 @@ impl SnvId {
             alleles: ("".to_owned(), "".to_owned()),
             alleles_flip: ("".to_owned(), "".to_owned()),
             sida: "".to_string(),
+            sid: "".to_string(),
         };
         //snv.check_alleles();
         //snv.set_alleles_revcomp();
@@ -110,6 +121,17 @@ impl SnvId {
             + &self.a2();
     }
 
+    fn set_sid(&mut self) {
+        self.sid = self.chrom.to_string() + ":" + &self.pos.to_string();
+    }
+
+    pub fn reverse_alleles(&mut self) {
+        // update alleles, alleles_flip, sida
+        self.alleles = (self.alleles.1.clone(), self.alleles.0.clone());
+        self.set_alleles_flip();
+        self.set_sida();
+    }
+
     pub fn rs(&self) -> &str {
         &self.rs
     }
@@ -126,19 +148,31 @@ impl SnvId {
         &self.sida
     }
 
-    pub fn alleles(&self) -> (&str, &str) {
+    fn _sid(&self) -> &str {
+        &self.sid
+    }
+
+    pub fn vid(&self, use_snv_pos: bool) -> &str {
+        if use_snv_pos {
+            &self.sid
+        } else {
+            &self.rs
+        }
+    }
+
+    fn alleles(&self) -> (&str, &str) {
         (&self.alleles.0, &self.alleles.1)
     }
 
-    pub fn alleles_rev(&self) -> (&str, &str) {
+    fn alleles_rev(&self) -> (&str, &str) {
         (&self.alleles.1, &self.alleles.0)
     }
 
-    pub fn alleles_flip(&self) -> (&str, &str) {
+    fn alleles_flip(&self) -> (&str, &str) {
         (&self.alleles_flip.0, &self.alleles_flip.1)
     }
 
-    pub fn alleles_rev_flip(&self) -> (&str, &str) {
+    fn alleles_rev_flip(&self) -> (&str, &str) {
         (&self.alleles_flip.1, &self.alleles_flip.0)
     }
 
@@ -149,17 +183,17 @@ impl SnvId {
         &self.alleles.1
     }
     // flip
-    pub fn a1f(&self) -> &str {
+    fn _a1f(&self) -> &str {
         &self.alleles_flip.0
     }
     // flip
-    pub fn a2f(&self) -> &str {
+    fn _a2f(&self) -> &str {
         &self.alleles_flip.1
     }
 
-    pub fn to_sid(&self) -> String {
-        self.chrom.to_string() + ":" + &self.pos.to_string()
-    }
+    //pub fn to_sid(&self) -> String {
+    //    self.chrom.to_string() + ":" + &self.pos.to_string()
+    //}
 
     //pub fn to_sida_rev(&self) -> String {
     //    self.chrom.to_string() + ":" + &self.pos.to_string() + ":" + &self.a2() + ":" + &self.a1()
@@ -197,12 +231,12 @@ impl SnvId {
     //    }
     //}
 
-    pub fn is_one_letter(&self) -> bool {
+    fn is_one_letter(&self) -> bool {
         (self.a1().len() == 1) && (self.a2().len() == 1)
     }
 
     // list all candidates
-    pub fn flip_or_rev(&self) -> Option<((&str, &str), (&str, &str), (&str, &str), (&str, &str))> {
+    fn flip_or_rev(&self) -> Option<((&str, &str), (&str, &str), (&str, &str), (&str, &str))> {
         if !self.is_one_letter() {
             return None;
         }
@@ -215,8 +249,9 @@ impl SnvId {
     }
 
     // to reverse genotype
-    pub fn is_rev(&self, snv: &SnvId) -> bool {
-        if self.to_sid() != snv.to_sid() {
+    pub fn is_rev(&self, snv: &SnvId, use_snv_pos: bool) -> bool {
+        //if self.sid() != snv.sid() {
+        if self.vid(use_snv_pos) != snv.vid(use_snv_pos) {
             return false;
         }
         if self.is_one_letter() {
@@ -408,7 +443,7 @@ mod tests {
             "A".to_owned(),
             "C".to_owned(),
         );
-        assert!(!snv_index1.is_rev(&snv_index2));
+        assert!(!snv_index1.is_rev(&snv_index2, false));
 
         let snv_index2 = SnvId::construct_snv_index(
             "rs1".to_owned(),
@@ -417,7 +452,7 @@ mod tests {
             "T".to_owned(),
             "G".to_owned(),
         );
-        assert!(!snv_index1.is_rev(&snv_index2));
+        assert!(!snv_index1.is_rev(&snv_index2, false));
 
         let snv_index2 = SnvId::construct_snv_index(
             "rs1".to_owned(),
@@ -426,7 +461,7 @@ mod tests {
             "C".to_owned(),
             "A".to_owned(),
         );
-        assert!(snv_index1.is_rev(&snv_index2));
+        assert!(snv_index1.is_rev(&snv_index2, false));
 
         let snv_index2 = SnvId::construct_snv_index(
             "rs1".to_owned(),
@@ -435,7 +470,7 @@ mod tests {
             "G".to_owned(),
             "T".to_owned(),
         );
-        assert!(snv_index1.is_rev(&snv_index2));
+        assert!(snv_index1.is_rev(&snv_index2, false));
 
         // alleles do not match
         let snv_index2 = SnvId::construct_snv_index(
@@ -445,7 +480,7 @@ mod tests {
             "A".to_owned(),
             "G".to_owned(),
         );
-        assert!(!snv_index1.is_rev(&snv_index2));
+        assert!(!snv_index1.is_rev(&snv_index2, false));
 
         // snv does not match
         let snv_index2 = SnvId::construct_snv_index(
@@ -455,7 +490,7 @@ mod tests {
             "C".to_owned(),
             "A".to_owned(),
         );
-        assert!(!snv_index1.is_rev(&snv_index2));
+        assert!(!snv_index1.is_rev(&snv_index2, false));
     }
 
     /// test of Display

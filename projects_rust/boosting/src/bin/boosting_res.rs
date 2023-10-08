@@ -49,8 +49,6 @@ struct Cli {
     threads: Option<usize>,
     #[arg(long, global = true, help = "Verbose")]
     verbose: bool,
-    #[arg(long, global = true, help = "ccccccc")]
-    cdef: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -86,7 +84,7 @@ struct TrainArgs {
     phe: Option<String>,
     // parse later
     #[arg(long)]
-    cov: String,
+    cov: Option<String>,
     //#[arg(long)]
     //file_cov: Option<String>,
     #[arg(long)]
@@ -113,6 +111,11 @@ struct TrainArgs {
     //use_adjloss: bool,
     //#[arg(long)]
     //use_const_for_loss: bool,
+    #[arg(
+        long,
+        help = "Set major allele in training dataset as a2 allele. Otherwise, set ref allele as a2 allele."
+    )]
+    major_a2_train: bool,
     #[arg(long)]
     resume: bool,
     #[arg(long)]
@@ -136,19 +139,22 @@ struct ScoreArgs {
     file_sample: Option<String>,
     #[arg(long)]
     file_phe: Option<String>,
+    //#[arg(long)]
+    //phe: Option<String>,
     #[arg(long)]
-    phe: Option<String>,
-    #[arg(long)]
-    cov: String,
+    cov: Option<String>,
     //#[arg(long)]
     //file_cov: Option<String>,
     // if indicated, do not use para_best and calc score of all paras
-    #[arg(long)]
+    #[arg(long, value_parser, num_args = 1.., value_delimiter = ' ')]
     iters: Option<Vec<usize>>,
-    #[arg(long)]
+    #[arg(long, value_parser, num_args = 1.., value_delimiter = ' ')]
     learning_rates: Option<Vec<f64>>,
     #[arg(long)]
     use_iter: bool,
+    // TMP: to remove
+    #[arg(long)]
+    use_snv_pos: bool,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, ValueEnum)]
@@ -181,6 +187,7 @@ impl GenotFormatArg {
 fn main() {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
+        // or use _enabled!
         if is_x86_feature_detected!("avx2") {
             log::info!("Able to use SIMD.")
         } else {
@@ -275,6 +282,8 @@ fn main() {
             log::info!("file_sample {:?}", fin_sample);
             log::info!("boost_params {:?}", boost_params);
 
+            let make_major_a2_train = args.major_a2_train;
+
             let use_adjloss = true;
             //let use_adjloss = args.use_adjloss;
             let use_const_for_loss = false;
@@ -287,7 +296,7 @@ fn main() {
                 genot_format,
                 fin_phe.as_deref(),
                 phe_name.as_deref(),
-                &cov_name,
+                cov_name.as_deref(),
                 boost_method,
                 &boost_params,
                 fin_snv.as_deref(),
@@ -301,6 +310,7 @@ fn main() {
                 None, //prune_snv,
                 //&learning_rates,
                 is_monitor,
+                make_major_a2_train,
             );
         }
         Commands::Score(args) => {
@@ -308,7 +318,7 @@ fn main() {
             let fin = PathBuf::from(args.file_genot);
             let genot_format = args.genot_format.to_naive();
             let fin_phe = args.file_phe.map(|x| PathBuf::from(x));
-            let phe_name = args.phe;
+            //let phe_name = args.phe;
             let cov_name = args.cov;
             let fin_sample = args.file_sample.map(|x| PathBuf::from(x));
             //let fin_cov = args.file_cov.map(|x| PathBuf::from(x));
@@ -345,8 +355,8 @@ fn main() {
                 genot_format,
                 phe_buf.as_deref(),
                 //fin_phe.as_deref(),
-                phe_name.as_deref(),
-                Some(&cov_name),
+                //phe_name.as_deref(),
+                cov_name.as_deref(),
                 is_every_para,
                 iterations.as_deref(),
                 dout_wgt.as_deref(), // use enum?
@@ -357,6 +367,7 @@ fn main() {
                 //boost_param,
                 &learning_rates,
                 use_iter,
+                args.use_snv_pos,
             );
         }
     }

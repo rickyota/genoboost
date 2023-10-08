@@ -9,8 +9,7 @@ pub const MACHINE_EPS: f64 = 1e-12;
 
 //pub type WgtColumn = Coef;
 
-// TODO: make Five
-// TODO:remove Six (same as Seven)
+// TODO: reverse order: (d0, n0, d1, n1, d2, n2, m)
 #[derive(Copy, Clone, Debug)]
 pub enum ContingencyTable {
     // AdaBoost
@@ -27,25 +26,36 @@ pub enum ContingencyTable {
     // FreeModelMissing
     // (D2, N2, D1, N1, D0, N0, M); Diseased, Not diseased, Missing
     Seven((f64, f64, f64, f64, f64, f64, f64)),
+    // count
+    // (D2, N2, D1, N1, D0, N0, DM, NM); Diseased, Not diseased, Missing
+    EightCount((usize, usize, usize, usize, usize, usize, usize, usize)),
 }
 
 impl ContingencyTable {
     pub fn new_four(x: (f64, f64, f64, f64)) -> ContingencyTable {
         let x = ContingencyTable::Four(x);
-        x.check();
+        x.check_f64();
         x
     }
     pub fn new_five(x: (f64, f64, f64, f64, f64)) -> ContingencyTable {
         let x = ContingencyTable::Five(x);
-        x.check();
+        x.check_f64();
         x
     }
 
     pub fn new_seven(x: (f64, f64, f64, f64, f64, f64, f64)) -> ContingencyTable {
         let x = ContingencyTable::Seven(x);
-        x.check();
+        x.check_f64();
         x
     }
+
+    pub fn new_eight_count(
+        x: (usize, usize, usize, usize, usize, usize, usize, usize),
+    ) -> ContingencyTable {
+        let x = ContingencyTable::EightCount(x);
+        x
+    }
+
     pub fn two(self) -> (f64, f64) {
         match self {
             ContingencyTable::Two(x) => x,
@@ -71,6 +81,13 @@ impl ContingencyTable {
         }
     }
 
+    pub fn eight_count(self) -> (usize, usize, usize, usize, usize, usize, usize, usize) {
+        match self {
+            ContingencyTable::EightCount(x) => x,
+            _ => panic!("Not eight count."),
+        }
+    }
+
     pub fn is_five(self) -> bool {
         if let ContingencyTable::Seven(_) = self {
             true
@@ -86,7 +103,7 @@ impl ContingencyTable {
         }
     }
 
-    pub fn check(self) {
+    pub fn check_f64(self) {
         self.check_all_positive();
     }
 
@@ -123,6 +140,7 @@ impl ContingencyTable {
                     && (n0 > -MACHINE_EPS)
                     && (m >= -MACHINE_EPS)
             }
+            Self::EightCount(_) => true,
         };
         if !f {
             panic!(
@@ -277,7 +295,8 @@ pub fn adjust_eps_logit(
     epsilons_wzs: (f64, f64), //(epsilon_case: f64, epsilon_cont: f64,)
     epsilons_wls: (f64, f64), //(epsilon_case: f64, epsilon_cont: f64,)
     eps: Option<Eps>,
-    table8_count: (usize, usize, usize, usize, usize, usize, usize, usize),
+    //table8_count: (usize, usize, usize, usize, usize, usize, usize, usize),
+    table8_count: ContingencyTable,
 ) -> ((f64, f64, f64), (f64, f64, f64), bool) {
     if eps.is_some() && eps.unwrap().dom() {
         panic!("wrong eps")
@@ -336,14 +355,15 @@ pub fn adjust_eps_logit(
 fn adjust_eps_logit_nondom_add_cat(
     wzs_sum: (f64, f64, f64),
     epsilons: (f64, f64),
-    table8_count: (usize, usize, usize, usize, usize, usize, usize, usize),
+    //table8_count: (usize, usize, usize, usize, usize, usize, usize, usize),
+    table8_count: ContingencyTable,
     negative_for_cont: bool,
 ) -> ((f64, f64, f64), bool) {
     let (wzs_sum2, wzs_sum1, wzs_sum0) = wzs_sum;
     //let (mut wzs_sum2, mut wzs_sum1, mut wzs_sum0)=wzs_sum;
     //let (epsilon_case, epsilon_cont) = epsilons_wzs;
 
-    let (d2, n2, d1, n1, d0, n0, _dm, _nm) = table8_count;
+    let (d2, n2, d1, n1, d0, n0, _dm, _nm) = table8_count.eight_count();
 
     fn add_eps_sum(
         wzs_sum: f64,

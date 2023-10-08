@@ -1,5 +1,24 @@
 use genetics::genot::prelude::*;
 
+pub unsafe fn calculate_coef_gt_logit_sm(
+    gsnv: &GenotSnvRef,
+    wzs_pad: &[f64],
+    wls_pad: &[f64],
+    //phe: &Phe,
+    //epsilons_wls: (f64, f64), //(epsilon_case: f64, epsilon_cont: f64,)
+    //epsilons_wzs: (f64, f64), //(epsilon_case: f64, epsilon_cont: f64,)
+    //eps: Eps,
+) -> ((f64, f64, f64), (f64, f64, f64)) {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            //let (wzs_sum, wls_sum) = calc::calculate_coef_gt_logit_simd_sm(gsnv, wzs_pad, wls_pad);
+            return calculate_coef_gt_logit_simd_sm(gsnv, wzs_pad, wls_pad);
+        }
+    }
+    return calculate_coef_gt_logit_nosimd_sm(gsnv, wzs_pad, wls_pad);
+}
+
 // TODO: move to coef.rs
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
@@ -231,4 +250,16 @@ pub unsafe fn calculate_coef_gt_logit_simd_sm(
     //let sm=0.0f64;
 
     //Coef::Score4((s0, s1, s2, sm))
+}
+
+pub unsafe fn calculate_coef_gt_logit_nosimd_sm(
+    _gsnv: &GenotSnvRef,
+    _wzs_pad: &[f64],
+    _wls_pad: &[f64],
+    //phe: &Phe,
+    //epsilons_wls: (f64, f64), //(epsilon_case: f64, epsilon_cont: f64,)
+    //epsilons_wzs: (f64, f64), //(epsilon_case: f64, epsilon_cont: f64,)
+    //eps: Eps,
+) -> ((f64, f64, f64), (f64, f64, f64)) {
+    unimplemented!()
 }

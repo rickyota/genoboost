@@ -39,16 +39,23 @@ use genetics::{samples::CovsTrait, Covs, Dataset, Genot, Snvs};
 use loss::LossStruct;
 pub use table::ContingencyTable;
 
-fn boosting_iter_cov(score_ti: &mut [f64], wgtcov: &WgtBoost, covs: &Covs) {
+fn boosting_iter_cov(
+    score_ti: &mut [f64],
+    wgtcov: &WgtBoost,
+    covs: Option<&Covs>,
+    sample_n: usize,
+) {
+    // covs: Option<> for no cov input
     let cov_name = wgtcov.wgt().kind().cov().name();
     let cov_vals_v;
     let cov_vals: &[f64];
     // TODO: cleaner; put these in Covs or here?
     if cov_name == "const" {
-        cov_vals_v = vec![1.0; covs.vals().unwrap()[0].len()];
+        //cov_vals_v = vec![1.0; covs.vals().unwrap()[0].len()];
+        cov_vals_v = vec![1.0; sample_n];
         cov_vals = &cov_vals_v;
     } else {
-        cov_vals = covs.vals_id(cov_name);
+        cov_vals = covs.unwrap().vals_id(cov_name);
     }
     //match wgt.wgt().model().coef() {
 
@@ -57,7 +64,7 @@ fn boosting_iter_cov(score_ti: &mut [f64], wgtcov: &WgtBoost, covs: &Covs) {
 }
 
 fn boosting_iter_snv(
-    ti: usize,
+    iteration: usize,
     boost_param: BoostParam,
     loss: &mut LossStruct,
     genot: &Genot,
@@ -76,7 +83,7 @@ fn boosting_iter_snv(
 
     let mut wgt = loss::search_min_loss_gt(
         loss,
-        ti,
+        iteration,
         genot,
         &sample_weight,
         phe,
@@ -112,20 +119,28 @@ fn boosting_iter_snv(
         log::debug!("coef {:?}", coef_ti);
         */
 
+        let mi: usize = match wgt.wgt().kind() {
+            WgtKind::Snv(_, _, mi) => mi.unwrap(),
+            _ => panic!(),
+        };
+
         // not set cont table
         //wgt.set_contingency_table(table_sum, is_eps);
-        let (coef_ti, is_eps) = coefficient::calculate_coef_root_ada(
+        let (coef_ti, is_eps, is_eff_eps) = coefficient::calculate_coef_ada_update(
             &pred,
+            &genot.to_genot_snv(mi),
             sample_weight,
             //ps_pad,
             phe,
             boost_param.learning_rate(),
             boost_param.eps(),
+            boost_param.eff_eps(),
             boost_param.boost_type(),
         );
         log::debug!("coef {:?}", coef_ti);
         wgt.set_coef(coef_ti);
         wgt.set_is_eps(is_eps);
+        wgt.set_is_eff_eps(is_eff_eps);
         log::debug!("wgt {:?}", wgt);
     } else if boost_param.boost_type().is_type_logit() {
         let mi: usize = match wgt.wgt().kind() {
@@ -135,7 +150,7 @@ fn boosting_iter_snv(
 
         //let coef_ti: Coef;
         // TODO: cleaner
-        let (coef_ti, is_eps, is_eff_eps) = coefficient::calculate_coef_root_logit(
+        let (coef_ti, is_eps, is_eff_eps) = coefficient::calculate_coef_logit_update(
             &genot.to_genot_snv(mi),
             sample_weight,
             //&pred,
@@ -265,28 +280,32 @@ pub fn boosting_covs(
 
     log::debug!("wgtcovs_logreg: {:?}", &wgtcovs_logreg);
 
-    let covs = dataset.samples().covs().unwrap();
+    //let covs = dataset.samples().covs().unwrap();
+    let covs = dataset.samples().covs();
+
+    let sample_n = dataset.samples().samples_n();
 
     let p = wgtcovs_logreg.len();
     // TODO: why splitting...?
     for pi in 0..p {
         let wgtcov = wgtcovs_logreg[pi].clone();
-        boosting_iter_cov(scores, &wgtcov, covs);
+        boosting_iter_cov(scores, &wgtcov, covs, sample_n);
         wgts.add_wgt(wgtcov);
     }
 
     if let Some(dataset_val) = dataset_val {
-        let covs = dataset_val.samples().covs().unwrap();
+        let covs = dataset_val.samples().covs();
+        // let covs = dataset_val.samples().covs().unwrap();
 
         let p = wgtcovs_logreg.len();
         for pi in 0..p {
             let wgtcov = wgtcovs_logreg[pi].clone();
-            boosting_iter_cov(scores_val, &wgtcov, covs);
+            boosting_iter_cov(scores_val, &wgtcov, covs, sample_n);
         }
     }
 
     log::debug!("after cov");
-    let phe = dataset.samples().phe();
+    let phe = dataset.samples().phe_unwrap();
     sample_weight.renew_sample_weight(scores, phe);
 
     p
@@ -319,7 +338,7 @@ pub fn boosting_logit_const(
         sample_weight::renew_score(scores_val, &[0u8], &wgt_boost);
     }
 
-    let phe = dataset.samples().phe();
+    let phe = dataset.samples().phe_unwrap();
 
     sample_weight.renew_sample_weight(&scores, phe);
 
@@ -353,6 +372,7 @@ fn run_next_iteration_monitor(
     is_monitor: bool,
 ) -> bool {
     if is_monitor {
+        // FIXME: should use IterationNumber, too
         if ti > ITERATION_NUMBER_SNV_LIMIT {
             log::info!(
                 "Iteration number exceeded the limit, so stop the iteration: {}",
@@ -490,7 +510,7 @@ pub fn boosting<W: std::io::Write>(
 ) -> Option<(usize, f64)> {
     let start_time = Instant::now();
 
-    let phe = dataset.samples().phe();
+    let phe = dataset.samples().phe_unwrap();
     let genot = dataset.genot();
     let snvs = dataset.snvs();
 
@@ -711,7 +731,7 @@ pub fn boosting_batch<W: std::io::Write>(
 
     let start_time = Instant::now();
 
-    let phe = dataset.samples().phe();
+    let phe = dataset.samples().phe_unwrap();
     let genot = dataset.genot();
     let snvs = dataset.snvs();
 
@@ -745,10 +765,19 @@ pub fn boosting_batch<W: std::io::Write>(
         Some(x) => x,
         None => {
             // TODO: make interval even
+            // TODO: make these argument
+            // 5usize output intercept=nan in likelihood-> no effect
+            //let nsnvs_monitor = [
+            //    20usize, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 200, 300,
+            //    400, 500, 600, 700, 800, 900, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000,
+            //    10000,
+            //];
+            // make this default and use this if not in argument
+            // if exceed 20k, run every 1k
             let nsnvs_monitor = [
                 5usize, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 200, 300,
                 400, 500, 600, 700, 800, 900, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000,
-                10000,
+                10000, 11000, 12000, 13000, 14000, 15000, 16000, 17000, 18000, 19000, 20000,
             ];
             nsnvs_monitor.to_vec()
         }
@@ -1025,16 +1054,25 @@ fn update_acc_monitor(
 ) {
     //let n = dataset_val.samples().samples_n();
     let acc = pgs::nagelkerke_r2(
-        &dataset_val.samples().phe().inner_i32(),
-        //&dataset_val.samples().phe().inner_f64(),
+        &dataset_val.samples().phe_unwrap().inner_i32(),
+        //&dataset_val.samples().phe_unwrap().inner_f64(),
         scores_val,
         //&scores_val[..n],
         scores_val_cov,
         //&scores_val_cov[..n],
     );
 
+    if acc.is_nan() {
+        panic!("Accuracy is nan.");
+    }
+
+    log::debug!("nsnvs_monitor {:?}", nsnvs_monitor);
+    log::debug!("nsnv {:?}", nsnv);
     let nsnv_index = nsnvs_monitor.iter().position(|x| *x == nsnv).unwrap();
-    acc_monitor[nsnv_index] = acc
+    log::debug!("nsnv_index {:?}", nsnv_index);
+    log::debug!("acc {:?}", acc);
+    acc_monitor[nsnv_index] = acc;
+    log::debug!("acc_monitor {:?}", acc_monitor);
 }
 
 fn compute_acc_max(acc_monitor: &mut [f64], nsnvs_monitor: &[usize]) -> (usize, f64) {
@@ -1074,9 +1112,14 @@ fn monitor_acc(acc_monitor: &mut [f64], nsnvs_monitor: &[usize], nsnv: usize) ->
         return true;
     }
 
-    if nsnv <= 100 {
+    if nsnv <= 500 {
         return false;
     }
+
+    //if nsnv <= 100 {
+    //    return false;
+    //}
+
     //if nsnv <= 1000 {
     //    return false;
     //}

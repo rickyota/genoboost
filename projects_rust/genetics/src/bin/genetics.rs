@@ -47,8 +47,8 @@ struct ScoreArgs {
     file_sample: Option<String>,
     #[arg(long)]
     file_phe: Option<String>,
-    #[arg(long)]
-    phe: Option<String>,
+    //#[arg(long)]
+    //phe: Option<String>,
     #[arg(long)]
     cov: Option<String>,
     #[arg(long)]
@@ -73,7 +73,6 @@ impl GenotFormatArg {
 }
 
 fn main() {
-
     unimplemented!();
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -118,14 +117,14 @@ fn main() {
             let fin = PathBuf::from(args.file_plink);
             let genot_format = args.genot_format.to_naive();
             let fin_phe = args.file_phe.map(|x| PathBuf::from(x));
-            let phe_name = match args.phe {
-                None => None,
-                // &*String -> str
-                Some(y) => match &*y {
-                    "None" => None,
-                    z => Some(z.to_string()),
-                },
-            };
+            //let phe_name = match args.phe {
+            //    None => None,
+            //    // &*String -> str
+            //    Some(y) => match &*y {
+            //        "None" => None,
+            //        z => Some(z.to_string()),
+            //    },
+            //};
             let cov_name = args.cov;
             let fin_sample = args.file_sample.map(|x| PathBuf::from(x));
 
@@ -146,13 +145,18 @@ fn main() {
                 &fin,
                 genot_format,
                 fin_phe.as_deref(),
-                phe_name.as_deref(),
+                //phe_name.as_deref(),
                 cov_name.as_deref(),
                 dout_wgt.as_deref(), // use enum?
                 fout_wgt.as_deref(),
                 //fin_cov.as_deref(),
                 fin_sample.as_deref(),
+                None,
+                None,
                 is_resume,
+                false,
+                false,
+                false, // TODO
             );
         }
     }
