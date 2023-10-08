@@ -38,8 +38,9 @@ $ genoboost train \
         - [Cross-validation](#score-cv)
         - [Options for Score](#score-option)
 - [Advanced Guide](#advanced-guide)
-    - [Docker](#docker)
-    - [Singularity](#singularity)
+    - [Installation](#advanced-install)
+        - [Docker](#docker)
+        - [Singularity](#singularity)
 
 ## <a name="introduction"></a>Introduction
 
@@ -79,7 +80,7 @@ cargo build --manifest-path ./projects_rust/Cargo.toml --release --bin genoboost
 cp ./projects_rust/target/release/genoboost ./genoboost
 ```
 
-and you can use `genoboost` program.
+and you can use `genoboost` program. This should take less than 5 minutes.
 
 
 #### <a name="install-advanced"></a>Advanced Install
@@ -288,9 +289,10 @@ $ genoboost score \
 
 ## <a name="advanced-guide"></a>Advanced Guide
 
+### <a name="advanced-installation"></a>Advanced Installation
 Using docker or singularity is recommended.
 
-### <a name="docker"></a>Docker
+#### <a name="docker"></a>Docker
 
 ```bash
 $ docker pull rickyota/genoboost:latest \
@@ -302,7 +304,7 @@ $ docker run -it rickyota/genoboost:latest \
     --cov age,sex
 ```
 
-### <a name="singularity"></a>Singularity
+#### <a name="singularity"></a>Singularity
 
 ```bash
 $ singularity build genoboost.sif  ./docker/genoboost.def
@@ -314,6 +316,9 @@ $ singularity run genoboost.sif \
     --cov age,sex
 ```
 
+### <a name="computational-time"></a>Computational Time
+
+For ~216 thousands training samples and ~1.1 million SNVs for 10,000 unique SNVs, GenoBoost would take 10 hours.
 
 
 [release]: https://github.com/rickyota/genoboost/releases
