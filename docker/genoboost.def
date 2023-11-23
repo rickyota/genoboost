@@ -1,0 +1,6 @@
+Bootstrap: docker
+From: rickyota/genoboost:latest
+
+%runscript
+   /opt/genoboost/genoboost "$@"
+

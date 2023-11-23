@@ -12,7 +12,6 @@ file_plink="./test/data/1kg_maf0.1_m1k/genot"
 # covariate file
 file_cov="./test/data/1kg_maf0.1_m1k/genot.cov"
 
-
 # compile
 export RUST_BACKTRACE=full
 cargo build --manifest-path ./projects_rust/Cargo.toml --release --bin genoboost
@@ -24,14 +23,14 @@ cp ./projects_rust/target/release/genoboost ./genoboost
     --file-genot "$file_plink" \
     --file-phe "$file_cov" \
     --cov age,sex \
-    --cross-validation 5
+    --cross-validation 5 \
+    --major-a2-train
 
 # score
 ./genoboost score \
     --dir-score "${dir}/score" \
-    --dir-wgt "${dir}/train"  \
+    --dir-wgt "${dir}/train" \
     --file-genot "$file_plink" \
     --file-phe "$file_cov" \
-    --cov age,sex   \
+    --cov age,sex \
     --cross-validation 5
-

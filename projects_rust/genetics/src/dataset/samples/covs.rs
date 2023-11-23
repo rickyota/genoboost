@@ -374,7 +374,8 @@ impl Covs {
             .unwrap()
             .iter()
             .position(|x| x.name() == name)
-            .unwrap();
+            .unwrap_or_else(|| panic!("name is not in Covs: {}", name));
+        //.unwrap();
         &self.vals().unwrap()[index]
     }
 
@@ -451,7 +452,7 @@ fn parse_cov_name_in_cols(cov_name: &str, cols: &[String]) -> Vec<String> {
     fn index_in_col(x: &str, cols: &[String]) -> usize {
         cols.iter()
             .position(|y| y == x)
-            .expect(&format!("Cov_name {} is not in the column of fin_phe", x))
+            .unwrap_or_else(|| panic!("Cov_name {} is not in the column of fin_phe", x))
     }
 
     let mut cov_name_in_col: Vec<String> = vec![];

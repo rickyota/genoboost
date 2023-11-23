@@ -76,7 +76,6 @@ void PgenReader::Load(std::string filename, uint32_t cur_sample_ct, std::vector<
         exit(-1);
     }
 
-
     plink2::PreinitPgfi(_info_ptr);
     uint32_t cur_variant_ct = UINT32_MAX;
     const char *fname = filename.c_str();
@@ -177,6 +176,7 @@ void PgenReader::Load(std::string filename, uint32_t cur_sample_ct, std::vector<
             if(!plink2::PgrGetFreadBuf(_state_ptr[i])) {
                 plink2::aligned_free(pgr_alloc);
             }
+            // Reducing nthr might help.
             sprintf(errstr_buf, "PgrInit() error %d", static_cast<int>(reterr));
             fprintf(stderr, "%s\n", errstr_buf);
             exit(-1);
@@ -365,6 +365,7 @@ void PgenReader::Read(double *buf, size_t const &n, int const &thr, int variant_
         fprintf(stderr, "%s\n", errstr_buf);
         exit(-1);
     }
+
     uint32_t dosage_ct;
     plink2::PglErr reterr = PgrGet1D(_subset_include_vec[thr], _subset_index[thr], _subset_size[thr], variant_idx, allele_idx, _state_ptr[thr],
                                      _pgv[thr]->genovec, _pgv[thr]->dosage_present, _pgv[thr]->dosage_main, &dosage_ct);
@@ -374,6 +375,8 @@ void PgenReader::Read(double *buf, size_t const &n, int const &thr, int variant_
         fprintf(stderr, "%s\n", errstr_buf);
         exit(-1);
     }
+
+    // this part raise error on omp; -> due to shared buf
     plink2::Dosage16ToDoubles(kGenoRDoublePairs, _pgv[thr]->genovec, _pgv[thr]->dosage_present, _pgv[thr]->dosage_main, _subset_size[thr], dosage_ct,
                               buf);
 }

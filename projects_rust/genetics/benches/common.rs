@@ -50,19 +50,21 @@ fn setup_vars(
     let snv_buf = fin_snv.map(|x| genetics::textfile::read_file_to_end(x, None).unwrap());
     let sample_buf = fin_sample.map(|x| genetics::textfile::read_file_to_end(x, None).unwrap());
 
-    let dataset: Dataset = Dataset::new(
+    let dataset: Dataset = Dataset::new_boost_training(
         fin,
         GenotFormat::Plink1,
         None,
         None,
-        "",
+        None,
         snv_buf.as_deref(),
         //fin_snv,
         sample_buf.as_deref(),
         //fin_sample,
+        //false,
+        true,
+        None,
+        None,
         false,
-        None,
-        None,
     );
     let n = dataset.samples().samples_n();
     let m = dataset.snvs().snvs_n();

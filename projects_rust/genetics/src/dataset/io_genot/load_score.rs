@@ -18,14 +18,32 @@ pub fn load_genotypes_for_score<W: WgtTrait>(
     //wgts: &mut [Wgt],
     n: usize,
     use_samples: Option<&[bool]>,
-    use_missing: bool,
+    fill_missing: bool,
+    use_snv_pos: bool,
 ) -> Genot {
-    let (use_snvs, is_reversed) = create_wgt_to_genotype_index_sametime(fin, gfmt, wgts);
+    // TMP use_snv_pos; make use_snv_pos=false
+    let (use_snvs, is_reversed) =
+        create_wgt_to_genotype_index_sametime(fin, gfmt, wgts, use_snv_pos);
+    //let (use_snvs, is_reversed) = create_wgt_to_genotype_index_sametime(fin, gfmt, wgts, false);
+
+    //let (use_snvs, is_reversed) = create_wgt_to_genotype_index_sametime(fin, gfmt, wgts, false);
     //let (wgt_to_m, use_snvs, is_flipped) = create_wgt_to_genotype_index(fin, wgts);
 
     let m = vec::count_true(&use_snvs);
 
-    let mut g = load::generate_genot(fin, gfmt, m, n, &use_snvs, use_samples, use_missing);
+    if m == 0 {
+        panic!("No variants to be loaded from genotype file.")
+    }
+
+    let mut g = load::generate_genot(
+        fin,
+        gfmt,
+        m,
+        n,
+        Some(&use_snvs),
+        use_samples,
+        fill_missing,
+    );
 
     reverse_genotypes_rayon(&mut g.as_genot_mut(), &is_reversed);
 
@@ -117,13 +135,15 @@ pub fn load_genotypes_for_score_multiwgts(
     //wgts: &mut [Wgt],
     n: usize,
     use_samples: Option<&[bool]>,
-    use_missing: bool,
+    fill_missing:bool,
+    allow_nonexist_snv: bool,
+    use_snv_pos: bool,
 ) -> Genot {
     let snvs_in = io_genot::load_snvs(fin, gfmt);
     let mut uses_snvs = Vec::new();
     for wgts in wgts_multi.iter_mut() {
         // length are m_in
-        let use_snvs = create_wgt_to_genotype_index(&snvs_in, wgts.wgts());
+        let use_snvs = create_wgt_to_genotype_index(&snvs_in, wgts.wgts(), use_snv_pos);
         //let use_snvs = create_wgt_to_genotype_index(fin, gfmt, wgts.wgts());
         uses_snvs.push(use_snvs);
     }
@@ -143,7 +163,8 @@ pub fn load_genotypes_for_score_multiwgts(
     let mut useds_snvs = Vec::new();
     for wgts in wgts_multi.iter_mut() {
         // length are m
-        let (is_reversed, used_snvs) = set_wgts_index_reversed(wgts.wgts_mut(), &snvs_use);
+        let (is_reversed, used_snvs) =
+            set_wgts_index_reversed(wgts.wgts_mut(), &snvs_use, allow_nonexist_snv, use_snv_pos);
         iss_reversed.push(is_reversed);
         useds_snvs.push(used_snvs);
     }
@@ -154,8 +175,24 @@ pub fn load_genotypes_for_score_multiwgts(
     check_consistent_is_reversed(&is_reversed, &iss_reversed, &useds_snvs);
 
     let m = vec::count_true(&use_snvs);
+    if m == 0 {
+        panic!("Using snvs are zero. Please check weight and genotype file.")
+    }
 
-    let mut g = load::generate_genot(fin, gfmt, m, n, &use_snvs, use_samples, use_missing);
+    let mut g = load::generate_genot(
+        fin,
+        gfmt,
+        m,
+        n,
+        Some(&use_snvs),
+        use_samples,
+        fill_missing,
+    );
+
+    // TMP
+    //for snv in g.iter_snv() {
+    //    println!("snv bfr reverse {:?}", &snv.vals()[..10]);
+    //}
 
     reverse_genotypes_rayon(&mut g.as_genot_mut(), &is_reversed);
 
@@ -177,6 +214,7 @@ fn create_wgt_to_genotype_index<W: WgtTrait>(
     //fin: &Path,
     //gfmt: GenotFormat,
     wgts: &[W],
+    use_snv_pos: bool,
 ) -> Vec<bool> {
     //let m_in: usize = io_genot::compute_num_snv(fin, gfmt).unwrap();
     //let snvs_in = io_genot::load_snvs(fin, gfmt);
@@ -188,7 +226,8 @@ fn create_wgt_to_genotype_index<W: WgtTrait>(
     let mut sid_in_to_m_in = HashMap::with_capacity(m_in);
 
     for (si, s) in snvs_in.iter().enumerate() {
-        sid_in_to_m_in.insert(s.to_sid(), si);
+        sid_in_to_m_in.insert(s.vid(use_snv_pos), si);
+        //sid_in_to_m_in.insert(s.sid(), si);
         //sid_in_to_m_in.insert(s.sida(), si);
     }
 
@@ -197,8 +236,8 @@ fn create_wgt_to_genotype_index<W: WgtTrait>(
     for wgt in wgts.iter() {
         // if not snv, skip
         if wgt.kind().is_snv() {
-            let sid = wgt.kind().snv_index().to_sid();
-            if let Some(v) = sid_in_to_m_in.get(&sid) {
+            let vid = wgt.kind().snv_index().vid(use_snv_pos);
+            if let Some(v) = sid_in_to_m_in.get(&vid) {
                 use_snvs[*v] = true;
             }
         }
@@ -311,14 +350,25 @@ fn create_wgt_to_genotype_index<W: WgtTrait>(
 //    use_snvs
 //}
 
-fn set_wgts_index_reversed<W: WgtTrait>(wgts: &mut [W], snvs: &[SnvId]) -> (Vec<bool>, Vec<bool>) {
+fn set_wgts_index_reversed<W: WgtTrait>(
+    wgts: &mut [W],
+    snvs: &[SnvId],
+    allow_nonexist_snv: bool,
+    use_snv_pos: bool,
+) -> (Vec<bool>, Vec<bool>) {
     let m = snvs.len();
 
     // map: sid_in -> genotype index (m)
-    let mut sid_to_m = HashMap::with_capacity(m);
+    let mut vid_to_m = HashMap::with_capacity(m);
 
     for (si, s) in snvs.iter().enumerate() {
-        sid_to_m.insert(s.to_sid(), si);
+        if vid_to_m.contains_key(s.vid(use_snv_pos)) {
+            panic!(
+                "Snv in genot is duplicated. If this is intentional, supress --use-snv_pos: {}",
+                s.vid(use_snv_pos)
+            )
+        }
+        vid_to_m.insert(s.vid(use_snv_pos), si);
     }
 
     // needs to reverse genotype
@@ -334,10 +384,11 @@ fn set_wgts_index_reversed<W: WgtTrait>(wgts: &mut [W], snvs: &[SnvId]) -> (Vec<
     // is_reversed will be overwritten many times but should be all right if all of the same in wgt
     for wgt in wgts.iter_mut() {
         if wgt.kind().is_snv() {
-            let sid = wgt.kind().snv_index().to_sid();
+            let vid = wgt.kind().snv_index().vid(use_snv_pos);
+
             //log::debug!("sida {}", sida);
             //log::debug!("m_in {:?}", sida_in_to_m_in.get(sida));
-            if let Some(&mi) = sid_to_m.get(&sid) {
+            if let Some(&mi) = vid_to_m.get(&vid) {
                 //let mi = m_in_to_m[v];
 
                 used_snvs[mi] = true;
@@ -348,17 +399,16 @@ fn set_wgts_index_reversed<W: WgtTrait>(wgts: &mut [W], snvs: &[SnvId]) -> (Vec<
                 let snv_wgt = wgt.kind().snv_index().clone();
 
                 // check alleles match
-                // otherwise alleles do not match
                 if &snv_wgt == &snv_in {
                     wgt.set_snv_index(Some(mi));
 
                     // rev or not
                     // here since putting inside of if raises error
-                    let is_rev = snv_wgt.is_rev(&snv_in);
+                    let is_rev = snv_wgt.is_rev(&snv_in, use_snv_pos);
 
                     if is_rev {
                         log::debug!(
-                            "Alleles are reversed in wgt and fplink {:?}, {:?}",
+                            "Alleles are reversed in wgt and fplink: {:?}, {:?}",
                             &snv_wgt,
                             &snv_in
                         );
@@ -367,14 +417,28 @@ fn set_wgts_index_reversed<W: WgtTrait>(wgts: &mut [W], snvs: &[SnvId]) -> (Vec<
                     is_reversed[mi] = is_rev;
                     //is_reversed[mi] = false;
                 } else {
+                    //  alleles do not match
                     log::info!(
-                        "Ignore SNV: alleles do not match in wgt and fplink {:?}, {:?}",
+                        "Alleles do not match in wgt and fplink: {:?}, {:?}",
                         snv_wgt,
                         &snv_in
                     );
+                    if allow_nonexist_snv {
+                        wgt.set_snv_index(None);
+                    } else {
+                        panic!("Alleles do not match in wgt and fplink. Use --allow-nonexist-snv.");
+                    }
                 }
             } else {
-                wgt.set_snv_index(None);
+                log::info!(
+                    "SNV in wgt is not in fplink: {:?}",
+                    wgt.kind().snv_index().clone()
+                );
+                if allow_nonexist_snv {
+                    wgt.set_snv_index(None);
+                } else {
+                    panic!("SNV in wgt is not in fplink. Use --allow-nonexist-snv. --use-snv-pos might help as well.");
+                }
             }
         }
 
@@ -386,6 +450,7 @@ fn set_wgts_index_reversed<W: WgtTrait>(wgts: &mut [W], snvs: &[SnvId]) -> (Vec<
     (is_reversed, used_snvs)
 }
 
+/// TODO: merge
 /// old use above
 ///
 /// use in score calculation
@@ -402,6 +467,7 @@ fn create_wgt_to_genotype_index_sametime<W: WgtTrait>(
     fin: &Path,
     gfmt: GenotFormat,
     wgts: &mut [W],
+    use_snv_pos: bool,
 ) -> (Vec<bool>, Vec<bool>) {
     let m_in: usize = io_genot::compute_num_snv(fin, gfmt).unwrap();
     let snvs_in = io_genot::load_snvs(fin, gfmt);
@@ -409,10 +475,10 @@ fn create_wgt_to_genotype_index_sametime<W: WgtTrait>(
     let mut use_snvs = vec![false; m_in];
 
     // map: sid_in -> genotype index (m)
-    let mut sid_in_to_m_in = HashMap::with_capacity(m_in);
+    let mut vid_in_to_m_in = HashMap::with_capacity(m_in);
 
     for (si, s) in snvs_in.iter().enumerate() {
-        sid_in_to_m_in.insert(s.to_sid(), si);
+        vid_in_to_m_in.insert(s.vid(use_snv_pos), si);
         //sid_in_to_m_in.insert(s.sida(), si);
     }
 
@@ -421,8 +487,8 @@ fn create_wgt_to_genotype_index_sametime<W: WgtTrait>(
     for wgt in wgts.iter() {
         // if not snv, skip
         if wgt.kind().is_snv() {
-            let sid = wgt.kind().snv_index().to_sid();
-            if let Some(v) = sid_in_to_m_in.get(&sid) {
+            let sid = wgt.kind().snv_index().vid(use_snv_pos);
+            if let Some(v) = vid_in_to_m_in.get(&sid) {
                 use_snvs[*v] = true;
             }
         }
@@ -440,10 +506,10 @@ fn create_wgt_to_genotype_index_sametime<W: WgtTrait>(
     // is_reversed will be overwritten many times but should be all right if all of the same in wgt
     for wgt in wgts.iter_mut() {
         if wgt.kind().is_snv() {
-            let sid = wgt.kind().snv_index().to_sid();
+            let sid = wgt.kind().snv_index().vid(use_snv_pos);
             //log::debug!("sida {}", sida);
             //log::debug!("m_in {:?}", sida_in_to_m_in.get(sida));
-            if let Some(v) = sid_in_to_m_in.get(&sid) {
+            if let Some(v) = vid_in_to_m_in.get(&sid) {
                 let mi = m_in_to_m[v];
 
                 // clone is necessary
@@ -458,7 +524,7 @@ fn create_wgt_to_genotype_index_sametime<W: WgtTrait>(
 
                     // rev or not
                     // here since putting inside of if raises error
-                    let is_rev = snv_wgt.is_rev(&snv_in);
+                    let is_rev = snv_wgt.is_rev(&snv_in, use_snv_pos);
 
                     if is_rev {
                         log::debug!(

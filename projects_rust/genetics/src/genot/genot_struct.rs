@@ -196,14 +196,7 @@ mod tests {
 
         let t8 = g.stat_contingency_table_nosimd(&phe);
 
-        assert_eq!(t8.0, 2);
-        assert_eq!(t8.1, 1);
-        assert_eq!(t8.2, 1);
-        assert_eq!(t8.3, 0);
-        assert_eq!(t8.4, 0);
-        assert_eq!(t8.5, 2);
-        assert_eq!(t8.6, 2);
-        assert_eq!(t8.7, 1);
+        assert_eq!(t8, (2usize, 1, 1, 0, 0, 2, 2, 1));
     }
 
     #[test]
@@ -218,15 +211,6 @@ mod tests {
         let t8_nosimd = g.stat_contingency_table_nosimd(&phe);
 
         assert_eq!(t8, t8_nosimd);
-
-        //assert_eq!(t8.0, 2);
-        //assert_eq!(t8.1, 1);
-        //assert_eq!(t8.2, 1);
-        //assert_eq!(t8.3, 0);
-        //assert_eq!(t8.4, 0);
-        //assert_eq!(t8.5, 2);
-        //assert_eq!(t8.6, 2);
-        //assert_eq!(t8.7, 1);
     }
 
     fn is_eq_f64(v: f64, w: f64, e: f64) -> bool {
@@ -240,13 +224,13 @@ mod tests {
 
         let maf = g.maf();
 
+        // (2*3+1)/(6*2)
+        assert!(is_eq_f64(maf, 7.0f64 / 12.0f64, 1e-7))
+
+        //wrong
         // (2*3+1)/6
-        assert!(is_eq_f64(maf, 7.0f64/6.0f64,1e-7) )
-
+        //assert!(is_eq_f64(maf, 7.0f64 / 6.0f64, 1e-7))
     }
-
-
-
 
     #[test]
     fn test_set_bed_code_init_unchecked() {
@@ -283,5 +267,41 @@ mod tests {
 
         gref.set_bed_code_unchecked(1, 1);
         assert_eq!(gref.get_val(1), 3);
+    }
+
+    #[test]
+    fn test_fill_missing_mode() {
+        let vec = vec![0, 1, 1, 2, 1, 3];
+        let vec_exp = vec![0u8, 1, 1, 2, 1, 1];
+        let mut g = GenotSnv::new(&vec);
+
+        g.as_genot_snv_mut_snv().fill_missing_mode();
+
+        assert_eq!(&g.vals(), &vec_exp);
+    }
+
+    #[test]
+    fn test_fill_missing_mode2() {
+        // when missing is the mode
+        let vec = vec![0, 1, 1, 3, 3, 3];
+        let vec_exp = vec![0, 1, 1, 1, 1, 1];
+        let mut g = GenotSnv::new(&vec);
+
+        g.as_genot_snv_mut_snv().fill_missing_mode();
+
+        assert_eq!(&g.vals(), &vec_exp);
+    }
+
+    //TODO: fill_missing_mode_maf()
+
+    #[test]
+    fn test_reverse_allele() {
+        let vec = vec![0, 1, 1, 2, 1, 3];
+        let vec_exp = vec![2u8, 1, 1, 0, 1, 3];
+        let mut g = GenotSnv::new(&vec);
+
+        g.as_genot_snv_mut_snv().reverse_allele();
+
+        assert_eq!(&g.vals(), &vec_exp);
     }
 }

@@ -17,9 +17,9 @@ pub fn get_dir_score(dout: &Path, learning_rate: f64) -> PathBuf {
     get_dname_para(dout, learning_rate)
 }
 
-pub fn get_dir_cv(dout: &Path,cvi: usize) -> PathBuf {
+pub fn get_dir_cv(dout: &Path, cvi: usize) -> PathBuf {
     let mut d = dout.to_owned();
-    let dpara = String::from("cv-")+ &cvi.to_string();
+    let dpara = String::from("cv-") + &cvi.to_string();
     d.push(dpara);
     d
 }

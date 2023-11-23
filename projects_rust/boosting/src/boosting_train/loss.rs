@@ -3,8 +3,8 @@ pub mod calc;
 
 use std::collections::HashSet;
 
-use super::coefficient;
-use super::compute_pred;
+//use super::coefficient;
+//use super::compute_pred;
 use super::epsilon;
 use super::sample_weight::SampleWeight;
 use super::table;
@@ -347,7 +347,7 @@ pub fn search_min_loss_gt(
 
     // search min loss
     let (loss_min, var_mi, var_si) = loss.search_min(skip_snv);
-    let var_mi: usize = var_mi.expect("No SNVs were loss<1.0");
+    let var_mi: usize = var_mi.unwrap_or_else(|| panic!("No SNVs were loss<1.0"));
 
     log::debug!(
         "contingency table count {:?}",
@@ -483,6 +483,7 @@ pub fn calculate_loss_gt(
                 boost_param,
             );
         }
+        // FIXME: BoostType::LogitNoMissing
         _ => unimplemented!(),
     }
 }
@@ -701,78 +702,77 @@ pub fn search_min_loss_gt_pruned_loss_ss_second(
 }
 */
 
-pub fn create_loss_const(
-    iter: usize,
-    ps: &[f64],
-    pred: &mut [u8],
-    //pred: &mut [B8],
-    phe: &Phe,
-    //_n: usize,
-    //_boosting_param: BoostParam,
-) -> WgtBoost {
-    /*
-    let mut const_var = Var::construct_var(CovKind::Const, "const".to_owned());
-    const_var.set_vals_const(n);
-    let const_wgt = CovWgt::construct(const_var);
-     */
+// // not using now
+// pub fn create_loss_const(
+//     iter: usize,
+//     ps: &[f64],
+//     pred: &mut [u8],
+//     //pred: &mut [B8],
+//     phe: &Phe,
+//     //_n: usize,
+//     //_boosting_param: BoostParam,
+// ) -> WgtBoost {
+//     /*
+//     let mut const_var = Var::construct_var(CovKind::Const, "const".to_owned());
+//     const_var.set_vals_const(n);
+//     let const_wgt = CovWgt::construct(const_var);
+//      */
+//     compute_pred::compute_pred_const(pred);
 
-    compute_pred::compute_pred_const(pred);
+//     //let abcd_sum = calculate::calculate_abcd_sum(
+//     let (table2_sum, is_eps) = table::calculate_table2(pred, ps, phe);
 
-    //let abcd_sum = calculate::calculate_abcd_sum(
-    let (table2_sum, is_eps) = table::calculate_table2(pred, ps, phe);
+//     let loss = calc::calculate_loss_ab(table2_sum);
 
-    let loss = calc::calculate_loss_ab(table2_sum);
+//     // since all predict=1
+//     let wgt = Wgt::construct_const_threshold(0.5);
 
-    // since all predict=1
-    let wgt = Wgt::construct_const_threshold(0.5);
+//     /*
+//     let wgt = Wgt::construct_wgt(
+//         WgtKind::Cov(const_wgt),
+//         Model::Binary(BinaryModel::construct_threshold(0.5)),
+//     );
+//      */
+//     let mut wgt_boost = WgtBoost::construct_wgt(wgt, iter, loss, table2_sum, is_eps, None);
 
-    /*
-    let wgt = Wgt::construct_wgt(
-        WgtKind::Cov(const_wgt),
-        Model::Binary(BinaryModel::construct_threshold(0.5)),
-    );
-     */
-    let mut wgt_boost = WgtBoost::construct_wgt(wgt, iter, loss, table2_sum, is_eps, None);
+//     unimplemented!("Why using Eps::Med?->introduce eff_eps");
+//     // no learning rate
+//     let coef_ti = coefficient::calculate_coef_ada_eps(
+//         wgt_boost.contingency_table().unwrap(),
+//         BoostType::Ada,
+//         1.0,
+//         None, //Some(crate::Eps::Med), // will not be used
+//     );
 
-    // no learning rate
-    let coef_ti = coefficient::calculate_coefficients_ada(
-        wgt_boost.contingency_table().unwrap(),
-        BoostType::Ada,
-        1.0,
-        Some(crate::Eps::Med), // will not be used
-    );
+//     wgt_boost.wgt_mut().model_mut().set_coef(coef_ti);
+//     //wgt.model_mut().set_coef_binary(coef_ti);
 
-    wgt_boost.wgt_mut().model_mut().set_coef(coef_ti);
-    //wgt.model_mut().set_coef_binary(coef_ti);
+//     wgt_boost
 
-    wgt_boost
+//     /*
+//     if let WgtKind::Cov(ref mut cov_wgt) = &mut (wgt.get_kind_mut()) {
+//         if let Model::Binary(ref mut binary_model) = &mut (cov_wgt.get_model_mut()) {
+//             binary_model.set_coef(coef_ti);
+//         }
+//     }
+//     */
+//     /*
+//     if let WgtKind::Snv(ref mut snv_wgt) = &mut (wgt.get_kind_mut()) {
+//         snv_wgt.get_model_mut().set_coef(coef_ti);
+//         //let model = snv_wgt.get_model_mut();
+//         //model.set_coef(coef_ti);
+//         //(*(*snv_wgt).get_model()).set_coef(coef_ti);
+//         //(*(*snv_wgt).get_model()).set_coef(coef_ti);
+//     } else {
+//         panic!("wgt should be Snv.")
+//     }
+//     */
+//     //// TODO: make these func
+//     //compute::compute_mis(&mut mis, &wgt, ys, mistakes, n);
+//     //let abcd_sum = calculate::calculate_abcd_sum();
 
-    /*
-    if let WgtKind::Cov(ref mut cov_wgt) = &mut (wgt.get_kind_mut()) {
-        if let Model::Binary(ref mut binary_model) = &mut (cov_wgt.get_model_mut()) {
-            binary_model.set_coef(coef_ti);
-        }
-    }
-    */
-
-    /*
-    if let WgtKind::Snv(ref mut snv_wgt) = &mut (wgt.get_kind_mut()) {
-        snv_wgt.get_model_mut().set_coef(coef_ti);
-        //let model = snv_wgt.get_model_mut();
-        //model.set_coef(coef_ti);
-        //(*(*snv_wgt).get_model()).set_coef(coef_ti);
-        //(*(*snv_wgt).get_model()).set_coef(coef_ti);
-    } else {
-        panic!("wgt should be Snv.")
-    }
-    */
-
-    //// TODO: make these func
-    //compute::compute_mis(&mut mis, &wgt, ys, mistakes, n);
-    //let abcd_sum = calculate::calculate_abcd_sum();
-
-    //wgt
-}
+//     //wgt
+// }
 
 /*
 #[cfg(test)]

@@ -58,7 +58,7 @@ pub fn boosting_score(
     dataset: &Dataset,
     // why not samples_id in dataset.samples?
     //samples_id: &[(String, String)],
-    samples_id: &[String],
+    //samples_id: &[String],
     has_cov: bool,
     use_iter: bool,
 ) {
@@ -70,7 +70,9 @@ pub fn boosting_score(
             if use_iter & has_cov {
                 log::debug!("Start iters with covariates.");
                 score::calculate_write_score_iterations(
-                    dout, iterations, wgts, dataset, samples_id, false,
+                    dout, iterations, wgts, dataset,
+                    false,
+                    //dout, iterations, wgts, dataset, samples_id, false,
                 );
             }
         });
@@ -79,7 +81,9 @@ pub fn boosting_score(
             if has_cov {
                 log::debug!("Start nsnvs with covariates.");
                 score::calculate_write_score_nsnvs(
-                    dout, iterations, wgts, dataset, samples_id, false,
+                    dout, iterations, wgts, dataset,
+                    false,
+                    //dout, iterations, wgts, dataset, samples_id, false,
                 );
             }
         });
@@ -87,15 +91,14 @@ pub fn boosting_score(
         let thread2 = s.spawn(|_| {
             if use_iter {
                 log::debug!("Start iters without covariates.");
-                score::calculate_write_score_iterations(
-                    dout, iterations, wgts, dataset, samples_id, true,
-                );
+                score::calculate_write_score_iterations(dout, iterations, wgts, dataset, true);
             }
         });
 
         let thread3 = s.spawn(|_| {
             log::debug!("Start nsnvs without covariates.");
-            score::calculate_write_score_nsnvs(dout, iterations, wgts, dataset, samples_id, true);
+            score::calculate_write_score_nsnvs(dout, iterations, wgts, dataset, true);
+            //score::calculate_write_score_nsnvs(dout, iterations, wgts, dataset, samples_id, true);
         });
 
         thread0.join().unwrap();
@@ -112,7 +115,7 @@ pub fn boosting_score_para_best(
     dataset: &Dataset,
     // why not samples_id in dataset.samples?
     //samples_id: &[(String, String)],
-    samples_id: &[String],
+    //samples_id: &[String],
     has_cov: bool,
 ) {
     log::debug!("score for iterations");
@@ -122,13 +125,13 @@ pub fn boosting_score_para_best(
         let thread1 = s.spawn(|_| {
             if has_cov {
                 log::debug!("Start nsnvs with covariates.");
-                score::calculate_write_score_para_best(dout, wgts, dataset, samples_id, false);
+                score::calculate_write_score_para_best(dout, wgts, dataset, false);
             }
         });
 
         let thread3 = s.spawn(|_| {
             log::debug!("Start nsnvs without covariates.");
-            score::calculate_write_score_para_best(dout, wgts, dataset, samples_id, true);
+            score::calculate_write_score_para_best(dout, wgts, dataset, true);
         });
 
         thread1.join().unwrap();

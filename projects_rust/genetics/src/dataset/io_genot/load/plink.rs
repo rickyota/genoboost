@@ -15,7 +15,8 @@ pub fn generate_genot_snv_plink(
     mi: usize,
     n: usize,
     use_samples: Option<&[bool]>,
-    use_missing: bool,
+    //use_missing: bool,
+    fill_missing: bool,
 ) -> GenotSnv {
     let reader = BufReader::new(File::open(io_genot::fname_plinks_genot(fin, gfmt, None)).unwrap());
 
@@ -29,8 +30,10 @@ pub fn generate_genot_snv_plink(
         n,
     );
 
-    if !use_missing {
-        super::fill_missing(&mut g_snv.as_genot_snv_mut_snv());
+    //if !use_missing {
+    if fill_missing {
+        //super::fill_missing_snv(&mut g_snv.as_genot_snv_mut_snv());
+        g_snv.as_genot_snv_mut_snv().fill_missing_mode()
     }
 
     g_snv
@@ -84,21 +87,21 @@ pub fn generate_genot_plink(
     gfmt: GenotFormat,
     m: usize,
     n: usize,
-    use_snvs: &[bool],
+    use_snvs: Option<&[bool]>,
     use_samples: Option<&[bool]>,
-    use_missing: bool,
+    //use_missing: bool,
+    fill_missing: bool,
 ) -> Genot {
     log::debug!("to prepare Genot m, n: {}, {}", m, n);
 
     let mem = alloc::get_available_memory();
     log::debug!("available mem: {:?} bytes", mem);
     let genot_byte = Genot::byte(m, n);
-    log::info!("Temporary skip panic even for insufficient memory");
-    /*
+    //log::info!("Temporary skip panic even for insufficient memory");
     match mem {
         Some(x) => {
             log::debug!(
-                "genot vs available mem, {} bytes vs {} bytes",
+                "genot vs available mem, {:.3} bytes vs {:.3} bytes",
                 genot_byte,
                 x
             );
@@ -107,10 +110,17 @@ pub fn generate_genot_plink(
             }
         }
         None => {
-            log::debug!("Could not get available memory.");
+            log::info!("Could not get available memory.");
         }
-    }
-     */
+    };
+
+    // for use_snvs=None
+    let use_snvs_v = vec![true; m];
+    let use_snvs = match use_snvs {
+        Some(x) => x,
+        None => &use_snvs_v,
+    };
+    //let m_in = use_snvs.len();
 
     let mut g = Genot::new_zeros(m, n);
     //log::debug!("done preparing Genot");
@@ -126,17 +136,11 @@ pub fn generate_genot_plink(
         // TODO: somehow same value as above; why not decreased by alloc in genot?
 
         // FIXME: fix mem for pg a*
-        log::info!("Temporary fix mem to 64GB.");
-        let mem = Some(64usize * 1024 * 1024 * 1024);
-        /*
+        //log::info!("Temporary fix mem to 64GB.");
+        //let mem = Some(64usize * 1024 * 1024 * 1024);
         let mem = alloc::get_available_memory();
         log::debug!("available mem: {:?} bytes", mem);
-         */
 
-        //let buf_size_limit: usize = match mem {
-        //    Some(x) => x.min(BUF_SIZE_BED_LIMIT),
-        //    None => BUF_SIZE_BED_LIMIT,
-        //};
         let buf_size_limit = mem.map_or_else(|| BUF_SIZE_BED_LIMIT, |x| x.min(BUF_SIZE_BED_LIMIT));
         log::debug!("buf_size_limit: {:?} bytes", buf_size_limit);
 
@@ -193,10 +197,12 @@ pub fn generate_genot_plink(
     }
 
     // missing
-    if !use_missing {
+    //if !use_missing {
+    if fill_missing {
         g.iter_snv_mut()
             .par_bridge()
-            .for_each(|mut g_snv| super::fill_missing(&mut g_snv));
+            .for_each(|mut g_snv| g_snv.fill_missing_mode());
+        //.for_each(|mut g_snv| super::fill_missing_snv(&mut g_snv));
     }
 
     g
@@ -252,6 +258,7 @@ fn assign_genot<R: BufRead + Seek>(
 
     //plink::check_valid_bed(fin_chrom, None, m_in_chrom, n_in).unwrap();
 
+    // FIXME: available mem?
     // check if 32 GB? 16GB? remains or not
     // reading smaller than buf_size is not error but reason is unknown
     // [here](https://doc.rust-lang.org/std/io/trait.Read.html#tymethod.read)
@@ -636,19 +643,19 @@ fn byte_to_count(v: B8_2, i: usize) -> u8 {
 
 // TODO: this might be clear if use .flat_map()
 // no rayon here
-pub fn load_x(x: &mut [u8], buf_mi: &[B8_2], use_samples: &[bool]) {
-    let mut ni = 0;
-    for (n_in_i, v) in use_samples.iter().enumerate() {
-        if *v {
-            x[ni] = buf_to_count(buf_mi, n_in_i);
-            ni += 1;
-        }
-    }
-    // ng: x could be larger thant n
-    //assert_eq!(ni, x.len());
-
-    super::missing_to_mode(x);
-}
+//fn load_x(x: &mut [u8], buf_mi: &[B8_2], use_samples: &[bool]) {
+//    let mut ni = 0;
+//    for (n_in_i, v) in use_samples.iter().enumerate() {
+//        if *v {
+//            x[ni] = buf_to_count(buf_mi, n_in_i);
+//            ni += 1;
+//        }
+//    }
+//    // ng: x could be larger thant n
+//    //assert_eq!(ni, x.len());
+//
+//    super::missing_to_mode(x);
+//}
 
 #[cfg(test)]
 mod tests {
@@ -687,7 +694,8 @@ mod tests {
         let gfmt = GenotFormat::Plink1;
         //let use_snvs = vec![true; use_snvs.len()];
         //let use_samples = vec![true; use_samples.len()];
-        let g = generate_genot_plink(&fin, gfmt, m, n, &use_snvs, Some(&use_samples), true);
+        let g = generate_genot_plink(&fin, gfmt, m, n, Some(&use_snvs), Some(&use_samples), false);
+        //let g = generate_genot_plink(&fin, gfmt, m, n, Some(&use_snvs), Some(&use_samples), true);
         let mut giter = g.iter_snv();
         assert_eq!(giter.next().unwrap().vals(), vec![2, 0, 1, 0, 0]);
         assert_eq!(giter.next().unwrap().vals(), vec![1, 0, 2, 1, 0]);

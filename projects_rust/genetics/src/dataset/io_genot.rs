@@ -7,7 +7,6 @@ pub mod load;
 pub mod load_score;
 
 use crate::sample;
-use crate::textfile::read_file_to_end;
 use crate::{textfile, vec, Chrom, SnvId};
 
 pub use file_genot::FileGenot;
@@ -22,10 +21,6 @@ use std::io::prelude::*; // for seek
 use std::io::Read;
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
-
-//use crate::alloc; //same
-//mod alloc; // error
-//use super::snv::Snv; // unnecessary
 
 // 8 x 1 bit
 //type B8 = u8;
@@ -370,6 +365,122 @@ pub fn check_valid_bed(
     Ok(bed_size)
 }
 
+fn load_fam(fin: &Path, gfmt: GenotFormat) -> Vec<u8> {
+    match gfmt {
+        GenotFormat::Plink1 => {
+            panic!("Do not use --phe-name for plink1.");
+        }
+        GenotFormat::Plink2 | GenotFormat::Plink2Vzs => {
+            let fin_fam = fname_fam_exist_chrom(fin, gfmt).unwrap();
+            textfile::read_file_to_end(&fin_fam, None).unwrap()
+            //&phe_buf_v[..]
+            //phe_buf_v
+        }
+    }
+}
+
+// If phe_buf=None, phe_name=None, gfmt!=plink1, then return None
+pub fn load_ys_buf_option(
+    fin: &Path,
+    gfmt: GenotFormat,
+    phe_buf: Option<&[u8]>,
+    phe_name: Option<&str>,
+    sample_id_to_n: &HashMap<String, usize>,
+    //use_samples: &[bool],
+) -> Option<Vec<bool>> {
+    let phe_buf_v: Vec<u8>;
+    let valss = if let Some(phe_name) = phe_name {
+        let phe_buf = match phe_buf {
+            None => {
+                // phe is in .psam
+                phe_buf_v = load_fam(fin, gfmt);
+                &phe_buf_v[..]
+                //match gfmt {
+                //    GenotFormat::Plink1 => {
+                //        panic!("Do not use --phe-name for plink1.");
+                //    }
+                //    GenotFormat::Plink2 | GenotFormat::Plink2Vzs => {
+                //        let fin_fam = fname_fam_exist_chrom(fin, gfmt).unwrap();
+                //        phe_buf_v = textfile::read_file_to_end(&fin_fam, None).unwrap();
+                //        &phe_buf_v[..]
+                //    }
+                //}
+            }
+            Some(x) => {
+                // if phe_name is in phe_buf, use the col
+                // elif phe in .psam, use the col
+                if textfile::coli_of_header_buf(x, phe_name).is_some() {
+                    x
+                } else {
+                    phe_buf_v = load_fam(fin, gfmt);
+                    if textfile::coli_of_header_buf(&phe_buf_v[..], phe_name).is_some() {
+                        &phe_buf_v[..]
+                    } else {
+                        panic!("phe_name is not in fin-phe or psam file.");
+                    }
+                }
+            }
+        };
+        //TODO
+        let col_iid = 0;
+        let col_phe = textfile::coli_of_header_buf(phe_buf, phe_name)
+            .unwrap_or_else(|| panic!("phe_name is not in fin-phe or psam."));
+        textfile::load_table_cols_buf(&phe_buf[..], &[col_iid, col_phe], true)
+    } else {
+        match gfmt {
+            GenotFormat::Plink1 => {
+                //TODO
+                let col_iid = 1;
+                let col_y = 5;
+                let fin_fam = fname_fam_exist_chrom(fin, gfmt).unwrap();
+                textfile::load_table_cols(&fin_fam, &[col_iid, col_y], false)
+            }
+            GenotFormat::Plink2 | GenotFormat::Plink2Vzs => {
+                return None;
+                //panic!("Use fin_phe for plink2.")
+            }
+        }
+    };
+
+    // TODO: use text::coli_of_header_buf()
+    //let col_phe=textfile::coli_of_header_buf(buf, col)
+
+    let vals = sample::vals_align_id(&valss[1], &valss[0], sample_id_to_n);
+
+    log::debug!("vals[0]: {}", vals[0]);
+
+    let uniq = vec::uniq_string(&vals);
+    let code_type = if uniq == HashSet::from_iter([String::from("0"), String::from("1")]) {
+        "01"
+    } else if uniq == HashSet::from_iter([String::from("1"), String::from("2")]) {
+        "12"
+    } else {
+        panic!("Unknown coding {:?}", uniq);
+    };
+
+    fn decode_phe(val: &str, code_type: &str) -> bool {
+        let code: u8 = (*val).parse::<u8>().unwrap();
+        if code_type == "01" {
+            match code {
+                0 | 1 => code != 0,
+                z => panic!("Unknown phenotype included: {}.", z),
+            }
+        } else if code_type == "12" {
+            match code {
+                1 | 2 => (code - 1) != 0,
+                z => panic!("Unknown phenotype included: {}.", z),
+            }
+        } else {
+            // TODO: match
+            panic!("Unknown code_type {:?}", code_type);
+        }
+    }
+
+    let ys = vals.iter().map(|x| decode_phe(x, code_type)).collect();
+
+    Some(ys)
+}
+
 // TODO: what if fin.fam includes phe=9?
 // -> let user exclude samples with --fin-sample
 pub fn load_ys_buf(
@@ -382,7 +493,9 @@ pub fn load_ys_buf(
 ) -> Vec<bool> {
     //let mut ys: Vec<bool> = Vec::with_capacity(len_n);
 
-    let phe_buf_v: Vec<u8>;
+    load_ys_buf_option(fin, gfmt, phe_buf, phe_name, sample_id_to_n).unwrap()
+
+    /*     let phe_buf_v: Vec<u8>;
     let valss = if let Some(phe_name) = phe_name {
         let phe_buf = match phe_buf {
             None => {
@@ -402,8 +515,8 @@ pub fn load_ys_buf(
         };
         //TODO
         let col_iid = 0;
-        let col_phe =
-            textfile::coli_of_header_buf(phe_buf, phe_name).expect("phe_name is not in fin-phe.");
+        let col_phe = textfile::coli_of_header_buf(phe_buf, phe_name)
+            .unwrap_or_else(|| panic!("phe_name is not in fin-phe."));
         //let col = vec![phe_name];
         textfile::load_table_cols_buf(&phe_buf[..], &[col_iid, col_phe], true)
     } else {
@@ -455,7 +568,7 @@ pub fn load_ys_buf(
 
     let ys = vals.iter().map(|x| decode_phe(x, code_type)).collect();
 
-    ys
+    ys */
 }
 
 /* // TODO: n should be Option or remove
@@ -546,7 +659,7 @@ fn load_snvs_text_plink(
 
     let fin_bim = fname_plinks_snv(fin, gfmt, chrom);
     //let fin_bim = fname_plinks_snv(fin, gfmt, None);
-    let buf = read_file_to_end(&fin_bim, None);
+    let buf = textfile::read_file_to_end(&fin_bim, None);
     if buf.is_err() {
         return None;
     }
@@ -608,9 +721,10 @@ fn load_snvs_tsv(
     compress: Option<&str>,
 ) -> Option<Vec<SnvId>> {
     let fin_bim = fname_plinks_snv(fin, gfmt, chrom);
+    //println!("fin_bim {:?}", fin_bim);
 
     let mut snvs_in: Vec<SnvPlink2In> = vec![];
-    let buf = read_file_to_end(&fin_bim, compress);
+    let buf = textfile::read_file_to_end(&fin_bim, compress);
     if buf.is_err() {
         return None;
     }
@@ -622,7 +736,8 @@ fn load_snvs_tsv(
             .from_reader(&buf[..]);
 
         for result in rdr.deserialize() {
-            let record: SnvPlink2In = result.expect(&format!("Error while reading {:?}", fin_bim));
+            let record: SnvPlink2In =
+                result.unwrap_or_else(|_| panic!("Error while reading: {:?}", fin_bim));
             snvs_in.push(record)
         }
     } else {
@@ -638,7 +753,7 @@ fn load_snvs_tsv(
         let cols = [1usize, 0, 3, 4, 5];
 
         for result in rdr.records() {
-            let record = result.expect(&format!("Error while reading {:?}", fin_bim));
+            let record = result.unwrap_or_else(|_| panic!("Error while reading: {:?}", fin_bim));
             println!("{:?}", record);
             snvs_in.push(SnvPlink2In::new(
                 record[cols[0]].to_string(),
@@ -678,7 +793,10 @@ fn load_snvs_chrom(fin: &Path, gfmt: GenotFormat, chrom: Option<&Chrom>) -> Opti
 // since match snv_index is not simple?
 pub fn load_snvs(fin: &Path, gfmt: GenotFormat) -> Vec<SnvId> {
     if !judge_split_chrom(fin) {
-        load_snvs_chrom(fin, gfmt, None).unwrap()
+        //load_snvs_chrom(fin, gfmt, None).unwrap()
+
+        load_snvs_chrom(fin, gfmt, None)
+            .unwrap_or_else(|| panic!("Could not load snvs from fin: {:?}", fin))
     } else {
         let mut snvs: Vec<SnvId> = vec![];
         for chrom_i in Chrom::variants().iter() {
@@ -734,7 +852,7 @@ fn load_samples_id_tsv(fin: &Path, gfmt: GenotFormat, use_samples: Option<&[bool
 
         for result in rdr.deserialize() {
             let record: SamplePlink2In =
-                result.expect(&format!("Error while reading {:?}", &fin_fam));
+                result.unwrap_or_else(|_| panic!("Error while reading: {:?}", fin_fam));
             samples_in.push(record)
         }
     } else {
@@ -747,8 +865,8 @@ fn load_samples_id_tsv(fin: &Path, gfmt: GenotFormat, use_samples: Option<&[bool
             .unwrap();
 
         for result in rdr.records() {
-            let record = result.expect(&format!("Error while reading {:?}", &fin_fam));
-            println!("{:?}", record);
+            let record = result.unwrap_or_else(|_| panic!("Error while reading: {:?}", fin_fam));
+            //println!("{:?}", record);
             // the first line sould be FID or IID and both are fine
             samples_in.push(SamplePlink2In::new(record[0].to_string()))
         }

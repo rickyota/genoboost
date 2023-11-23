@@ -316,6 +316,7 @@ pub fn load_table_header_buf<R: std::io::Read>(buf: R) -> Vec<String> {
 
 pub fn coli_of_header_buf(buf: &[u8], col: &str) -> Option<usize> {
     let header = load_table_header_buf(buf);
+    log::info!("header: {:?}",header);
 
     for (coli, col_header) in header.iter().enumerate() {
         if col == col_header {

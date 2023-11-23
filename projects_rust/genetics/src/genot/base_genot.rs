@@ -13,8 +13,8 @@
 use super::genot_iterator::{GenotCountIter, GenotIter, GenotIterMut};
 use super::{GenotMut, GenotSnvMut, GenotSnvRef};
 use crate::samples::prelude::*;
-use cmatrix::prelude::*;
 use cmatrix;
+use cmatrix::prelude::*;
 
 /*
 // 8 x 1 bit
@@ -175,7 +175,11 @@ where
             let c1 = p0 & (!p1);
             let cm = (!p0) & p1;
 
-            (cmatrix::popcnt(c2), cmatrix::popcnt(c1), cmatrix::popcnt(cm))
+            (
+                cmatrix::popcnt(c2),
+                cmatrix::popcnt(c1),
+                cmatrix::popcnt(cm),
+            )
             //(pop(d2), pop(n2), pop(d1), pop(n1), pop(dm), pop(nm))
         }
 
@@ -212,7 +216,8 @@ where
 
         //println!("in table afr last: {} sec",  start_time.elapsed().as_micros());
 
-        let maf = ((c2 * 2 + c1) as f64) / (cnomissing as f64);
+        let maf = ((c2 * 2 + c1) as f64) / ((cnomissing * 2) as f64);
+        assert!((0.0 <= maf) & (maf <= 1.0));
         maf
     }
 
@@ -404,7 +409,7 @@ where
         self.genot_inner_mut().set_unchecked_v(val, ni);
     }
 
-    /// Only use this knowing original bit is false
+    /// Use this only when knowing original bit is false
     /// for plink bed
     /// code(count); b0, b1
     /// 00(2); 1,1
@@ -432,5 +437,64 @@ where
 
     fn as_genot_snv_mut_snv(&mut self) -> GenotSnvMut {
         GenotSnvMut::new(self.genot_inner_mut().as_cvec_mut_v())
+    }
+
+    fn fill_missing_mode(&mut self) {
+        // count 0,1,2
+        let mut counts_allele = vec![0usize; 4];
+
+        let n = self.n();
+        for ni in 0..n {
+            counts_allele[self.get_val_unchecked(ni) as usize] += 1;
+        }
+
+        let mut mode: usize = 4;
+        let mut mode_counts = 0;
+        for i in 0..=2 {
+            if counts_allele[i] > mode_counts {
+                mode_counts = counts_allele[i];
+                mode = i;
+            }
+        }
+        let mode = mode as u8;
+        assert_ne!(mode, 4);
+
+        for ni in 0..n {
+            if self.get_val_unchecked(ni) == 3 {
+                self.set_unchecked(mode, ni);
+            }
+        }
+        // check all are non-missing?
+        // -> performance...
+    }
+
+    fn fill_missing_mode_maf(&mut self, maf: f64) {
+        let mode: u8 = if maf < 1.0 / 3.0f64 {
+            0
+        } else if maf > 2.0 / 3.0f64 {
+            2
+        } else {
+            1
+        };
+
+        let n = self.n();
+
+        for ni in 0..n {
+            if self.get_val_unchecked(ni) == 3 {
+                self.set_unchecked(mode, ni);
+            }
+        }
+        // check all are non-missing?
+        // -> performance...
+    }
+
+    // {0:2, 1:1, 2:0, 3:3}
+    const REV_AR: [u8; 4] = [2, 1, 0, 3];
+    fn reverse_allele(&mut self) {
+        let n = self.n();
+        for ni in 0..n {
+            let val = self.get_val_unchecked(ni);
+            self.set_unchecked(Self::REV_AR[val as usize], ni);
+        }
     }
 }

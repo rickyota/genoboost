@@ -53,7 +53,16 @@ impl Coef {
         }
     }
 
+    pub fn new_score3(scores: (f64, f64, f64)) -> Self {
+        Coef::Score3(scores)
+    }
+
+    pub fn new_score4(scores: (f64, f64, f64, f64)) -> Self {
+        Coef::Score4(scores)
+    }
+
     // better imple
+    // use coef_lr()
     pub fn apply_lr(self, lr: f64) -> Self {
         match self {
             Coef::Linear(x) => Coef::Linear(lr * x),

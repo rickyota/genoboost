@@ -4,35 +4,31 @@
 
 set -eux
 
-# mount to this path
-dir_data="/work/data/"
-dir_result="/work/result/"
 # output directory of training
-dir_wgt="${dir_result}train/"
+dir_wgt="./result/train/"
 # output directory of score
-dir_score="${dir_result}score/"
+dir_score="./result/score/"
 # prefix of plink1 file
-file_plink="${dir_data}genot"
+file_plink="./test/data/1kg_maf0.1_m1k/genot"
 # covariate file
-file_cov="${dir_data}genot.cov"
-# learning rate parameters
-learning_rates="0.1 0.5"
+file_cov="./test/data/1kg_maf0.1_m1k/genot.cov"
+
+function genoboost-docker() {
+    docker run -it rickyota/genoboost:latest "$@"
+}
 
 # train
-./genoboost train \
+./genoboost-docker train \
     --dir "$dir_wgt" \
-    --file_plink "$file_plink" \
-    --file_cov "$file_cov" \
-    --learning_rates $learning_rates \
-    --iter 100 \
-    --clip_sample_weight "top0.1" \
-    --prune_snv 0.1
+    --file-genot "$file_plink" \
+    --file-phe "$file_cov" \
+    --cov age,sex \
+    --major-a2-train
 
 # score
-./genoboost score \
-    --dir_score "$dir_score" \
-    --iters 10 30 50 100 \
-    --file_plink "$file_plink" \
-    --file_cov "$file_cov" \
-    --dir_wgt "$dir_wgt" \
-    --learning_rates $learning_rates
+./genoboost-docker score \
+    --dir-score "$dir_score" \
+    --dir-wgt "$dir_wgt" \
+    --file-genot "$file_plink" \
+    --file-phe "$file_cov" \
+    --cov age,sex

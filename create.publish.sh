@@ -16,25 +16,20 @@ d_publish="./${artifact_name}/"
 
 cargo build \
     --release \
-     --target=${target} \
+    --target=${target} \
     --manifest-path ./projects_rust/Cargo.toml \
     --no-default-features \
     --bin genoboost
 
-#cargo build --manifest-path ./projects_rust/Cargo.toml \
-#    --release --target=${target} \
-#    --bin genoboost
-
 mkdir -p ${d_publish}
 if [[ ${target} == *"windows"* ]]; then
-	cp ./projects_rust/target/${target}/release/genoboost.exe ${d_publish}/
+    cp ./projects_rust/target/${target}/release/genoboost.exe ${d_publish}/
 else
-	cp ./projects_rust/target/${target}/release/genoboost ${d_publish}/
+    cp ./projects_rust/target/${target}/release/genoboost ${d_publish}/
 fi
 
 mkdir -p ${d_publish}/example/
 cp ./example/* ${d_publish}/example/
-
 
 zip -r ./${artifact_name}.zip ${d_publish}
 
@@ -43,4 +38,3 @@ zip -r ./${artifact_name}.zip ${d_publish}
 #else
 #	zip -r ./${artifact_name}.zip ${d_publish}
 #fi
-

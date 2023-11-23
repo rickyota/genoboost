@@ -72,6 +72,11 @@ pub fn get_available_memory() -> Option<usize> {
     }
 }
 
+/// memory as GB
+pub fn mem_gb(mem: usize) -> f64 {
+    (mem as f64) / ((1024usize * 1024 * 1024) as f64)
+}
+
 /* // should create unused_memory()?
 pub fn get_total_memory_old() -> usize {
     let mut system = sysinfo::System::new_all();

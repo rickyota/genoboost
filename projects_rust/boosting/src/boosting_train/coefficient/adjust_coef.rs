@@ -1,12 +1,18 @@
 use crate::EffEps;
-use genetics::wgt::Coef;
+//use genetics::wgt::Coef;
 
+///
+///  scores: // (s0, s1, s2)
+///  return scores: // (s0, s1, s2)
+///
 pub fn adjust_eff_logit_no_missing(
     scores: (f64, f64, f64), // (s0, s1, s2)
     table8_count: (usize, usize, usize, usize, usize, usize, usize, usize),
     eff_eps: Option<EffEps>,
     verbose: bool,
-) -> (Coef, bool) {
+) -> ((f64, f64, f64), bool) {
+    // since will be used to Modelfree()
+    //) -> (Coef, bool) {
     let (s0, s1, s2) = scores;
 
     if let Some(eff_eps) = eff_eps {
@@ -20,7 +26,8 @@ pub fn adjust_eff_logit_no_missing(
                 let (s0_new, is_eff_eps_0) =
                     adjust_eff_score_lims2(s0, d0, n0, (s2, s1), clim, sratio);
                 let is_eff_eps = is_eff_eps_2 | is_eff_eps_1 | is_eff_eps_0;
-                (Coef::Score3((s0_new, s1_new, s2_new)), is_eff_eps)
+                ((s0_new, s1_new, s2_new), is_eff_eps)
+                //(Coef::Score3((s0_new, s1_new, s2_new)), is_eff_eps)
             }
             EffEps::LimScoreProp(plim, sratio) => {
                 //let (d2, n2, d1, n1, d0, n0, _dm, _nm) = table8_count;
@@ -46,7 +53,8 @@ pub fn adjust_eff_logit_no_missing(
                     sratio,
                 );
                 let is_eff_eps = is_eff_eps_2 | is_eff_eps_1 | is_eff_eps_0;
-                (Coef::Score3((s0_new, s1_new, s2_new)), is_eff_eps)
+                ((s0_new, s1_new, s2_new), is_eff_eps)
+                //(Coef::Score3((s0_new, s1_new, s2_new)), is_eff_eps)
             }
             EffEps::LimS2GmodelProp(plim, rec_max_ratio, rec_min_ratio) => {
                 //let (d2, n2, d1, n1, d0, n0, _dm, _nm) = table8_count;
@@ -60,7 +68,8 @@ pub fn adjust_eff_logit_no_missing(
                     rec_min_ratio,
                 );
                 let is_eff_eps = is_eff_eps_2;
-                (Coef::Score3((s0, s1, s2_new)), is_eff_eps)
+                ((s0, s1, s2_new), is_eff_eps)
+                //(Coef::Score3((s0, s1, s2_new)), is_eff_eps)
             }
             EffEps::LimS12GmodelProp(
                 plim,
@@ -89,7 +98,8 @@ pub fn adjust_eff_logit_no_missing(
                     het_min_ratio,
                 );
                 let is_eff_eps = is_eff_eps_2;
-                (Coef::Score3((s0, s1_new, s2_new)), is_eff_eps)
+                ((s0, s1_new, s2_new), is_eff_eps)
+                //(Coef::Score3((s0, s1_new, s2_new)), is_eff_eps)
             }
             EffEps::LimS2GmodelOverProp(
                 plim,
@@ -117,7 +127,8 @@ pub fn adjust_eff_logit_no_missing(
                     //het_min_ratio,
                 );
                 let is_eff_eps = is_eff_eps_2;
-                (Coef::Score3((s0, s1, s2_new)), is_eff_eps)
+                ((s0, s1, s2_new), is_eff_eps)
+                //(Coef::Score3((s0, s1, s2_new)), is_eff_eps)
             }
             EffEps::LimS2GmodelOverKeepSignProp(
                 plim,
@@ -138,7 +149,8 @@ pub fn adjust_eff_logit_no_missing(
                     //het_min_ratio,
                 );
                 let is_eff_eps = is_eff_eps_2;
-                (Coef::Score3((s0, s1, s2_new)), is_eff_eps)
+                ((s0, s1, s2_new), is_eff_eps)
+                //(Coef::Score3((s0, s1, s2_new)), is_eff_eps)
             }
 
             EffEps::LimS2GmodelBorderProp(
@@ -162,7 +174,8 @@ pub fn adjust_eff_logit_no_missing(
                     verbose,
                 );
                 let is_eff_eps = is_eff_eps_2;
-                (Coef::Score3((s0, s1, s2_new)), is_eff_eps)
+                ((s0, s1, s2_new), is_eff_eps)
+                //(Coef::Score3((s0, s1, s2_new)), is_eff_eps)
             }
             EffEps::LimS2AddProp(plim) => {
                 //let (d2, n2, d1, n1, d0, n0, _dm, _nm) = table8_count;
@@ -174,11 +187,13 @@ pub fn adjust_eff_logit_no_missing(
                     plim,
                 );
                 let is_eff_eps = is_eff_eps_2;
-                (Coef::Score3((s0, s1, s2_new)), is_eff_eps)
+                ((s0, s1, s2_new), is_eff_eps)
+                //(Coef::Score3((s0, s1, s2_new)), is_eff_eps)
             }
         }
     } else {
-        (Coef::Score3((s0, s1, s2)), false)
+        ((s0, s1, s2), false)
+        //(Coef::Score3((s0, s1, s2)), false)
     }
 }
 

@@ -13,12 +13,12 @@ fn setup_vars(
     let sample_buf = fin_sample.map(|x| genetics::textfile::read_file_to_end(x, None).unwrap());
 
     //) -> (Dataset, Vec<f64>, LossStruct) {
-    let dataset: Dataset = Dataset::new(
+    let dataset: Dataset = Dataset::new_boost_training(
         fin,
         GenotFormat::Plink1,
         None,
         None,
-        "",
+        None,
         snv_buf.as_deref(),
         sample_buf.as_deref(),
         //fin_snv,

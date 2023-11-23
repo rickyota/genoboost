@@ -355,8 +355,9 @@ fn main() {
             .values_of("iters")
             .unwrap()
             .map(|s| {
-                s.parse::<usize>()
-                    .expect("Iters should be able to be parsed to non-negative integer")
+                s.parse::<usize>().unwrap_or_else(|| {
+                    panic!("Iters should be able to be parsed to non-negative integer")
+                })
             })
             .collect();
         // sort and deduplication

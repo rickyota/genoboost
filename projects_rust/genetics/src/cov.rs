@@ -323,22 +323,22 @@ mod tests {
 
     use crate::{io_genot, sample, samples, GenotFormat};
 
-    fn setup_test() -> (Option<PathBuf>, usize, HashMap<String, usize>) {
-        let fin = PathBuf::from("../../test/data/toy1/genot");
-        let fin_var = Some(PathBuf::from("../../test/data/toy1/genot.cov"));
-        let fin_sample = None;
+    // fn setup_test() -> (Option<PathBuf>, usize, HashMap<String, usize>) {
+    //     let fin = PathBuf::from("../../test/data/toy1/genot");
+    //     let fin_var = Some(PathBuf::from("../../test/data/toy1/genot.cov"));
+    //     let fin_sample = None;
 
-        let gfmt = GenotFormat::Plink1;
-        let n_in: usize = io_genot::compute_num_sample(&fin, gfmt).unwrap();
-        println!("n_in: {}", n_in);
+    //     let gfmt = GenotFormat::Plink1;
+    //     let n_in: usize = io_genot::compute_num_sample(&fin, gfmt).unwrap();
+    //     println!("n_in: {}", n_in);
 
-        let (n, use_samples) = sample::make_use_samples(fin_sample, &fin, gfmt);
-        println!("n: {}", n);
+    //     let (n, use_samples) = sample::make_use_samples(fin_sample, &fin, gfmt);
+    //     println!("n: {}", n);
 
-        let sample_id_to_n = samples::create_sample_id_to_n(&fin, gfmt, Some(&use_samples));
+    //     let sample_id_to_n = samples::create_sample_id_to_n(&fin, gfmt, Some(&use_samples));
 
-        (fin_var, n_in, sample_id_to_n)
-    }
+    //     (fin_var, n_in, sample_id_to_n)
+    // }
 
     /*     #[test]
     fn test_load_vars() {

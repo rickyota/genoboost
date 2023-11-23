@@ -11,37 +11,48 @@ use genetics::genot::GenotSnvRef;
 use genetics::samples::prelude::*;
 use genetics::wgt::Coef;
 
-// TODO: rename
-pub fn calculate_coef_root_ada(
+// update: on updating PGS not for loss
+// use learning rate
+pub fn calculate_coef_ada_update(
     pred_s: &[u8],
+    gsnv: &GenotSnvRef,
     sample_weight: &SampleWeight,
-    //ps: &[f64],
     phe: &Phe,
     learning_rate: f64,
     eps: Option<Eps>,
+    eff_eps: Option<EffEps>,
     boost_type: BoostType,
-) -> (Coef, bool) {
+) -> (Coef, bool, bool) {
     let (table_sum, is_eps) =
         table::calculate_table_eps(&pred_s, sample_weight.ps().unwrap(), phe, eps, boost_type);
-    let coef_ti = calculate_coefficients_ada(table_sum, boost_type, learning_rate, eps);
-    (coef_ti, is_eps)
+    let (coef_ti, is_eff_eps) =
+        calculate_coef_ada_eps(table_sum, gsnv, phe, eps, eff_eps, boost_type, false, true);
+    let coef_ti = coef_lr(coef_ti, learning_rate, boost_type);
+    (coef_ti, is_eps, is_eff_eps)
 }
 
+// NO LEARNING RATE
 // assume table after eps
-pub fn calculate_coefficients_ada(
+pub fn calculate_coef_ada_eps(
     table: ContingencyTable,
-    boost_type: BoostType,
-    lr: f64,
+    gsnv: &GenotSnvRef,
+    phe: &Phe,
+    //lr: f64,
     eps: Option<Eps>,
-) -> Coef {
+    eff_eps: Option<EffEps>,
+    boost_type: BoostType,
+    on_loss: bool,
+    verbose: bool,
+) -> (Coef, bool) {
     match boost_type {
         BoostType::Ada => {
             let table2_sum = table.two();
             let (d, n) = table2_sum;
             let alpha = (d / n).ln() / 2.0;
 
-            let alpha = lr * alpha;
-            Coef::Binary((0.0, alpha))
+            //let alpha = lr * alpha;
+            unimplemented!("eff_eps");
+            //Coef::Binary((0.0, alpha), is_eff_eps)
         }
         BoostType::ConstAda => {
             let table4_sum = table.four();
@@ -49,9 +60,10 @@ pub fn calculate_coefficients_ada(
             let const_ti = ((d1 * d0) / (n1 * n0)).ln() / 4.0;
             let alpha_ti = ((d1 * n0) / (n1 * d0)).ln() / 4.0;
 
-            let const_ti = lr * const_ti;
-            let alpha_ti = lr * alpha_ti;
-            Coef::Binary((const_ti, alpha_ti))
+            //let const_ti = lr * const_ti;
+            //let alpha_ti = lr * alpha_ti;
+            unimplemented!("eff_eps");
+            //Coef::Binary((const_ti, alpha_ti))
         }
         BoostType::FreeModelMissing => {
             let table7_sum = table.seven();
@@ -59,6 +71,7 @@ pub fn calculate_coefficients_ada(
 
             // TODO: clean do not want to use eps here
             if eps.is_some() && eps.unwrap().dom() {
+                unimplemented!("Not implemented effeps");
                 // TODO: create table:judge_eps(table)
                 let s0;
                 let s1;
@@ -81,33 +94,162 @@ pub fn calculate_coefficients_ada(
                     s2 = (d2 / n2).ln() / 2.0;
                 }
 
-                let s0 = lr * s0;
-                let s1 = lr * s1;
-                let s2 = lr * s2;
-                Coef::Score4((s0, s1, s2, 0.0))
+                // TMP
+                let is_eff_eps = false;
+
+                //let s0 = lr * s0;
+                //let s1 = lr * s1;
+                //let s2 = lr * s2;
+                //(Coef::Score4((s0, s1, s2, 0.0)), is_eff_eps)
+                (Coef::new_score4((s0, s1, s2, 0.0)), is_eff_eps)
             } else {
                 let s0 = (d0 / n0).ln() / 2.0;
                 let s1 = (d1 / n1).ln() / 2.0;
                 let s2 = (d2 / n2).ln() / 2.0;
 
-                let s0 = lr * s0;
-                let s1 = lr * s1;
-                let s2 = lr * s2;
-                Coef::Score4((s0, s1, s2, 0.0))
+                if on_loss && eff_eps.is_some() && (eff_eps.unwrap().is_on_update()) {
+                    // legacy
+                    unimplemented!("Not using now");
+                } else {
+                    let table8_count = gsnv.stat_contingency_table(phe);
+
+                    let ((s0, s1, s2), is_eff_eps) = adjust_coef::adjust_eff_logit_no_missing(
+                        (s0, s1, s2),
+                        table8_count,
+                        eff_eps,
+                        verbose,
+                    );
+                    //(Coef::Score4((s0, s1, s2, 0.0)), is_eff_eps)
+                    (Coef::new_score4((s0, s1, s2, 0.0)), is_eff_eps)
+                }
+
+                //if !on_loss {
+                //    let ((s0, s1, s2), is_eff_eps) = adjust_coef::adjust_eff_logit_no_missing(
+                //        (s0, s1, s2),
+                //        table8_count,
+                //        eff_eps,
+                //        verbose,
+                //    );
+                //    (Coef::Score4((s0, s1, s2, 0.0)), is_eff_eps)
+                //} else {
+                //    // calculate coef for loss
+                //    // some eps_eff does not apply on coef for loss
+                //    if eff_eps.is_some() && (!eff_eps.unwrap().is_on_update()) {
+                //        if verbose {
+                //            log::debug!("Adjust eff_eps since for loss.");
+                //        }
+                //    let ((s0, s1, s2), is_eff_eps) = adjust_coef::adjust_eff_logit_no_missing(
+                //            (s0, s1, s2),
+                //            table8_count,
+                //            eff_eps,
+                //            verbose,
+                //        )
+                //    (Coef::Score4((s0, s1, s2, 0.0)), is_eff_eps)
+                //    } else {
+                //        // legacy
+                //        unimplemented!("Not using now");
+                //        if verbose {
+                //            log::debug!("Do not adjust eff_eps since for loss.");
+                //        }
+
+                //        //let s0 = lr * s0;
+                //        //let s1 = lr * s1;
+                //        //let s2 = lr * s2;
+                //        Coef::Score4((s0, s1, s2, 0.0))
+                //    }
+                //}
             }
         }
         _ => panic!(),
     }
 }
 
+// OLD: using learning rate
+// // assume table after eps
+// pub fn calculate_coefficients_ada(
+//     table: ContingencyTable,
+//     boost_type: BoostType,
+//     lr: f64,
+//     eps: Option<Eps>,
+//     eff_eps: Option<EffEps>,
+//     //on_loss: bool,
+//     //verbose: bool,
+// ) -> Coef {
+//     match boost_type {
+//         BoostType::Ada => {
+//             let table2_sum = table.two();
+//             let (d, n) = table2_sum;
+//             let alpha = (d / n).ln() / 2.0;
+
+//             let alpha = lr * alpha;
+//             Coef::Binary((0.0, alpha))
+//         }
+//         BoostType::ConstAda => {
+//             let table4_sum = table.four();
+//             let (d1, n1, d0, n0) = table4_sum;
+//             let const_ti = ((d1 * d0) / (n1 * n0)).ln() / 4.0;
+//             let alpha_ti = ((d1 * n0) / (n1 * d0)).ln() / 4.0;
+
+//             let const_ti = lr * const_ti;
+//             let alpha_ti = lr * alpha_ti;
+//             Coef::Binary((const_ti, alpha_ti))
+//         }
+//         BoostType::FreeModelMissing => {
+//             let table7_sum = table.seven();
+//             let (d2, n2, d1, n1, d0, n0, _) = table7_sum;
+
+//             // TODO: clean do not want to use eps here
+//             if eps.is_some() && eps.unwrap().dom() {
+//                 unimplemented!("Not implemented effeps");
+//                 // TODO: create table:judge_eps(table)
+//                 let s0;
+//                 let s1;
+//                 let s2;
+//                 if (d2 < CONTINGENCY_TABLE_FILL) || (n2 < CONTINGENCY_TABLE_FILL) {
+//                     let d1_new = d2 + d1;
+//                     let n1_new = n2 + n1;
+//                     s1 = (d1_new / n1_new).ln() / 2.0;
+//                     s2 = s1;
+//                     s0 = (d0 / n0).ln() / 2.0;
+//                 } else if (d0 < CONTINGENCY_TABLE_FILL) || (n0 < CONTINGENCY_TABLE_FILL) {
+//                     let d1_new = d0 + d1;
+//                     let n1_new = n0 + n1;
+//                     s1 = (d1_new / n1_new).ln() / 2.0;
+//                     s0 = s1;
+//                     s2 = (d2 / n2).ln() / 2.0;
+//                 } else {
+//                     s0 = (d0 / n0).ln() / 2.0;
+//                     s1 = (d1 / n1).ln() / 2.0;
+//                     s2 = (d2 / n2).ln() / 2.0;
+//                 }
+
+//                 let s0 = lr * s0;
+//                 let s1 = lr * s1;
+//                 let s2 = lr * s2;
+//                 Coef::Score4((s0, s1, s2, 0.0))
+//             } else {
+//                 let s0 = (d0 / n0).ln() / 2.0;
+//                 let s1 = (d1 / n1).ln() / 2.0;
+//                 let s2 = (d2 / n2).ln() / 2.0;
+
+//                 unimplemented!("eff_eps");
+
+//                 let s0 = lr * s0;
+//                 let s1 = lr * s1;
+//                 let s2 = lr * s2;
+//                 Coef::Score4((s0, s1, s2, 0.0))
+//             }
+//         }
+//         _ => panic!(),
+//     }
+// }
+
 // DO NOT use predict here: troublesome
 // now common fn can be used for loss and wgt
 // TODO: integrate to calcualte_coef_root_ada
-pub fn calculate_coef_root_logit(
+pub fn calculate_coef_logit_update(
     gsnv: &GenotSnvRef,
     sample_weight: &SampleWeight,
-    //wzs_pad: &[f64],
-    //wls_pad: &[f64],
     phe: &Phe,
     learning_rate: f64,
     eps: Option<Eps>,
@@ -126,14 +268,12 @@ pub fn calculate_coef_root_logit(
                     gsnv,
                     sample_weight.wzs_pad().unwrap(),
                     sample_weight.wls_pad().unwrap(),
-                    //wzs_pad,
-                    //wls_pad,
                     phe,
                     epsilons_wzs,
                     epsilons_wls,
                     eps,
-                    boost_type,
                     eff_eps,
+                    boost_type,
                     false,
                     true,
                 );
@@ -144,14 +284,12 @@ pub fn calculate_coef_root_logit(
             BoostType::LogitAdd => {
                 let coef_ti = calculate_coef_logit_add(
                     gsnv,
-                    //&genot.to_genot_snv(mi),
                     sample_weight.wzs_pad().unwrap(),
                     sample_weight.wls_pad().unwrap(),
-                    //wzs_pad,
-                    //wls_pad,
-                    //phe,
-                    learning_rate,
+                    //learning_rate,
                 );
+                let coef_ti = coef_lr(coef_ti, learning_rate, boost_type);
+                //let coef_ti = coef_ti.apply_lr(learning_rate);
                 (coef_ti, false, false)
             }
             _ => panic!(),
@@ -167,16 +305,24 @@ pub unsafe fn calculate_coef_logit_eps(
     epsilons_wzs: (f64, f64), //(epsilon_case: f64, epsilon_cont: f64,)
     epsilons_wls: (f64, f64), //(epsilon_case: f64, epsilon_cont: f64,)
     eps: Option<Eps>,
-    //learning_rate: Option<f64>,
-    boost_type: BoostType,
     eff_eps: Option<EffEps>,
+    boost_type: BoostType,
     on_loss: bool,
     verbose: bool,
+    //learning_rate: Option<f64>,
 ) -> (Coef, bool, bool) {
     //use std::time::Instant;
     //let start_time = Instant::now();
 
-    let (wzs_sum, wls_sum) = calc::calculate_coef_gt_logit_simd_sm(gsnv, wzs_pad, wls_pad);
+    let (wzs_sum, wls_sum) = calc::calculate_coef_gt_logit_sm(gsnv, wzs_pad, wls_pad);
+    //let (wzs_sum, wls_sum);
+    //#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    //{
+    //    if is_x86_feature_detected!("avx2") {
+    //        let (wzs_sum, wls_sum) = calc::calculate_coef_gt_logit_simd_sm(gsnv, wzs_pad, wls_pad);
+    //    }
+    //}
+
     //calculate_coef_gt_logit_simd_sm(&genot.to_genot_snv(mi), wzs, wls, phe);
 
     //println!("afr wzs_sum: {} sec",  start_time.elapsed().as_micros());
@@ -196,7 +342,7 @@ pub unsafe fn calculate_coef_logit_eps(
         epsilons_wzs,
         epsilons_wls,
         eps,
-        table8_count,
+        ContingencyTable::EightCount(table8_count),
     );
 
     //println!("afr adj: {} sec",  start_time.elapsed().as_micros());
@@ -316,56 +462,59 @@ pub unsafe fn calculate_coef_logit_add(
     //epsilons_wzs: (f64, f64), //(epsilon_case: f64, epsilon_cont: f64,)
     //epsilons_wls: (f64, f64), //(epsilon_case: f64, epsilon_cont: f64,)
     //eps: Eps,
-    lr: f64,
-) -> Coef {
-    /*     //use std::time::Instant;
-    //let start_time = Instant::now();
-
-    let (wzs_sum, wls_sum) = calc::calculate_coef_gt_logit_simd_sm(gsnv, wzs_pad, wls_pad);
-    //calculate_coef_gt_logit_simd_sm(&genot.to_genot_snv(mi), wzs, wls, phe);
-
-    let coef: Coef = calc_coef_logit_add(wzs_sum, wls_sum);
-
-    //println!("afr coef: {} sec",  start_time.elapsed().as_micros());
-
-    let (c, a) = coef.linearconst_f64();
-
-    let coef = Coef::LinearConst((c, a));
-    //let coef = Coef::LinearConst((lr * c, lr * a)); */
-
-    let coef = calculate_coef_logit_add_on_loss(gsnv, wzs_pad, wls_pad);
-
-    coef.apply_lr(lr)
-}
-
-// for coef on calculating loss
-pub unsafe fn calculate_coef_logit_add_on_loss(
-    gsnv: &GenotSnvRef,
-    wzs_pad: &[f64],
-    wls_pad: &[f64],
-    //_phe: &Phe,
-    //epsilons_wzs: (f64, f64), //(epsilon_case: f64, epsilon_cont: f64,)
-    //epsilons_wls: (f64, f64), //(epsilon_case: f64, epsilon_cont: f64,)
-    //eps: Eps,
     //lr: f64,
 ) -> Coef {
     //use std::time::Instant;
     //let start_time = Instant::now();
 
-    let (wzs_sum, wls_sum) = calc::calculate_coef_gt_logit_simd_sm(gsnv, wzs_pad, wls_pad);
+    let (wzs_sum, wls_sum) = calc::calculate_coef_gt_logit_sm(gsnv, wzs_pad, wls_pad);
+    //let (wzs_sum, wls_sum) = calc::calculate_coef_gt_logit_simd_sm(gsnv, wzs_pad, wls_pad);
     //calculate_coef_gt_logit_simd_sm(&genot.to_genot_snv(mi), wzs, wls, phe);
 
     let coef: Coef = calc_coef_logit_add(wzs_sum, wls_sum);
 
     //println!("afr coef: {} sec",  start_time.elapsed().as_micros());
 
-    let (c, a) = coef.linearconst_f64();
+    //let (c, a) = coef.linearconst_f64();
 
-    let coef = Coef::LinearConst((c, a));
-    //let coef = Coef::LinearConst((lr * c, lr * a));
+    //let coef = Coef::LinearConst((c, a));
 
     coef
+
+    //let coef = calculate_coef_logit_add(gsnv, wzs_pad, wls_pad);
+
+    //coef.apply_lr(lr)
 }
+
+// // for coef on calculating loss
+// pub unsafe fn calculate_coef_logit_add_on_loss(
+//     gsnv: &GenotSnvRef,
+//     wzs_pad: &[f64],
+//     wls_pad: &[f64],
+//     //_phe: &Phe,
+//     //epsilons_wzs: (f64, f64), //(epsilon_case: f64, epsilon_cont: f64,)
+//     //epsilons_wls: (f64, f64), //(epsilon_case: f64, epsilon_cont: f64,)
+//     //eps: Eps,
+//     //lr: f64,
+// ) -> Coef {
+//     //use std::time::Instant;
+//     //let start_time = Instant::now();
+
+//     let (wzs_sum, wls_sum) = calc::calculate_coef_gt_logit_sm(gsnv, wzs_pad, wls_pad);
+//     //let (wzs_sum, wls_sum) = calc::calculate_coef_gt_logit_simd_sm(gsnv, wzs_pad, wls_pad);
+//     //calculate_coef_gt_logit_simd_sm(&genot.to_genot_snv(mi), wzs, wls, phe);
+
+//     let coef: Coef = calc_coef_logit_add(wzs_sum, wls_sum);
+
+//     //println!("afr coef: {} sec",  start_time.elapsed().as_micros());
+
+//     let (c, a) = coef.linearconst_f64();
+
+//     let coef = Coef::LinearConst((c, a));
+//     //let coef = Coef::LinearConst((lr * c, lr * a));
+
+//     coef
+// }
 
 pub fn calculate_coef_logit(
     wzs_sum: (f64, f64, f64),
@@ -387,9 +536,11 @@ pub fn calculate_coef_logit(
 }
 
 pub fn calculate_coef_logit_no_missing(
+    // TODO: use ContingencyTable
     wzs_sum: (f64, f64, f64),
     wls_sum: (f64, f64, f64),
     eff_eps: Option<EffEps>,
+    // TODO: use ContingencyTable
     // for eff_eps
     table8_count: (usize, usize, usize, usize, usize, usize, usize, usize),
     on_loss: bool,
@@ -401,24 +552,39 @@ pub fn calculate_coef_logit_no_missing(
         log::debug!("Coef2,1,0 bfr EffEps {}, {}, {}", s2, s1, s0);
     }
 
-    if !on_loss {
-        adjust_coef::adjust_eff_logit_no_missing((s0, s1, s2), table8_count, eff_eps, verbose)
+    if on_loss && eff_eps.is_some() && (eff_eps.unwrap().is_on_update()) {
+        // legacy
+        unimplemented!("Not using now");
+        //if verbose {
+        //    log::debug!("Do not adjust eff_eps since for loss.");
+        //}
     } else {
-        // calculate coef for loss
-        // some eps_eff does not apply on coef for loss
-        if eff_eps.is_some() && (!eff_eps.unwrap().is_on_update()) {
-            if verbose {
-                log::debug!("Adjust eff_eps since for loss.");
-            }
-            adjust_coef::adjust_eff_logit_no_missing((s0, s1, s2), table8_count, eff_eps, verbose)
-        } else {
-            // legacy
-            if verbose {
-                log::debug!("Do not adjust eff_eps since for loss.");
-            }
-            (Coef::Score3((s0, s1, s2)), false)
-        }
+        let (scores, is_eff_eps) =
+            adjust_coef::adjust_eff_logit_no_missing((s0, s1, s2), table8_count, eff_eps, verbose);
+        (Coef::new_score3(scores), is_eff_eps)
     }
+
+    //if !on_loss {
+    //    let (scores, is_eff_eps)=adjust_coef::adjust_eff_logit_no_missing((s0, s1, s2), table8_count, eff_eps, verbose);
+    //    (Coef::new_score3(scores), is_eff_eps)
+    //} else {
+    //    // calculate coef for loss
+    //    // some eps_eff does not apply on coef for loss
+    //    if  eff_eps.is_some() && (!eff_eps.unwrap().is_on_update()) {
+    //        if verbose {
+    //            log::debug!("Adjust eff_eps since for loss.");
+    //        }
+    //        let (scores, is_eff_eps)=adjust_coef::adjust_eff_logit_no_missing((s0, s1, s2), table8_count, eff_eps, verbose);
+    //        (Coef::new_score3(scores), is_eff_eps)
+    //    } else {
+    //        // legacy
+    //        unimplemented!("Not using now");
+    //        if verbose {
+    //            log::debug!("Do not adjust eff_eps since for loss.");
+    //        }
+    //        (Coef::Score3((s0, s1, s2)), false)
+    //    }
+    //}
 }
 
 pub fn calculate_coef_from_weights(
@@ -494,15 +660,17 @@ pub fn coef_lr(coef: Coef, lr: f64, boost_type: BoostType) -> Coef {
     //let lr = learning_rate.unwrap_or(1.0);
 
     match boost_type {
-        BoostType::Logit => {
+        BoostType::FreeModelMissing | BoostType::Logit => {
             let (s0, s1, s2, _sm) = coef.score4_f64();
             Coef::Score4((lr * s0, lr * s1, lr * s2, 0.0))
         }
         BoostType::LogitNoMissing => {
-            let (s0, s1, s2) = coef.score3_f64();
-            Coef::Score3((lr * s0, lr * s1, lr * s2))
+            coef.apply_lr(lr)
+            //let (s0, s1, s2) = coef.score3_f64();
+            //Coef::Score3((lr * s0, lr * s1, lr * s2))
         }
-        _ => panic!("wrong"),
+        BoostType::LogitAdd => coef.apply_lr(lr),
+        _ => panic!("wrong: {:?}", boost_type),
     }
 }
 
@@ -526,25 +694,43 @@ mod tests {
     //    (v - w).abs() < e
     //}
 
-    #[test]
-    fn test_calculate_coefficients_freemodelmissing() {
-        let t = ContingencyTable::new_seven((0.02, 0.01, 0.1, 0.2, 0.3, 0.3, 0.07));
-        let coef = calculate_coefficients_ada(t, BoostType::FreeModelMissing, 1.0, Some(Eps::Med));
-        assert_eq!(
-            coef,
-            Coef::Score4((0.0, 0.5f64.ln() / 2.0, 2.0f64.ln() / 2.0, 0.0))
-        );
-    }
+    // TODO: create test
+    //#[test]
+    //fn test_calculate_coefficients_freemodelmissing() {
+    //    let t = ContingencyTable::new_seven((0.02, 0.01, 0.1, 0.2, 0.3, 0.3, 0.07));
+    //    let (coef, is_eff_eps) = calculate_coef_ada_eps(
+    //        t,
+    //        BoostType::FreeModelMissing,
+    //        //1.0,
+    //        Some(Eps::Med),
+    //        None,
+    //        false,
+    //        false,
+    //    );
+    //    assert_eq!(
+    //        coef,
+    //        Coef::Score4((0.0, 0.5f64.ln() / 2.0, 2.0f64.ln() / 2.0, 0.0))
+    //    );
+    //    assert_eq!(is_eff_eps, false)
+    //}
 
-    #[test]
-    fn test_calculate_coefficients_freemodelmissing_lr() {
-        let t = ContingencyTable::new_seven((0.02, 0.01, 0.1, 0.2, 0.3, 0.3, 0.07));
-        let coef = calculate_coefficients_ada(t, BoostType::FreeModelMissing, 0.1, Some(Eps::Med));
-        assert_eq!(
-            coef,
-            Coef::Score4((0.0, 0.5f64.ln() / 20.0, 2.0f64.ln() / 20.0, 0.0))
-        );
-    }
+    // #[test]
+    // fn test_calculate_coefficients_freemodelmissing_lr() {
+    //     let t = ContingencyTable::new_seven((0.02, 0.01, 0.1, 0.2, 0.3, 0.3, 0.07));
+    //     let coef = calculate_coefficients_ada(
+    //         t,
+    //         BoostType::FreeModelMissing,
+    //         0.1,
+    //         Some(Eps::Med),
+    //         None,
+    //         false,
+    //         false,
+    //     );
+    //     assert_eq!(
+    //         coef,
+    //         Coef::Score4((0.0, 0.5f64.ln() / 20.0, 2.0f64.ln() / 20.0, 0.0))
+    //     );
+    // }
     /// for speed
     #[allow(dead_code)]
     fn setup_test4_logit() -> (Genot, Phe, Vec<f64>, Vec<f64>) {

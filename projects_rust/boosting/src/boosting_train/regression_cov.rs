@@ -150,9 +150,6 @@ pub fn logistic_regression_covs(samples: &Samples, iteration_start: usize) -> Ve
 // TODO: should pass WgtBoosts and add inside
 pub fn logistic_regression_covs(samples: &Samples, iteration_start: usize) -> Vec<WgtBoost> {
     log::debug!("use smartcore for logreg_cov.");
-    //log::debug!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-    //log::debug!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-    //log::debug!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     let wgts = regression::logistic_regression_covs(samples);
 
     let mut wgts_cov: Vec<WgtBoost> = Vec::new();
