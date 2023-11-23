@@ -152,7 +152,7 @@ $ genoboost train \
 
 #### <a name="train-cv"></a>Cross-validation
 
-If you want to run k-fold cross-validation, use `--cross-validation (k)`. GenoBoost will split the samples into k chunks and run k times training with one of the chunks being the validation samples. You can control how to split the samples with a random seed.
+If you want to run k-fold cross-validation, use `--cross-validation [k]`. GenoBoost will split the samples into k chunks and run k times training with one of the chunks being the validation samples. You can control how to split the samples with a random seed.
 
 ```bash
 $ genoboost train \
@@ -246,7 +246,7 @@ $ genoboost score \
 
 #### <a name="score-cv"></a>Cross-validation
 
-If you used cross-validation in the training phase, use `--cross-validation (k)`.
+If you used cross-validation in the training phase, use `--cross-validation [k]`.
 
 ```bash
 $ genoboost score \

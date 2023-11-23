@@ -11,6 +11,7 @@ COPY ../ .
 RUN RUSTFLAGS='-C target-cpu=native' \
     cargo build \
     --release \
+    --verbose \
     --manifest-path ./projects_rust/Cargo.toml \
     --bin genoboost
 
