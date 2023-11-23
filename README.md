@@ -1,4 +1,4 @@
-# GenoBoost v1.0.3
+# GenoBoost v1.0.4
 
 [![GenoBoost](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml)
 [![Release](https://github.com/rickyota/genoboost/actions/workflows/publish.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/publish.yml)
@@ -19,31 +19,40 @@ $ genoboost train \
 
 ## Table of Contents
 
-- [Getting Started](#getting-started)
-- [Table of Contents](#table-of-contents)
-- [Introduction](#introduction)
-- [Users' Guide](#users-guide)
-- [Installation](#installation)
-  - [Plink1 Input](#plink1-input)
-  - [Plink2 Input](#plink2-input)
-  - [Advanced Install](#advanced-install)
-- [Train GenoBoost Model](#train-genoboost-model)
-  - [Simplest Usage](#simplest-usage)
-  - [Without Validation](#without-validation)
-  - [Input Plink2](#input-plink2)
-  - [Cross-validation](#cross-validation)
-  - [ Options for Training](#-options-for-training)
-- [ Calculate Sample Scores](#-calculate-sample-scores)
-  - [Simplest Usage](#simplest-usage-1)
-  - [Without Validation](#without-validation-1)
-  - [Input Plink2](#input-plink2-1)
-  - [Cross-validation](#cross-validation-1)
-  - [ Options for Score](#-options-for-score)
-- [Advanced Guide](#advanced-guide)
-- [Advanced Installation](#advanced-installation)
-  - [Docker](#docker)
-  - [Singularity](#singularity)
-- [Computational Time](#computational-time)
+- [GenoBoost v1.0.4](#genoboost-v104)
+  - [Getting Started](#getting-started)
+  - [Table of Contents](#table-of-contents)
+  - [News](#news)
+  - [Introduction](#introduction)
+  - [Users' Guide](#users-guide)
+    - [Installation](#installation)
+      - [Plink1 Input](#plink1-input)
+      - [Plink2 Input](#plink2-input)
+      - [Advanced Install](#advanced-install)
+    - [Train GenoBoost Model](#train-genoboost-model)
+      - [Simplest Usage](#simplest-usage)
+      - [Without Validation](#without-validation)
+      - [Input Plink2](#input-plink2)
+      - [Cross-validation](#cross-validation)
+      - [ Options for Training](#-options-for-training)
+    - [ Calculate Sample Scores](#-calculate-sample-scores)
+      - [Simplest Usage](#simplest-usage-1)
+      - [Without Validation](#without-validation-1)
+      - [Input Plink2](#input-plink2-1)
+      - [Cross-validation](#cross-validation-1)
+      - [ Options for Score](#-options-for-score)
+  - [Advanced Guide](#advanced-guide)
+    - [Advanced Installation](#advanced-installation)
+      - [Docker](#docker)
+      - [Singularity](#singularity)
+    - [Computational Time](#computational-time)
+
+## <a name="news"></a>News
+
+- [v1.0.3](https://github.com/rickyota/genoboost/releases/tag/v1.0.3) (Nov 23, 2023)
+    - Initial version.
+    - [v1.0.4](https://github.com/rickyota/genoboost/releases/tag/v1.0.4) (Nov 23, 2023) is the same version as v1.0.3.
+
 
 ## <a name="introduction"></a>Introduction
 
