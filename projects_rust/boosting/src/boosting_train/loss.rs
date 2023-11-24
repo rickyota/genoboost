@@ -484,7 +484,7 @@ pub fn calculate_loss_gt(
             );
         }
         // FIXME: BoostType::LogitNoMissing
-        _ => unimplemented!(),
+        _ => unimplemented!("Use SIMD."),
     }
 }
 

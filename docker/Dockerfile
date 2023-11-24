@@ -24,9 +24,9 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     libgomp1
 
-WORKDIR /opt/genoboost
-COPY --from=builder /opt/genoboost/projects_rust/target/release/genoboost ./
-ENTRYPOINT ["/opt/genoboost/genoboost"]
-#ENTRYPOINT ["./genoboost"]
+# bind $(pwd):/opt/ on local
+WORKDIR /opt/
+COPY --from=builder /opt/genoboost/projects_rust/target/release/genoboost /app/
+ENTRYPOINT ["/app/genoboost"]
 
 # https://stackoverflow.com/questions/73037618/glibc-incompatibility-on-debian-docker

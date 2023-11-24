@@ -15,7 +15,8 @@ $ genoboost train \
     --file-genot ./example/genot \
     --file-phe ./example/genot.cov \
     --cov age,sex \
-    --major-a2-train
+    --major-a2-train \
+    --verbose
 ```
 
 ## Table of Contents
@@ -321,7 +322,8 @@ $ docker run -it rickyota/genoboost:latest \
     --file-genot ./example/genot \
     --file-phe ./example/genot.cov \
     --cov age,sex \
-    --major-a2-train
+    --major-a2-train \
+    --verbose
 ```
 
 #### <a name="singularity"></a>Singularity
@@ -334,7 +336,8 @@ $ singularity run genoboost.sif \
     --file-genot ./example/genot \
     --file-phe ./example/genot.cov \
     --cov age,sex \
-    --major-a2-train
+    --major-a2-train \
+    --verbose
 ```
 
 ### <a name="computational-time"></a>Computational Time

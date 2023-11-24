@@ -2,6 +2,8 @@
 #
 # GenoBoost training and score
 # requires `cargo`
+# 
+# occasionally does not stop 
 
 set -eux
 
@@ -10,17 +12,14 @@ dir_wgt="./result/train/"
 # output directory of score
 dir_score="./result/score/"
 # prefix of plink1 file
-file_plink="./test/data/1kg_maf0.1_m1k/genot"
+file_plink="./example/genot"
 # covariate file
-file_cov="./test/data/1kg_maf0.1_m1k/genot.cov"
+file_cov="./example/genot.cov"
 
 # compile
 export RUST_BACKTRACE=full
 cargo build --manifest-path ./projects_rust/Cargo.toml --release --bin genoboost
 cp ./projects_rust/target/release/genoboost ./genoboost
-
-# TMP
-exit 0
 
 # train
 ./genoboost train \

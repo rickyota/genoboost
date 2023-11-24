@@ -1,6 +1,9 @@
 #!/bin/bash
 #
 # GenoBoost training and score
+# requires `cargo`
+# 
+# occasionally does not stop 
 
 set -eux
 
@@ -9,16 +12,17 @@ dir_wgt="./result/train/"
 # output directory of score
 dir_score="./result/score/"
 # prefix of plink1 file
-file_plink="./example/genot"
+file_plink="./test/data/1kg_maf0.1_m1k/genot"
 # covariate file
-file_cov="./example/genot.cov"
+file_cov="./test/data/1kg_maf0.1_m1k/genot.cov"
 
-function genoboost-docker() {
-    docker run -it -v "$(pwd)":/opt/ --env RUST_BACKTRACE=full rickyota/genoboost:latest "$@"
-}
+# compile
+export RUST_BACKTRACE=full
+cargo build --manifest-path ./projects_rust/Cargo.toml --release --bin genoboost
+cp ./projects_rust/target/release/genoboost ./genoboost
 
 # train
-genoboost-docker train \
+./genoboost train \
     --dir "$dir_wgt" \
     --file-genot "$file_plink" \
     --file-phe "$file_cov" \
@@ -26,7 +30,7 @@ genoboost-docker train \
     --major-a2-train
 
 # score
-genoboost-docker score \
+./genoboost score \
     --dir-score "$dir_score" \
     --dir-wgt "$dir_wgt" \
     --file-genot "$file_plink" \
