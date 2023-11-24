@@ -14,19 +14,21 @@ file_plink="./test/data/1kg_maf0.1_m1k/genot"
 file_cov="./test/data/1kg_maf0.1_m1k/genot.cov"
 
 function genoboost-docker() {
-    docker run -it rickyota/genoboost:latest "$@"
+    docker run -it --env RUST_BACKTRACE=full rickyota/genoboost:latest "$@"
 }
 
 # train
-./genoboost-docker train \
+genoboost-docker train \
     --dir "$dir_wgt" \
     --file-genot "$file_plink" \
     --file-phe "$file_cov" \
     --cov age,sex \
-    --major-a2-train
+    --major-a2-train \
+    --train-only \
+    --iter-snv 10
 
 # score
-./genoboost-docker score \
+genoboost-docker score \
     --dir-score "$dir_score" \
     --dir-wgt "$dir_wgt" \
     --file-genot "$file_plink" \

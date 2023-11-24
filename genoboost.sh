@@ -5,7 +5,6 @@
 
 set -eux
 
-
 # output directory of training
 dir_wgt="./result/train/"
 # output directory of score
@@ -31,7 +30,7 @@ cp ./projects_rust/target/release/genoboost ./genoboost
 # score
 ./genoboost score \
     --dir-score "$dir_score" \
-    --dir-wgt "$dir_wgt"  \
+    --dir-wgt "$dir_wgt" \
     --file-genot "$file_plink" \
     --file-phe "$file_cov" \
     --cov age,sex
