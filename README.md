@@ -123,7 +123,7 @@ Write the column name to be used in covariates file after `--cov`.
 It is important that major allele is set to a2 by `--major-a2-train`since $s_2$ is winsorized. This option is unnecessary if major allele is already set as reference allele in genotype file.
 
 ```bash
-$ genoboost train \
+$ ./genoboost train \
     --dir ./result \
     --file-genot ./example/genot \
     --file-phe ./example/genot.cov \
@@ -136,7 +136,7 @@ $ genoboost train \
 If you want to treat all samples as a training dataset, use `--train-only` option. GenoBoost produces SNV weights each for learning rate. Use `--iter-snv` or `--iter` to control the maximum number of SNVs or iterations for training.
 
 ```bash
-$ genoboost train \
+$ ./genoboost train \
     --dir ./result \
     --file-genot ./example/genot \
     --file-phe ./example/genot.cov \
@@ -155,7 +155,7 @@ If the phenotype is accompanied by covariates in the phenotype file, use `--phe-
 Control/case format should be `0/1` or `1/2`.
 
 ```bash
-$ genoboost train \
+$ ./genoboost train \
     --dir ./result \
     --file-genot ./example/genot2 \
     --genot-format plink2-vzs \
@@ -170,7 +170,7 @@ $ genoboost train \
 If you want to run k-fold cross-validation, use `--cross-validation [k]`. GenoBoost will split the samples into k chunks and run k times training with one of the chunks being the validation samples. You can control how to split the samples with a random seed.
 
 ```bash
-$ genoboost train \
+$ ./genoboost train \
     --dir ./result \
     --file-genot ./example/genot \
     --file-phe ./example/genot.cov \
@@ -225,7 +225,7 @@ GenoBoost returns a polygenic score for each sample. GenoBoost outputs scores wi
 With the minimum options, GenoBoost will calculate sample scores from SNV weights with the best parameters determined in the validation dataset.
 
 ```bash
-$ genoboost score \
+$ ./genoboost score \
     --dir-score ./result_score \
     --dir-wgt ./result \
     --file-genot ./example/genot \
@@ -238,7 +238,7 @@ $ genoboost score \
 If you did not use the validation dataset in the training phase, GenoBoost will output sample scores for all parameters. You have to specify the number of SNVs in `--iters`.
 
 ```bash
-$ genoboost score \
+$ ./genoboost score \
     --dir-score ./result_score \
     --dir-wgt ./result \
     --file-genot ./example/genot \
@@ -253,7 +253,7 @@ $ genoboost score \
 Use `--genot-format`, `--file-phe` etc. for plink2 as shown in [training phase](#train-plink2).
 
 ```bash
-$ genoboost score \
+$ ./genoboost score \
     --dir ./result \
     --file-genot ./example/genot2 \
     --genot-format plink2-vzs \
@@ -266,7 +266,7 @@ $ genoboost score \
 If you used cross-validation in the training phase, use `--cross-validation [k]`.
 
 ```bash
-$ genoboost score \
+$ ./genoboost score \
     --dir ./result \
     --file-genot ./example/genot \
     --file-phe ./example/genot.cov \
@@ -316,7 +316,7 @@ Using docker or singularity is recommended.
 
 ```bash
 $ docker pull rickyota/genoboost:latest \
-$ docker run -it rickyota/genoboost:latest \
+$ docker run -it -v "$(pwd)":/opt/ rickyota/genoboost:latest \
     train \
     --dir ./result \
     --file-genot ./example/genot \
