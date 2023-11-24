@@ -1,9 +1,9 @@
 [package]
 name = "boosting"
+version = "0.1.0"
 authors = ["rickyota <22293266+rickyota@users.noreply.github.com>"]
 description = "Boosting methods for polygenic score"
 edition = "2021"
-#version = "0.1.0"
 
 [features]
 default = ["plink2"]
