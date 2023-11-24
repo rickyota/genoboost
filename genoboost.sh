@@ -19,6 +19,9 @@ export RUST_BACKTRACE=full
 cargo build --manifest-path ./projects_rust/Cargo.toml --release --bin genoboost
 cp ./projects_rust/target/release/genoboost ./genoboost
 
+# TMP
+exit 0
+
 # train
 ./genoboost train \
     --dir "$dir_wgt" \
