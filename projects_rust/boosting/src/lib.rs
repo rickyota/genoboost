@@ -423,9 +423,18 @@ pub fn run_boosting_integrate(
         log::info!("boost type: {:?}", boost_params.boost_type());
         // check fwgt does not exist.
         if !is_resume {
-            for learning_rate in boost_params_types.learning_rates().iter() {
-                wgt_boost::io::check_file_wgt_not_exist(dout, *learning_rate);
+            for boost_param_lr in boost_params.clone().into_iter() {
+                let learning_rate = boost_param_lr.learning_rate();
+                let dout_para = wgt_boost::io::get_dname_para_integrate(
+                    dout,
+                    learning_rate,
+                    boost_param_lr.boost_type(),
+                );
+                wgt_boost::io::check_file_wgt_not_exist_integrate(dout_para.as_ref());
             }
+            //for learning_rate in boost_params_types.learning_rates().iter() {
+            //    wgt_boost::io::check_file_wgt_not_exist_integrate(dout, *learning_rate);
+            //}
         }
 
         let start_time = Instant::now();
