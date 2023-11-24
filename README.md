@@ -120,7 +120,7 @@ See `./example/` for reference of file format. For example, the covariates file 
 With the minimum options, GenoBoost produces SNV weights list with the best parameter.
 SNV weights list is computed from randomly extracted 80% training samples, and the best parameter is determined in the remaining 20% validation samples.
 Write the column name to be used in covariates file after `--cov`.
-It is important that major allele is set to a2 by `--major-a2-train`since $s_2$ is winsorized. This option is unnecessary if major allele is already set as reference allele in genotype file.
+It is important that major allele is set to a2 (alternative allele) by `--major-a2-train`since $s_2$ is winsorized. This option is unnecessary if major allele is already set as reference allele in genotype file.
 
 ```bash
 $ ./genoboost train \
@@ -150,7 +150,7 @@ $ ./genoboost train \
 
 If you use plink2 genotype file (`.pgen`, `.psam` and `.pvar` or `.pvar.zst`), use `--genot-format plink2` or `--genot-format plink2-vzs`.
 
-If the phenotype is accompanied by covariates in the phenotype file, use `--phe-name` for the phenotype name. If phenotypes and covariates are in plink2 psam file, do not use `--file-phe`.
+If the phenotype is accompanied by covariates in the phenotype file, use `--phe` for the phenotype name. If phenotypes and covariates are in plink2 psam file, do not use `--file-phe`.
 
 Control/case format should be `0/1` or `1/2`.
 
@@ -160,7 +160,7 @@ $ ./genoboost train \
     --file-genot ./example/genot2 \
     --genot-format plink2-vzs \
     --file-phe ./example/genot2.phe \
-    --phe-name PHENO1 \
+    --phe PHENO1 \
     --cov age,sex \
     --major-a2-train
 ```
@@ -200,7 +200,7 @@ $ ./genoboost train \
 
 `--file-snv [FILE]`: Snv file for training. One line for one SNV id.
 
-`--major-a2-train`: Set major allele as a2 in training dataset.
+`--major-a2-train`: Set major allele as a2 (alternative allele) in training dataset.
 
 `--iter-snv [NUMBER]`, `--iter [NUMBER]` : Maximum number of SNVs or iterations for training.
 
