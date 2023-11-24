@@ -138,6 +138,20 @@ pub fn get_fname_loss_adjmax(dout: &Path, ti: usize) -> PathBuf {
 
 pub fn check_file_wgt_not_exist(dout: &Path, learning_rate: f64) {
     let fwgt = get_file_wgt(dout, learning_rate);
+    log::debug!("fwgt {:?}", fwgt);
+    let exist_fwgt = textfile::exist_file(&fwgt);
+    if exist_fwgt {
+        panic!(
+            "Weight file already exists: {:?}. Delete it or use --resume option.",
+            &fwgt
+        );
+    }
+}
+
+//pub fn check_file_wgt_not_exist_integrate(dout: &Path, learning_rate: f64) {
+pub fn check_file_wgt_not_exist_integrate(dout: &Path) {
+    let fwgt = get_fname_wgt(dout);
+    log::debug!("fwgt {:?}", fwgt);
     let exist_fwgt = textfile::exist_file(&fwgt);
     if exist_fwgt {
         panic!(
