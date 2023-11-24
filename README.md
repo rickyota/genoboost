@@ -51,7 +51,7 @@ $ genoboost train \
 
 ## <a name="news"></a>News
 
-- [v1.0.5](https://github.com/rickyota/genoboost/releases/tag/v1.0.5) (Nov 24, 2023)
+- [v1.0.6](https://github.com/rickyota/genoboost/releases/tag/v1.0.6) (Nov 24, 2023)
     - Initial version.
 
 
