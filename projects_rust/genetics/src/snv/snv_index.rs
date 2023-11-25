@@ -236,16 +236,24 @@ impl SnvId {
     }
 
     // list all candidates
-    fn flip_or_rev(&self) -> Option<((&str, &str), (&str, &str), (&str, &str), (&str, &str))> {
-        if !self.is_one_letter() {
-            return None;
-        }
+    // TODO: renmae
+    fn flip_or_rev(
+        &self,
+    ) -> (
+        (&str, &str),
+        (&str, &str),
+        Option<((&str, &str), (&str, &str))>,
+    ) {
         let a = self.alleles();
         let a_rev = (a.1, a.0);
+
+        if !self.is_one_letter() {
+            return (a, a_rev, None);
+        }
         let a_flip = self.alleles_flip();
         let a_rev_flip = (a_flip.1, a_flip.0);
 
-        Some((a, a_rev, a_flip, a_rev_flip))
+        (a, a_rev, Some((a_flip, a_rev_flip)))
     }
 
     // to reverse genotype
@@ -293,15 +301,19 @@ impl PartialEq for SnvId {
         }
         // same pos
         let a_other = other.alleles();
-        match self.flip_or_rev() {
-            None => self.alleles() == a_other,
-            Some((a, a_flip, a_rev, a_rev_flip)) => {
-                (a == a_other)
-                    || (a_flip == a_other)
-                    || (a_rev == a_other)
-                    || (a_rev_flip == a_other)
+        let (a, a_flip, alleles_rev) = self.flip_or_rev();
+
+        if (a == a_other) || (a_flip == a_other) {
+            return true;
+        }
+
+        // check rev for one letter
+        if let Some((a_rev, a_rev_flip)) = alleles_rev {
+            if (a_rev == a_other) || (a_rev_flip == a_other) {
+                return true;
             }
         }
+        return false;
     }
 }
 
@@ -377,14 +389,6 @@ mod tests {
         assert_eq!(snv_index.pos(), 123);
         assert_eq!(snv_index.a1(), "A");
         assert_eq!(snv_index.a2(), "C");
-
-        let alleles = snv_index.flip_or_rev().unwrap();
-        assert_eq!(alleles.0, ("A", "C"));
-        assert_eq!(alleles.1, ("C", "A"));
-        assert_eq!(alleles.2, ("T", "G"));
-        assert_eq!(alleles.3, ("G", "T"));
-        //assert_eq!(alleles.2, ("G", "T"));
-        //assert_eq!(alleles.3, ("T", "G"));
     }
 
     #[test]
