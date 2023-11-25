@@ -24,7 +24,8 @@ cp ./projects_rust/target/release/genoboost ./genoboost
     --file-phe "$file_cov" \
     --cov age,sex \
     --cross-validation 5 \
-    --major-a2-train
+    --major-a2-train \
+    --seed 55
 
 # score
 ./genoboost score \

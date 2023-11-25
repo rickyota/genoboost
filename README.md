@@ -1,4 +1,4 @@
-# GenoBoost v1.0.7
+# GenoBoost v1.0.8
 
 [![GenoBoost](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml)
 [![Release](https://github.com/rickyota/genoboost/actions/workflows/publish.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/publish.yml)
@@ -21,7 +21,7 @@ $ genoboost train \
 
 ## Table of Contents
 
-- [GenoBoost v1.0.7](#genoboost-v107)
+- [GenoBoost v1.0.8](#genoboost-v108)
   - [Getting Started](#getting-started)
   - [Table of Contents](#table-of-contents)
   - [News](#news)
@@ -51,7 +51,7 @@ $ genoboost train \
 
 ## <a name="news"></a>News
 
-- [v1.0.7](https://github.com/rickyota/genoboost/releases/tag/v1.0.7) (Nov 25, 2023)
+- [v1.0.8](https://github.com/rickyota/genoboost/releases/tag/v1.0.8) (Nov 25, 2023)
     - Initial version.
 
 
@@ -128,7 +128,7 @@ $ ./genoboost train \
     --file-phe ./example/genot.cov \
     --cov age,sex \
     --major-a2-train \
-    --seed 51
+    --seed 55
 ```
 
 #### <a name="train-train-only"></a>Without Validation
@@ -163,7 +163,7 @@ $ ./genoboost train \
     --phe PHENO1 \
     --cov age,sex \
     --major-a2-train \
-    --seed 51
+    --seed 55
 ```
 
 #### <a name="train-cv"></a>Cross-validation
@@ -178,7 +178,7 @@ $ ./genoboost train \
     --cov age,sex \
     --major-a2-train \
     --cross-validation 5 \
-    --seed 51
+    --seed 55
 ```
 
 #### <a name="train-option"></a>Options for Training
