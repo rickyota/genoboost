@@ -16,14 +16,14 @@ jobs:
         run: cargo build --manifest-path ./projects_rust/Cargo.toml --verbose
 
 
-  #test_example:
-  #  runs-on: ubuntu-latest
-  #  needs: build
-  #  steps:
-  #    - uses: actions/checkout@v2
-  #    - name: test
-  #      run: |
-  #        bash ./genoboost.sh
+  test_example:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v2
+      - name: test
+        run: |
+          bash ./genoboost.sh
 
   #test_1kg:
   #  runs-on: ubuntu-latest
