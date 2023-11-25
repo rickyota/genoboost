@@ -1,9 +1,9 @@
-# GenoBoost v1.0.5
+# GenoBoost v1.0.6
 
 [![GenoBoost](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml)
 [![Release](https://github.com/rickyota/genoboost/actions/workflows/publish.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/publish.yml)
 [![Build](https://github.com/rickyota/genoboost/actions/workflows/build.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/build.yml)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10200540.svg)](https://doi.org/10.5281/zenodo.10200540)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10203420.svg)](https://doi.org/10.5281/zenodo.10203420)
 
 ## <a name="started"></a>Getting Started
 
@@ -21,7 +21,7 @@ $ genoboost train \
 
 ## Table of Contents
 
-- [GenoBoost v1.0.5](#genoboost-v105)
+- [GenoBoost v1.0.6](#genoboost-v106)
   - [Getting Started](#getting-started)
   - [Table of Contents](#table-of-contents)
   - [News](#news)
@@ -51,7 +51,7 @@ $ genoboost train \
 
 ## <a name="news"></a>News
 
-- [v1.0.5](https://github.com/rickyota/genoboost/releases/tag/v1.0.5) (Nov 24, 2023)
+- [v1.0.6](https://github.com/rickyota/genoboost/releases/tag/v1.0.6) (Nov 24, 2023)
     - Initial version.
 
 
