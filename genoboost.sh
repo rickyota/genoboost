@@ -27,7 +27,8 @@ cp ./projects_rust/target/release/genoboost ./genoboost
     --file-genot "$file_plink" \
     --file-phe "$file_cov" \
     --cov age,sex \
-    --major-a2-train
+    --major-a2-train \
+    --seed 51
 
 # score
 ./genoboost score \

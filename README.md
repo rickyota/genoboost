@@ -1,4 +1,4 @@
-# GenoBoost v1.0.6
+# GenoBoost v1.0.7
 
 [![GenoBoost](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml)
 [![Release](https://github.com/rickyota/genoboost/actions/workflows/publish.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/publish.yml)
@@ -21,7 +21,7 @@ $ genoboost train \
 
 ## Table of Contents
 
-- [GenoBoost v1.0.6](#genoboost-v106)
+- [GenoBoost v1.0.7](#genoboost-v107)
   - [Getting Started](#getting-started)
   - [Table of Contents](#table-of-contents)
   - [News](#news)
@@ -36,13 +36,13 @@ $ genoboost train \
       - [Without Validation](#without-validation)
       - [Input Plink2](#input-plink2)
       - [Cross-validation](#cross-validation)
-      - [ Options for Training](#-options-for-training)
-    - [ Calculate Sample Scores](#-calculate-sample-scores)
+      - [Options for Training](#options-for-training)
+    - [Calculate Sample Scores](#calculate-sample-scores)
       - [Simplest Usage](#simplest-usage-1)
       - [Without Validation](#without-validation-1)
       - [Input Plink2](#input-plink2-1)
       - [Cross-validation](#cross-validation-1)
-      - [ Options for Score](#-options-for-score)
+      - [Options for Score](#options-for-score)
   - [Advanced Guide](#advanced-guide)
     - [Advanced Installation](#advanced-installation)
       - [Docker](#docker)
@@ -51,7 +51,7 @@ $ genoboost train \
 
 ## <a name="news"></a>News
 
-- [v1.0.6](https://github.com/rickyota/genoboost/releases/tag/v1.0.6) (Nov 24, 2023)
+- [v1.0.7](https://github.com/rickyota/genoboost/releases/tag/v1.0.7) (Nov 25, 2023)
     - Initial version.
 
 
@@ -117,7 +117,7 @@ See `./example/` for reference of file format. For example, the covariates file 
 <img src='readme/img/cov.png' width=300>
 
 With the minimum options, GenoBoost produces SNV weights list with the best parameter.
-SNV weights list is computed from randomly extracted 80% training samples, and the best parameter is determined in the remaining 20% validation samples.
+SNV weights list is computed from randomly extracted 80% training samples, and the best parameter is determined in the remaining 20% validation samples. You can control how to split the samples with a random seed.
 Write the column name to be used in covariates file after `--cov`.
 It is important that major allele is set to a2 (alternative allele) by `--major-a2-train`since $s_2$ is winsorized. This option is unnecessary if major allele is already set as reference allele in genotype file.
 
@@ -127,7 +127,8 @@ $ ./genoboost train \
     --file-genot ./example/genot \
     --file-phe ./example/genot.cov \
     --cov age,sex \
-    --major-a2-train
+    --major-a2-train \
+    --seed 51
 ```
 
 #### <a name="train-train-only"></a>Without Validation
@@ -161,7 +162,8 @@ $ ./genoboost train \
     --file-phe ./example/genot2.phe \
     --phe PHENO1 \
     --cov age,sex \
-    --major-a2-train
+    --major-a2-train \
+    --seed 51
 ```
 
 #### <a name="train-cv"></a>Cross-validation
@@ -179,7 +181,7 @@ $ ./genoboost train \
     --seed 51
 ```
 
-#### <a name="train-option"></a> Options for Training
+#### <a name="train-option"></a>Options for Training
 
 `--dir <DIR>` : Directory to output.
 
@@ -213,7 +215,7 @@ $ ./genoboost train \
 
 `--verbose`: Let GenoBoost speak more!
 
-### <a name="score"></a> Calculate Sample Scores
+### <a name="score"></a>Calculate Sample Scores
 
 GenoBoost returns a polygenic score for each sample. GenoBoost outputs scores without covariates (`score.tsv`) and with covariates (`score.withcov.tsv`).
 
@@ -273,7 +275,7 @@ $ ./genoboost score \
     --cross-validation 5
 ```
 
-#### <a name="score-option"></a> Options for Score
+#### <a name="score-option"></a>Options for Score
 
 `--dir <DIR>` : Directory to output score files.
 
@@ -329,7 +331,7 @@ $ docker run -it -v "$(pwd)":/opt/ rickyota/genoboost:latest \
 
 ```bash
 $ singularity build genoboost.sif  ./docker/genoboost.def
-$ singularity run genoboost.sif \
+$ singularity run --no-home --pwd /opt/ --bind "$(pwd)":/opt/ genoboost.sif \
     train \
     --dir ./result \
     --file-genot ./example/genot \
