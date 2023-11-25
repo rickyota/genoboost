@@ -289,11 +289,12 @@ pub fn run_boosting_integrate_cv(
             let n_in: usize = io_genot::compute_num_sample(fin, gfmt).unwrap();
             // create cv samples
             let sample_idx_cvs: Vec<(Vec<usize>, Vec<usize>)> = if cvn == 1 {
-                if let Some(seed) = seed {
-                    StdRng::seed_from_u64(seed);
-                }
+                let mut rng: rand::rngs::StdRng = match seed {
+                    Some(seed) => StdRng::seed_from_u64(seed),
+                    None => StdRng::from_entropy(),
+                };
                 let mut vec: Vec<usize> = (0..n_in).collect();
-                vec.shuffle(&mut rand::thread_rng());
+                vec.shuffle(&mut rng);
                 // TODO: mv up
                 let prop_tr = 0.8;
                 let n_tr = (prop_tr * (n_in as f64)) as usize;
