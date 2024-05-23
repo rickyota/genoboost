@@ -3,13 +3,9 @@
 //!
 
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
-//#[macro_use]
-//extern crate clap;
-//use clap::{AppSettings, Arg,  ArgMatches, SubCommand};
-//use rayon;
-use genetics::GenotFormat;
+use genetics::{DatasetFile, DoutScoreFile, GenotFile, WgtDoutOrFile};
+use indoc::indoc;
 use std::{path::PathBuf, time::Instant};
-//use clap::app_from_crate; //error
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -21,6 +17,8 @@ struct Cli {
     threads: Option<usize>,
     #[arg(long, global = true, help = "Verbose")]
     verbose: bool,
+    #[arg(long, global = true, help = "Memory [GB]")]
+    memory: Option<usize>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -31,6 +29,7 @@ enum Commands {
 
 #[derive(Debug, Args)]
 #[command(group(ArgGroup::new("wgt_dir_or_file").required(true).args(["dir_wgt", "file_wgt"])))]
+#[command(group(ArgGroup::new("fill_missing").args(["missing_to_mode", "missing_to_mean"])))]
 struct ScoreArgs {
     #[arg(long)]
     dir_score: String,
@@ -54,7 +53,7 @@ struct ScoreArgs {
     resume: bool,
     #[arg(
         long,
-        help = "Concat parameters into one file. Only use wgt file name is *_n-[#snv].wgt for --concat 'n'. "
+        help = "Concat parameters into one file. Wgt file name should be *_n-[#snv].wgt for --concat 'n'. "
     )]
     concat: Option<String>,
     #[arg(
@@ -64,7 +63,7 @@ struct ScoreArgs {
     no_concat: Option<String>,
     #[arg(
         long,
-        help = "Allow snvs or alleles not in genot. The score is ignored."
+        help = "Allow snvs or alleles in weight file not in genot. The score is ignored."
     )]
     allow_nonexist_snv: bool,
     #[arg(
@@ -72,8 +71,18 @@ struct ScoreArgs {
         help = "When matching snvs in wgt and genot, use chromosome and posotion not variant id to match."
     )]
     use_snv_pos: bool,
+    #[arg(long)]
+    missing_to_mode: bool,
+    #[arg(long)]
+    missing_to_mean: bool,
     #[arg(long, help = "Use column score0-score2.")]
     nonadd: bool,
+    #[arg(
+        long,
+        help = indoc!{"For backward compatibility."}
+    )]
+    fill_missing_in_dataset: bool,
+    // TODO: maf file for missing values
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, ValueEnum)]
@@ -84,11 +93,11 @@ enum GenotFormatArg {
 }
 
 impl GenotFormatArg {
-    pub fn to_naive(self) -> GenotFormat {
+    pub fn to_genot_file(self, fin: PathBuf) -> GenotFile {
         match self {
-            GenotFormatArg::Plink => GenotFormat::Plink1,
-            GenotFormatArg::Plink2 => GenotFormat::Plink2,
-            GenotFormatArg::Plink2Vzs => GenotFormat::Plink2Vzs,
+            GenotFormatArg::Plink => GenotFile::Plink1(fin),
+            GenotFormatArg::Plink2 => GenotFile::Plink2(fin),
+            GenotFormatArg::Plink2Vzs => GenotFile::Plink2Vzs(fin),
         }
     }
 }
@@ -130,49 +139,66 @@ fn main() {
     // otherwise, use default thread number
     log::debug!("num_thread set: {}", rayon::current_num_threads());
 
+    let mem = cli.memory.map(|x| x * 1024 * 1024 * 1024);
+    log::debug!("Memory : {:?} Byte", mem);
+
     match cli.command {
         Commands::Score(args) => {
-            let dout_score = PathBuf::from(args.dir_score);
+            let dout_score = DoutScoreFile::new(PathBuf::from(args.dir_score));
+            //let dout_score = PathBuf::from(args.dir_score);
+
             let fin = PathBuf::from(args.file_genot);
-            let genot_format = args.genot_format.to_naive();
+            let fin_genot = args.genot_format.to_genot_file(fin);
+            //let genot_format = args.genot_format.to_naive();
             let fin_phe = args.file_phe.map(|x| PathBuf::from(x));
             //let phe_name = args.phe;
             let cov_name = args.cov;
             let fin_sample = args.file_sample.map(|x| PathBuf::from(x));
 
+            let mut dfile = DatasetFile::new(
+                fin_genot, fin_phe, None, cov_name, None, fin_sample, None, None,
+            );
+            dfile.reads();
+            let dfile = dfile;
+            dfile.check_valid_fin();
+
             let dout_wgt = args.dir_wgt.map(|x| PathBuf::from(x));
             let fout_wgt = args.file_wgt.map(|x| PathBuf::from(x));
+            let wgt_d_f = WgtDoutOrFile::new_path(dout_wgt, fout_wgt);
 
-            let is_resume = args.resume;
+            //let is_resume = args.resume;
 
             let concat = args.concat;
             let no_concat = args.no_concat;
 
-            if concat.is_some() & no_concat.is_some() {
+            if concat.is_some() && no_concat.is_some() {
                 panic!("--concat and --no-concat cannot be used together.");
             }
 
-            let allow_nonexist_snv = args.allow_nonexist_snv;
-            let use_snv_pos = args.use_snv_pos;
+            //let allow_nonexist_snv = args.allow_nonexist_snv;
+            //let use_snv_pos = args.use_snv_pos;
             let is_nonadd = args.nonadd;
 
             genetics::run_score(
                 &dout_score,
-                &fin,
-                genot_format,
-                fin_phe.as_deref(),
-                //phe_name.as_deref(),
-                cov_name.as_deref(),
-                dout_wgt.as_deref(), // use enum?
-                fout_wgt.as_deref(),
-                //fin_cov.as_deref(),
-                fin_sample.as_deref(),
+                &dfile,
+                //&fin_genot,
+                //fin_phe.as_deref(),
+                //cov_name.as_deref(),
+                &wgt_d_f,
+                //dout_wgt.as_deref(), // use enum?
+                //fout_wgt.as_deref(),
+                //fin_sample.as_deref(),
                 concat.as_deref(),
                 no_concat.as_deref(),
-                is_resume,
-                allow_nonexist_snv,
-                use_snv_pos,
+                args.resume,
+                args.fill_missing_in_dataset,
+                args.allow_nonexist_snv,
+                args.use_snv_pos,
+                args.missing_to_mode,
+                args.missing_to_mean,
                 is_nonadd,
+                mem,
             );
         }
     }

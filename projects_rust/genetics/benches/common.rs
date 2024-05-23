@@ -1,6 +1,4 @@
-use std::path::Path;
-
-use genetics::{alloc, Dataset, GenotFormat};
+use genetics::alloc;
 
 type B8 = u8;
 
@@ -15,7 +13,8 @@ pub fn predictions_len(m: usize, n: usize) -> usize {
 pub fn setup_test_empty(n: usize, m: usize) -> Vec<B8> {
     let len_pred = predictions_len(m, n);
 
-    let mut predictions: Vec<B8> = alloc::with_capacity_align_u8(len_pred);
+    let mut predictions: Vec<B8> = alloc::with_capacity_align(len_pred);
+    //let mut predictions: Vec<B8> = alloc::with_capacity_align_u8(len_pred);
     //let mut predictions: Vec<B8> = Vec::with_capacity(len_pred);
     for _ in 0..len_pred {
         predictions.push(0x00);
@@ -23,6 +22,7 @@ pub fn setup_test_empty(n: usize, m: usize) -> Vec<B8> {
     predictions
 }
 
+/*
 #[allow(dead_code)]
 fn setup_vars(
     fin: &Path,
@@ -65,6 +65,7 @@ fn setup_vars(
         None,
         None,
         false,
+        None,
     );
     let n = dataset.samples().samples_n();
     let m = dataset.snvs().snvs_n();
@@ -84,6 +85,7 @@ fn setup_vars(
 
     (dataset, ps, losss)
 }
+*/
 
 /*
 pub fn setup_test_n100k() -> (DatasetTwin, Vec<f64>, Vec<f64>) {

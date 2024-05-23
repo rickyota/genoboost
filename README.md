@@ -1,4 +1,4 @@
-# GenoBoost v1.0.7
+# GenoBoost v1.1.0
 
 [![GenoBoost](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml)
 [![Release](https://github.com/rickyota/genoboost/actions/workflows/publish.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/publish.yml)
@@ -51,6 +51,8 @@ $ genoboost train \
 
 ## <a name="news"></a>News
 
+- [v1.1.0](https://github.com/rickyota/genoboost/releases/tag/v1.1.0) (May 23, 2024)
+    - Clean code.
 - [v1.0.7](https://github.com/rickyota/genoboost/releases/tag/v1.0.7) (Nov 25, 2023)
     - Initial version.
 

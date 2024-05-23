@@ -25,18 +25,17 @@
 //!
 // TODO: ensure the same para when resuming
 // TODO: (optional) write down extract snvs from top
-// TODO: how to get memory?
 // samples indicate both fid and iid
-// TODO: trimming sample weights: only use samples with large weights on choosing SNVs: Friedman, J., Hastie, T. and Tibshirani, R. (2000) ‘Additive logistic regression: a statistical view of boosting (With discussion and a rejoinder by the authors)’, Annals of statistics, 28(2), pp. 337–407. doi:10.1214/aos/1016218223.
+// trimming sample weights: only use samples with large weights on choosing SNVs: Friedman, J., Hastie, T. and Tibshirani, R. (2000) ‘Additive logistic regression: a statistical view of boosting (With discussion and a rejoinder by the authors)’, Annals of statistics, 28(2), pp. 337–407. doi:10.1214/aos/1016218223.
 // split main for genoboost_pruning, ssgenoboost
-// TODO: use ref/alt not A1/A2 and fix lims2
 // TODO: format of use_snvs, use_sample should be the same as plink --extract
+// allow string "None" to change from default
 
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
+use indoc::indoc;
 //use crate::boosting::{BoostMethod, BoostParam, IterationNumber};
-use boosting::{self, BoostMethod, BoostParamsTypes};
-use genetics::GenotFormat;
-//use rayon;
+use boosting::{self, BoostParamCommon, BoostParamsTypes, DoutFile, DoutScoreFile, WgtDoutOrFile};
+use genetics::{DatasetFile, GenotFile};
 use std::{path::PathBuf, time::Instant};
 
 #[derive(Debug, Parser)]
@@ -49,6 +48,8 @@ struct Cli {
     threads: Option<usize>,
     #[arg(long, global = true, help = "Verbose")]
     verbose: bool,
+    #[arg(long, global = true, help = "Memory [GB]")]
+    memory: Option<usize>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -101,6 +102,8 @@ struct TrainArgs {
     #[arg(long, value_parser, num_args = 1.., value_delimiter = ' ', default_value = "0.5 0.2 0.1 0.05")]
     learning_rates: Vec<f64>,
     //learning_rates: Option<Vec<f64>>,
+    #[arg(long, value_parser, num_args = 1.., value_delimiter = ' ')]
+    monitor_nsnvs: Option<Vec<usize>>,
     //#[arg(long)]
     //batch: Option<String>,
     //#[arg(long)]
@@ -109,6 +112,7 @@ struct TrainArgs {
     //clip_sample_wls_weight: Option<String>,
     //#[arg(long)]
     //eps: Option<String>,
+    // TODO: allow --effeps None
     //#[arg(long)]
     //effeps: Option<String>,
     #[arg(long)]
@@ -137,6 +141,7 @@ struct TrainArgs {
 
 #[derive(Debug, Args)]
 #[command(group(ArgGroup::new("wgt").required(true).args(["dir_wgt", "file_wgt"])))]
+#[command(group(ArgGroup::new("fill_missing").args(["missing_to_mode", "missing_to_mean"])))]
 struct ScoreArgs {
     #[arg(long)]
     dir_score: String,
@@ -171,6 +176,27 @@ struct ScoreArgs {
     cross_validation: usize,
     #[arg(long)]
     train_only: bool,
+    #[arg(
+        long,
+        help = "Allow snvs or alleles not in genot. The score is ignored."
+    )]
+    allow_nonexist_snv: bool,
+    #[arg(
+        long,
+        help = indoc!{"When matching snvs in wgt and genot, 
+        use chromosome and posotion not variant id to match."}
+    )]
+    use_snv_pos: bool,
+    #[arg(long)]
+    missing_to_mode: bool,
+    #[arg(long)]
+    missing_to_mean: bool,
+    #[arg(
+        long,
+        help = indoc!{"Fill nomissing to median calculated in the dataset.
+        If missing values exist and a1_frq column is not in wgt, this option is required."}
+    )]
+    fill_missing_in_dataset: bool,
 }
 
 // concat with boosting_rest
@@ -182,11 +208,11 @@ enum GenotFormatArg {
 }
 
 impl GenotFormatArg {
-    pub fn to_naive(self) -> GenotFormat {
+    pub fn to_genot_file(self, fin: PathBuf) -> GenotFile {
         match self {
-            GenotFormatArg::Plink1 => GenotFormat::Plink1,
-            GenotFormatArg::Plink2 => GenotFormat::Plink2,
-            GenotFormatArg::Plink2Vzs => GenotFormat::Plink2Vzs,
+            GenotFormatArg::Plink1 => GenotFile::Plink1(fin),
+            GenotFormatArg::Plink2 => GenotFile::Plink2(fin),
+            GenotFormatArg::Plink2Vzs => GenotFile::Plink2Vzs(fin),
         }
     }
 }
@@ -238,28 +264,56 @@ fn main() {
     // otherwise, use default thread number
     log::debug!("num_thread set: {}", rayon::current_num_threads());
 
+    let mem = cli.memory.map(|x| x * 1024 * 1024 * 1024);
+    log::debug!("Memory : {:?} Byte", mem);
+
     match cli.command {
         Commands::Train(args) => {
-            let dout = PathBuf::from(args.dir);
-            //let fin = PathBuf::from(args.file_plink);
+            let dout = DoutFile::new(PathBuf::from(args.dir));
+            // or is_monitor=true when run_boosting_integrate() ??
+
             let fin = PathBuf::from(args.file_genot);
-            let genot_format = args.genot_format.to_naive();
+            let fin_genot = args.genot_format.to_genot_file(fin);
+            //let genot_format = args.genot_format.to_naive();
             let fin_phe = args.file_phe.map(|x| PathBuf::from(x));
-            let phe_name = args.phe;
-            let cov_name = args.cov;
+            // let phe_name = args.phe;
+            // let cov_name = args.cov;
             let fin_sample = args.file_sample.map(|x| PathBuf::from(x));
             //let fin_cov = args.file_cov.map(|x| PathBuf::from(x));
             let fin_sample_val = args.file_sample_val.map(|x| PathBuf::from(x));
-            let is_monitor = fin_sample_val.is_some();
-            let is_resume = args.resume;
             let fin_snv = args.file_snv.map(|x| PathBuf::from(x));
+            let mut dfile = DatasetFile::new(
+                fin_genot,
+                //genot_format,
+                fin_phe,
+                args.phe,
+                // phe_name,
+                args.cov,
+                // cov_name,
+                fin_snv,
+                fin_sample,
+                fin_sample_val,
+                None,
+            );
+            dfile.reads();
+            //let dfile = dfile;
+            dfile.check_valid_fin();
 
+
+            let cross_vali: Option<usize> = if args.train_only {
+                None
+            } else {
+                Some(args.cross_validation)
+            };
+            let seed = args.seed;
+
+            let is_monitor=cross_vali.is_some();
+            //let is_monitor = dfile.fin_sample_val().is_some();
+            let is_resume = args.resume;
             let learning_rates: Vec<f64> = args.learning_rates;
+            let monitor_nsnvs: Option<Vec<usize>> = args.monitor_nsnvs;
 
-            //let learning_rates: Vec<f64> = match args.learning_rates {
-            //    None => vec![1.0f64],
-            //    Some(lrs) => lrs.iter().map(|x| *x).collect(),
-            //};
+            // TODO: allow user-setting
             let cov_way = Some("first".to_string());
             //let cov_way = args.covway;
             let batch_way = Some("fix-50-10-50".to_string());
@@ -273,118 +327,94 @@ fn main() {
             let clip_sample_wls_weight: Option<String> = None;
             //let clip_sample_wls_weight = args.clip_sample_wls_weight;
 
-            // TODO: raise error if duplicate nonadd in .set_boost_types()
-            let boost_params = BoostParamsTypes::default()
-                .set_boost_types(vec!["nonadd".to_string(), "add".to_string()])
+            let boost_param_common = BoostParamCommon::default()
                 .set_loss_func("logistic")
-                .set_learning_rates(learning_rates)
                 .set_sample_weight_clip(clip_sample_weight.as_deref())
                 .set_sample_weight_wls_clip(clip_sample_wls_weight.as_deref())
                 .set_eps(eps_way.as_deref())
                 .set_cov_way(cov_way.as_deref())
                 .set_batch_way(batch_way.as_deref())
-                .set_eff_eps(eff_eps.as_deref());
+                .set_eff_eps(eff_eps.as_deref())
+                .set_is_monitor(is_monitor)
+                .set_monitor_nsnvs(monitor_nsnvs)
+                .set_acc_metric(Some("cov-adjusted-pseudo-r2"));
 
-            //let boost_params =if args.integrate{
-            //BoostParams::default()
-            //    .set_boost_types(vec!["nonadd","add"])
-            //    .set_loss_func("logistic")
-            //    .set_learning_rates(learning_rates)
-            //    .set_sample_weight_clip(clip_sample_weight.as_deref())
-            //    .set_sample_weight_wls_clip(clip_sample_wls_weight.as_deref())
-            //    .set_eps(eps_way.as_deref())
-            //    .set_cov_way(cov_way.as_deref())
-            //    .set_batch_way(batch_way.as_deref())
-            //    .set_eff_eps(eff_eps.as_deref())
-            //}else{
-            //BoostParams::default()
-            //    .set_boost_type(&*args.boost_type)
-            //    .set_loss_func("logistic")
-            //    .set_learning_rates(learning_rates)
-            //    .set_sample_weight_clip(clip_sample_weight.as_deref())
-            //    .set_sample_weight_wls_clip(clip_sample_wls_weight.as_deref())
-            //    .set_eps(eps_way.as_deref())
-            //    .set_cov_way(cov_way.as_deref())
-            //    .set_batch_way(batch_way.as_deref())
-            //    .set_eff_eps(eff_eps.as_deref())
-            //};
-
-            let boost_params = if args.iter.is_some() {
-                boost_params.set_iteration(args.iter.unwrap())
-            } else if args.iter_snv.is_some() {
-                boost_params.set_iteration_snv(args.iter_snv.unwrap())
+            let boost_param_common = if args.iter.is_some() || args.iter_snv.is_some() {
+                boost_param_common.set_iteration(args.iter, args.iter_snv)
             } else {
                 if args.train_only {
                     panic!("You have to use --iter-snv or --iter with --train-only");
                 }
-                // else: integrate
-                boost_params
+                // else: integrate: iteration=None
+                boost_param_common
             };
+
+            // TODO: raise error if duplicate nonadd in .set_boost_types()
+            let boost_params = BoostParamsTypes::default()
+                .set_boost_types(vec!["nonadd".to_string(), "add".to_string()])
+                .set_learning_rates(learning_rates)
+                .set_boost_param_common(boost_param_common);
 
             //boost_params.check();
             log::debug!("boost_param {:?}", boost_params);
 
-            let boost_method = BoostMethod::Classic;
+            //let boost_method = BoostMethod::Classic;
 
             log::info!("dout {:?}", dout);
-            log::info!("file_plink {:?}", fin);
-            log::info!("file_snv {:?}", fin_snv);
-            //log::info!("file_cov {:?}", fin_cov);
-            log::info!("file_sample {:?}", fin_sample);
+            //log::info!("file_plink {:?}", fin);
+            //log::info!("file_snv {:?}", fin_snv);
+            //log::info!("file_sample {:?}", fin_sample);
             log::info!("boost_params {:?}", boost_params);
 
-            let make_major_a2_train = args.major_a2_train;
+            // let make_major_a2_train = args.major_a2_train;
 
-            let use_adjloss = true;
-            //let use_adjloss = args.use_adjloss;
-            let use_const_for_loss = false;
+            //let use_adjloss = true;
+            //let use_const_for_loss = false;
             let is_write_loss = args.write_loss;
 
-            let cross_vali: Option<usize> = if args.train_only {
-                None
-            } else {
-                Some(args.cross_validation)
-            };
-            let seed = args.seed;
 
             // Genoboost
             crate::boosting::run_boosting_integrate_cv(
                 &dout,
-                &fin,
-                genot_format,
-                fin_phe.as_deref(),
-                phe_name.as_deref(),
-                cov_name.as_deref(),
-                boost_method,
+                &mut dfile,
+                //boost_method,
                 &boost_params,
-                fin_snv.as_deref(),
-                fin_sample.as_deref(),
-                //fin_cov.as_deref(),
-                fin_sample_val.as_deref(),
-                use_adjloss,
-                use_const_for_loss,
+                //use_adjloss,
+                //use_const_for_loss,
                 is_resume,
                 is_write_loss,
                 None, //prune_snv,
                 //&learning_rates,
-                is_monitor,
-                make_major_a2_train,
+                //is_monitor,
+                args.major_a2_train,
+                // make_major_a2_train,
+                mem,
                 cross_vali,
                 seed,
             );
         }
         Commands::Score(args) => {
-            let dout_score = PathBuf::from(args.dir_score);
+            let dout_score = DoutScoreFile::new(PathBuf::from(args.dir_score));
             let fin = PathBuf::from(args.file_genot);
-            let genot_format = args.genot_format.to_naive();
+            let fin_genot = args.genot_format.to_genot_file(fin);
+            //let genot_format = args.genot_format.to_naive();
             let fin_phe = args.file_phe.map(|x| PathBuf::from(x));
             //let phe_name = args.phe;
             let cov_name = args.cov;
             let fin_sample = args.file_sample.map(|x| PathBuf::from(x));
             //let fin_cov = args.file_cov.map(|x| PathBuf::from(x));
 
+            let mut dfile = DatasetFile::new(
+                fin_genot, fin_phe, None, cov_name, None, fin_sample, None, None,
+            );
+            dfile.reads();
+            let dfile = dfile;
+            dfile.check_valid_fin();
+
             let dout_wgt = args.dir_wgt.map(|x| PathBuf::from(x));
             let fout_wgt = args.file_wgt.map(|x| PathBuf::from(x));
+            let wgt_d_f = WgtDoutOrFile::new_path(dout_wgt, fout_wgt);
+
             let is_every_para = args.iters.is_some();
             let iterations = if is_every_para {
                 let mut iterations = args.iters.unwrap();
@@ -412,22 +442,30 @@ fn main() {
 
             crate::boosting::run_boosting_score_cv(
                 &dout_score,
-                &fin,
-                genot_format,
-                fin_phe.as_deref(),
-                //phe_name.as_deref(),
-                cov_name.as_deref(),
+                &dfile,
+                //&fin,
+                //genot_format,
+                //fin_phe.as_deref(),
+                ////phe_name.as_deref(),
+                //cov_name.as_deref(),
                 is_every_para,
                 iterations.as_deref(),
-                dout_wgt.as_deref(), // use enum?
-                fout_wgt.as_deref(),
+                &wgt_d_f,
+                //dout_wgt.as_deref(), // use enum?
+                //fout_wgt.as_deref(),
                 //fin_cov.as_deref(),
-                fin_sample.as_deref(),
+                //fin_sample.as_deref(),
                 //boost_param,
                 &learning_rates,
                 use_iter,
                 cross_vali,
-                false,
+                args.fill_missing_in_dataset,
+                args.allow_nonexist_snv,
+                args.use_snv_pos,
+                //false,
+                args.missing_to_mode,
+                args.missing_to_mean,
+                mem,
             );
         }
     }

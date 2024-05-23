@@ -93,6 +93,7 @@ pub trait BaseGenot {
     }
 }
 
+// BaseGenotRef trait is unnecessary
 pub trait BaseGenotMut: BaseGenot
 where
     Self::Inner: BaseCMatrixMut,
@@ -136,37 +137,24 @@ where
     fn get_val_unchecked(&self, ni: usize) -> u8 {
         self.genot_inner().get_val_unchecked_v(ni)
     }
+    // TODO: rename -> inheritance?
     fn predict_s(&self, si: usize) -> &[B8] {
         self.genot_inner().inner_col_digit_v(si)
     }
     fn iter(&self) -> GenotCountIter {
         GenotCountIter::new(self.genot_inner().iter_scal())
     }
+    fn as_genot_snv(&self) -> GenotSnvRef {
+        GenotSnvRef::new(self.genot_inner().as_cvec_ref_v())
+    }
 
-    // TODO: create genot_count() and calc from them
-    fn maf(&self) -> f64 {
-        //use std::time::Instant;
-        //let start_time = Instant::now();
-
-        //println!("in table afr init: {} sec",  start_time.elapsed().as_micros());
-
-        //#[cfg(target_arch = "x86")]
-        //use std::arch::x86::*;
-        //#[cfg(target_arch = "x86_64")]
-        //use std::arch::x86_64::*;
-        // not necessary in edition=2021
-        // use std::convert::TryInto;
-
-        //use core::arch::x86_64::*;
-
+    /// BE CAREFUL for order; different from contingency table
+    fn count_table(&self) -> (usize, usize, usize, usize) {
         let n = self.n();
         let pred_s0m = self.predict_s(0);
         let pred_s1m = self.predict_s(1);
 
         let mut sums = (0usize, 0, 0);
-
-        //let mut sums: (usize, usize, usize, usize, usize, usize) = (0usize, 0, 0, 0, 0, 0);
-        //let mut sums=vec![0usize; 6];
 
         fn sum_byte_count(p0: u32, p1: u32) -> (usize, usize, usize) {
             // do not use d0/n0 since could be mixed with padding
@@ -210,6 +198,71 @@ where
 
         let call = self.n();
 
+        let c0 = call - (c2 + c1 + cm);
+
+        (c0, c1, c2, cm)
+    }
+
+    /// Frequency of a2
+    fn maf(&self) -> f64 {
+        //use std::time::Instant;
+        //let start_time = Instant::now();
+
+        //println!("in table afr init: {} sec",  start_time.elapsed().as_micros());
+
+        //let n = self.n();
+        //let pred_s0m = self.predict_s(0);
+        //let pred_s1m = self.predict_s(1);
+
+        //let mut sums = (0usize, 0, 0);
+
+        ////let mut sums: (usize, usize, usize, usize, usize, usize) = (0usize, 0, 0, 0, 0, 0);
+        ////let mut sums=vec![0usize; 6];
+
+        //fn sum_byte_count(p0: u32, p1: u32) -> (usize, usize, usize) {
+        //    // do not use d0/n0 since could be mixed with padding
+        //    // TODO: calculate sum here? but need to deal with padding
+        //    let c2 = p0 & p1;
+        //    let c1 = p0 & (!p1);
+        //    let cm = (!p0) & p1;
+
+        //    (
+        //        cmatrix::popcnt(c2),
+        //        cmatrix::popcnt(c1),
+        //        cmatrix::popcnt(cm),
+        //    )
+        //    //(pop(d2), pop(n2), pop(d1), pop(n1), pop(dm), pop(nm))
+        //}
+
+        //fn add_tuple3(
+        //    sums: (usize, usize, usize),
+        //    sums_: (usize, usize, usize),
+        //) -> (usize, usize, usize) {
+        //    (sums.0 + sums_.0, sums.1 + sums_.1, sums.2 + sums_.2)
+        //}
+
+        //for ni in 0..(n / 32 + 1) {
+        //    let pred_s0_b32 =
+        //        u32::from_le_bytes(pred_s0m[4 * ni..4 * (ni + 1)].try_into().unwrap());
+        //    let pred_s1_b32 =
+        //        u32::from_le_bytes(pred_s1m[4 * ni..4 * (ni + 1)].try_into().unwrap());
+        //    //let ys_b32 = u32::from_le_bytes(ys[4 * ni..4 * (ni + 1)].try_into().unwrap());
+
+        //    let sums_32 = sum_byte_count(pred_s0_b32, pred_s1_b32);
+
+        //    sums = add_tuple3(sums, sums_32);
+        //}
+
+        ////println!("in table afr for: {} sec",  start_time.elapsed().as_micros());
+
+        //let c2 = sums.0;
+        //let c1 = sums.1;
+        //let cm = sums.2;
+
+        let (_c0, c1, c2, cm) = self.count_table();
+
+        let call = self.n();
+
         //let c0 = call - (c2 + c1 + cm);
 
         let cnomissing = call - cm;
@@ -217,7 +270,7 @@ where
         //println!("in table afr last: {} sec",  start_time.elapsed().as_micros());
 
         let maf = ((c2 * 2 + c1) as f64) / ((cnomissing * 2) as f64);
-        assert!((0.0 <= maf) & (maf <= 1.0));
+        assert!((0.0 <= maf) && (maf <= 1.0));
         maf
     }
 
@@ -262,7 +315,6 @@ where
     }
 
     /// tuple is faster than vec; 80%
-    // TODO: set target_arch=x86_64
     // TODO: make len 64; also make padding 64
     //#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     //#[target_feature(enable = "avx2")]
@@ -293,6 +345,7 @@ where
         let mut sums: (usize, usize, usize, usize, usize, usize) = (0usize, 0, 0, 0, 0, 0);
         //let mut sums=vec![0usize; 6];
 
+        // TODO: counting both and substract case could be faster
         fn sum_byte(y: u32, p0: u32, p1: u32) -> (usize, usize, usize, usize, usize, usize) {
             // do not use d0/n0 since could be mixed with padding
             let d2 = y & p0 & p1;
@@ -389,10 +442,6 @@ where
     }
 }
 
-// TODO: mv
-//fn pop(x: u32) -> usize {
-//    unsafe { core::arch::x86_64::_popcnt64(x as i64) as usize }
-//}
 
 pub trait BaseGenotSnvMut: BaseGenotMut + BaseGenotSnv
 where
@@ -469,13 +518,14 @@ where
     }
 
     fn fill_missing_mode_maf(&mut self, maf: f64) {
-        let mode: u8 = if maf < 1.0 / 3.0f64 {
-            0
-        } else if maf > 2.0 / 3.0f64 {
-            2
-        } else {
-            1
-        };
+        let mode: u8 = super::maf_to_mode(maf);
+        //let mode: u8 = if maf < 1.0 / 3.0f64 {
+        //    0
+        //} else if maf > 2.0 / 3.0f64 {
+        //    2
+        //} else {
+        //    1
+        //};
 
         let n = self.n();
 

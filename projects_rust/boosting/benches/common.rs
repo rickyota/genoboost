@@ -2,35 +2,53 @@ use std::path::{Path, PathBuf};
 
 use boosting::boosting_train::loss::LossStruct;
 use boosting::boosting_train::sample_weight::SampleWeight;
-use genetics::{alloc, Dataset, GenotFormat};
+use genetics::{alloc, dataset_file::DatasetFile, Dataset, GenotFile};
 
 fn setup_vars(
     fin: &Path,
     fin_snv: Option<&Path>,
     fin_sample: Option<&Path>,
 ) -> (Dataset, SampleWeight, LossStruct) {
-    let snv_buf = fin_snv.map(|x| genetics::textfile::read_file_to_end(x, None).unwrap());
-    let sample_buf = fin_sample.map(|x| genetics::textfile::read_file_to_end(x, None).unwrap());
-
-    //) -> (Dataset, Vec<f64>, LossStruct) {
-    let dataset: Dataset = Dataset::new_boost_training(
-        fin,
-        GenotFormat::Plink1,
+    let mut dfile = DatasetFile::new(
+        GenotFile::Plink1(fin.to_path_buf()),
+        //fin.to_path_buf(),
+        //GenotFormat::Plink1,
         None,
         None,
         None,
-        snv_buf.as_deref(),
-        sample_buf.as_deref(),
-        //fin_snv,
-        //fin_sample,
-        false,
+        fin_snv.map(|x| x.to_path_buf()),
+        fin_sample.map(|x| x.to_path_buf()),
         None,
         None,
     );
+    dfile.reads();
+    // immutable
+    let dfile = dfile;
+
+    let dataset: Dataset =
+        Dataset::new_datasetfile_training(&dfile, false, None, false, false, None, None);
+
+    //let snv_buf = fin_snv.map(|x| genetics::textfile::read_file_to_end(x, None).unwrap());
+    //let sample_buf = fin_sample.map(|x| genetics::textfile::read_file_to_end(x, None).unwrap());
+    //let dataset: Dataset = Dataset::new_boost_training(
+    //    fin,
+    //    GenotFormat::Plink1,
+    //    None,
+    //    None,
+    //    None,
+    //    snv_buf.as_deref(),
+    //    sample_buf.as_deref(),
+    //    false,
+    //    None,
+    //    None,
+    //    true,
+    //    None,
+    //);
     let n = dataset.samples().samples_n();
     let m = dataset.snvs().snvs_n();
 
-    let mut ps_pad: Vec<f64> = alloc::with_capacity_align_f64(n + 32);
+    let mut ps_pad: Vec<f64> = alloc::with_capacity_align::<f64>(n + 32);
+    //let mut ps_pad: Vec<f64> = alloc::with_capacity_align_f64(n + 32);
     ps_pad.resize(n, 1.0f64 / (n as f64));
     ps_pad.resize(32, 0.0);
 

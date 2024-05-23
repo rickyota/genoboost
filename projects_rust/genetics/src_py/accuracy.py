@@ -1,4 +1,4 @@
-
+# now implemented in rust
 
 #import numpy as np
 #import statsmodels.api as sm

@@ -4,31 +4,35 @@ use super::BoostType;
 use super::LossStruct;
 use crate::boosting_train::coefficient;
 use crate::boosting_train::sample_weight::SampleWeight;
-use crate::{BoostParam, ContingencyTable, EffEps, Eps};
+use crate::{BoostParam, BoostParamCommonTrait, ContingencyTable, EffEps, Eps};
 use genetics::genot::prelude::*;
+use genetics::genot_calc;
 use genetics::samples::prelude::*;
+use genetics::score as gscore;
+use genetics::score::Sum3by3Ar;
 use genetics::wgt::Coef;
+use genetics::Dataset;
 use rayon::prelude::*;
 
 use std::collections::HashSet;
 
-pub fn calculate_loss_table4(table: ContingencyTable) -> f64 {
+pub fn cal_loss_table4(table: ContingencyTable) -> f64 {
     let (a, b, c, d) = table.four();
     //let (a, b, c, d) = table.four();
     2.0 * ((a * b).sqrt() + (c * d).sqrt())
 }
 
-pub fn calculate_loss_table5(table: ContingencyTable) -> f64 {
+pub fn calc_loss_table5(table: ContingencyTable) -> f64 {
     let (d1, n1, d0, n0, m) = table.five();
     m + 2.0 * ((d1 * n1).sqrt() + (d0 * n0).sqrt())
 }
 
-pub fn calculate_loss_table7(table: ContingencyTable) -> f64 {
+pub fn calc_loss_table7(table: ContingencyTable) -> f64 {
     let (d2, n2, d1, n1, d0, n0, m) = table.seven();
     m + 2.0 * ((d2 * n2).sqrt() + (d1 * n1).sqrt() + (d0 * n0).sqrt())
 }
 
-pub fn calculate_loss_table7_coef(table: ContingencyTable, coef: Coef) -> f64 {
+pub fn calc_loss_table7_coef(table: ContingencyTable, coef: Coef) -> f64 {
     let (d2, n2, d1, n1, d0, n0, m) = table.seven();
     //m + 2.0 * ((d2 * n2).sqrt() + (d1 * n1).sqrt() + (d0 * n0).sqrt())
     let (s0, s1, s2, _) = coef.score4_f64();
@@ -40,19 +44,119 @@ pub fn calculate_loss_table7_coef(table: ContingencyTable, coef: Coef) -> f64 {
         + n0 * (s0).exp()
 }
 
-pub fn calculate_loss_table7_or_5(table: ContingencyTable) -> f64 {
+pub fn calc_loss_table7_or_5(table: ContingencyTable) -> f64 {
     if let ContingencyTable::Seven(_) = table {
-        calculate_loss_table7(table)
+        calc_loss_table7(table)
     } else if let ContingencyTable::Five(_) = table {
-        calculate_loss_table5(table)
+        calc_loss_table5(table)
     } else {
         panic!("");
     }
 }
 
 // TODO
-pub fn calculate_loss_ab(_table: ContingencyTable) -> f64 {
+pub fn calc_loss_ab(_table: ContingencyTable) -> f64 {
     f64::NAN
+}
+
+//#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+//#[target_feature(enable = "avx2")]
+#[allow(unused_variables)]
+#[allow(unreachable_code)]
+/// losss[..,2m,2mi+1..] 2mi: dom, 2mi+1: rec
+pub fn calc_loss_constada(
+    losss: &mut LossStruct,
+    dataset: &Dataset,
+    //genot: &Genot,
+    sample_weight: &SampleWeight,
+    //ps_pad: &[f64],
+    //phe: &Phe,
+    boost_param: &BoostParam,
+    extract_snvs: Option<&HashSet<usize>>,
+    //skip_snv: &HashSet<usize>,
+    alphas_save: Option<&mut Vec<f64>>,
+) {
+    if alphas_save.is_some() {
+        unimplemented!("alphas_save not implemented");
+    }
+    unimplemented!("effeps not implemented");
+
+    let genot = dataset.genot();
+    let phe = dataset.samples().phe_unwrap();
+
+    assert_eq!(losss.inner_mut().len(), genot.m() * 2);
+    assert_eq!(phe.n(), genot.n());
+
+    //let n = phe.n();
+    let epsilons = epsilon::calculate_epsilons(sample_weight.ps().unwrap(), phe, boost_param.eps());
+    //let epsilons = epsilon::calculate_epsilons(&ps_pad[..n], phe, boost_param.eps());
+    log::debug!("epsilon case, cont: {:.4e},{:.4e}", epsilons.0, epsilons.1);
+
+    // first calculate E:=case_ws_sum and F:=control_ws_sum
+    let ef_ = table::calculate_ef_sum(sample_weight.ps().unwrap(), phe);
+
+    let ps_pad = sample_weight.ps_pad().unwrap();
+    let eps = boost_param.eps();
+
+    unsafe {
+        let func = calc_loss_constada_sm();
+
+        losss
+            .inner_mut()
+            .par_chunks_mut(2)
+            .enumerate()
+            .for_each(|(mi, loss)| {
+                //if skip_snv.contains(&mi) {
+                if extract_snvs.is_none() || extract_snvs.unwrap().contains(&mi) {
+                    //let loss_ = calculate_loss_gt_constada_simd_sm(
+                    //let loss_ = calc_loss_constada_sm()(
+                    let loss_ = func(
+                        &genot.to_genot_snv(mi),
+                        ps_pad,
+                        //sample_weight.ps_pad().unwrap(),
+                        phe,
+                        ef_,
+                        epsilons,
+                        eps,
+                        //boost_param.eps(),
+                    );
+                    loss[0] = loss_.0;
+                    loss[1] = loss_.1;
+                } else {
+                    loss[0] = f64::NAN;
+                    loss[1] = f64::NAN;
+                    //loss[0] = f64::MAX;
+                    //loss[1] = f64::MAX;
+                }
+            });
+    }
+}
+
+// return function itself.
+// pros: this can cache function beforehand and not necessary to call everytime.
+// pros: not necessary to have to write args.
+// cons: cannot run common code inside.
+unsafe fn calc_loss_constada_sm(
+) -> unsafe fn(&GenotSnvRef, &[f64], &Phe, (f64, f64), (f64, f64), Option<Eps>) -> (f64, f64) {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            return calc_loss_constada_simd_sm;
+        }
+    }
+    return calc_loss_constada_nosimd_sm;
+}
+
+#[allow(unused_variables)]
+unsafe fn calc_loss_constada_nosimd_sm(
+    gsnv: &GenotSnvRef,
+    ps_pad: &[f64],
+    phe: &Phe,
+    ef_: (f64, f64),
+    epsilons: (f64, f64), //(epsilon_case: f64, epsilon_cont: f64,)
+    eps: Option<Eps>,
+) -> (f64, f64) {
+    unimplemented!()
 }
 
 // cannot run on M1
@@ -63,7 +167,7 @@ pub fn calculate_loss_ab(_table: ContingencyTable) -> f64 {
 /// ps should be aligned. alignment of predict is not necessary.
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-unsafe fn calculate_loss_gt_constada_simd_sm(
+unsafe fn calc_loss_constada_simd_sm(
     gsnv: &GenotSnvRef,
     ps_pad: &[f64],
     phe: &Phe,
@@ -80,11 +184,12 @@ unsafe fn calculate_loss_gt_constada_simd_sm(
     use std::arch::x86_64::*;
     //use std::convert::TryInto;
 
-    let n = phe.n();
+    //let n = phe.n();
+    let n = gsnv.n();
 
     let ys = phe.inner();
-    let pred_s0m = gsnv.predict_s(0);
-    let pred_s1m = gsnv.predict_s(1);
+    let gsnv_s0 = gsnv.predict_s(0);
+    let gsnv_s1 = gsnv.predict_s(1);
 
     // b: 0x80808080 = -x: value as i32
     // ~b = x - 1
@@ -131,8 +236,8 @@ unsafe fn calculate_loss_gt_constada_simd_sm(
 
         // 1. use _mm256_set_epi8
         // o2. use from_be() and use set1 <- assume to be fast??
-        let pred_s0_b32 = u32::from_le_bytes(pred_s0m[4 * ni..4 * (ni + 1)].try_into().unwrap());
-        let pred_s1_b32 = u32::from_le_bytes(pred_s1m[4 * ni..4 * (ni + 1)].try_into().unwrap());
+        let pred_s0_b32 = u32::from_le_bytes(gsnv_s0[4 * ni..4 * (ni + 1)].try_into().unwrap());
+        let pred_s1_b32 = u32::from_le_bytes(gsnv_s1[4 * ni..4 * (ni + 1)].try_into().unwrap());
         let predv_s0_32 = _mm256_set1_epi32(pred_s0_b32 as i32);
         let predv_s1_32 = _mm256_set1_epi32(pred_s1_b32 as i32);
 
@@ -259,6 +364,7 @@ unsafe fn calculate_loss_gt_constada_simd_sm(
 
     // 1. any way to hadd??
     // 2. _mm256_extractf128_pd and _mm256_cvtsd_f64: get 64:0
+    // 3.  use __m256_exttract....::<5>(curr_sum) [ref](https://stackoverflow.com/questions/71806517/slow-simd-performance-no-inlining)
 
     let a_sum_s0: f64 =
         _mm256_cvtsd_f64(a_sum_s0_acc) + _mm_cvtsd_f64(_mm256_extractf128_pd(a_sum_s0_acc, 1));
@@ -272,113 +378,78 @@ unsafe fn calculate_loss_gt_constada_simd_sm(
     let (abcd_s0, _) = table::adjust_eps_table4((a_sum_s0, b_sum_s0), ef_, epsilons, eps);
     let (abcd_s1, _) = table::adjust_eps_table4((a_sum_s1, b_sum_s1), ef_, epsilons, eps);
 
-    let loss_s0 = calculate_loss_table4(abcd_s0);
-    let loss_s1 = calculate_loss_table4(abcd_s1);
+    let loss_s0 = cal_loss_table4(abcd_s0);
+    let loss_s1 = cal_loss_table4(abcd_s1);
 
     (loss_s0, loss_s1)
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-/// losss[..,2m,2mi+1..] 2mi: dom, 2mi+1: rec
-pub unsafe fn calculate_loss_gt_constada_simd(
-    losss: &mut LossStruct,
-    genot: &Genot,
-    sample_weight: &SampleWeight,
-    //ps_pad: &[f64],
-    phe: &Phe,
-    boost_param: BoostParam,
-    skip_snv: &HashSet<usize>,
-) {
-    assert_eq!(losss.inner_mut().len(), genot.m() * 2);
-    assert_eq!(phe.n(), genot.n());
-
-    unimplemented!("effeps not implemented");
-
-    //let n = phe.n();
-    let epsilons = epsilon::calculate_epsilons(sample_weight.ps().unwrap(), phe, boost_param.eps());
-    //let epsilons = epsilon::calculate_epsilons(&ps_pad[..n], phe, boost_param.eps());
-    log::debug!("epsilon case, cont: {:.4e},{:.4e}", epsilons.0, epsilons.1);
-
-    // first calculate E:=case_ws_sum and F:=control_ws_sum
-    let ef_ = table::calculate_ef_sum(sample_weight.ps().unwrap(), phe);
-
-    losss
-        .inner_mut()
-        .par_chunks_mut(2)
-        .enumerate()
-        .for_each(|(mi, loss)| {
-            if skip_snv.contains(&mi) {
-                loss[0] = f64::MAX;
-                loss[1] = f64::MAX;
-            } else {
-                let loss_ = calculate_loss_gt_constada_simd_sm(
-                    &genot.to_genot_snv(mi),
-                    sample_weight.ps_pad().unwrap(),
-                    //ps_pad,
-                    phe,
-                    ef_,
-                    epsilons,
-                    boost_param.eps(),
-                );
-                loss[0] = loss_.0;
-                loss[1] = loss_.1;
-            }
-        });
-}
-
-fn calculate_loss_gt_constada_nosimd_sm(
-    //pred_s: &GenotSnvRef,
-    pred_sm: &[u8],
-    //pred_sm: &[B8],
-    ps: &[f64],
-    phe: &Phe,
-    ef_: (f64, f64),
-    epsilons: (f64, f64),
-    eps: Option<Eps>,
-) -> f64 {
-    let (table4, _) = table::calculate_table4_epsilons(pred_sm, ps, phe, ef_, epsilons, eps);
-
-    calculate_loss_table4(table4)
-}
-
-pub fn calculate_loss_gt_constada_nosimd(
-    losss: &mut LossStruct,
-    genot: &Genot,
-    //predictions: &GenotBi<Vec<u8>>,
-    //predictions: &[B8],
-    sample_weight: &SampleWeight,
-    //ps: &[f64],
-    phe: &Phe,
-    boost_param: BoostParam,
-) {
-    assert_eq!(losss.inner_mut().len(), genot.m() * 2);
-
-    let epsilons = epsilon::calculate_epsilons(sample_weight.ps().unwrap(), phe, boost_param.eps());
-    //log::debug!("epsilon case, cont: {:.2e},{:.2e}", epsilons.0, epsilons.1);
-
-    // first calculate E:=case_ws_sum and F:=control_ws_sum
-    let ef_ = table::calculate_ef_sum(sample_weight.ps().unwrap(), phe);
-
-    losss
-        .inner_mut()
-        .par_iter_mut()
-        .enumerate()
-        .for_each(|(li, loss)| {
-            *loss = calculate_loss_gt_constada_nosimd_sm(
-                &genot.vals_snv_s_u8(li / 2, li % 2),
-                //predictions.predict_snv_s(li / 2, li % 2),
-                sample_weight.ps().unwrap(),
-                //ps,
-                phe,
-                ef_,
-                epsilons,
-                boost_param.eps(),
-            );
-        })
-    //log::debug!("losss {:?}", losss);
-    //losss
-}
+// TODO: implement with GenotSnvRef
+//fn calculate_loss_gt_constada_nosimd_sm(
+//    //pred_s: &GenotSnvRef,
+//    pred_sm: &[u8],
+//    //pred_sm: &[B8],
+//    ps: &[f64],
+//    phe: &Phe,
+//    ef_: (f64, f64),
+//    epsilons: (f64, f64),
+//    eps: Option<Eps>,
+//) -> f64 {
+//    let (table4, _) = table::calculate_table4_epsilons(pred_sm, ps, phe, ef_, epsilons, eps);
+//
+//    calculate_loss_table4(table4)
+//}
+//
+//#[allow(unused_variables)]
+//#[allow(unreachable_code)]
+//pub fn calculate_loss_gt_constada_nosimd(
+//    losss: &mut LossStruct,
+//    dataset: &Dataset,
+//    //genot: &Genot,
+//    //predictions: &GenotBi<Vec<u8>>,
+//    //predictions: &[B8],
+//    sample_weight: &SampleWeight,
+//    //ps: &[f64],
+//    //phe: &Phe,
+//    boost_param: &BoostParam,
+//    extract_snvs: Option<&HashSet<usize>>,
+//) {
+//    unimplemented!("effeps not implemented");
+//
+//    let genot = dataset.genot();
+//    let phe = dataset.samples().phe_unwrap();
+//
+//    assert_eq!(losss.inner_mut().len(), genot.m() * 2);
+//
+//    let epsilons = epsilon::calculate_epsilons(sample_weight.ps().unwrap(), phe, boost_param.eps());
+//    //log::debug!("epsilon case, cont: {:.2e},{:.2e}", epsilons.0, epsilons.1);
+//
+//    // first calculate E:=case_ws_sum and F:=control_ws_sum
+//    let ef_ = table::calculate_ef_sum(sample_weight.ps().unwrap(), phe);
+//
+//    losss
+//        .inner_mut()
+//        .par_iter_mut()
+//        .enumerate()
+//        .for_each(|(li, loss)| {
+//            if extract_snvs.is_none() || extract_snvs.unwrap().contains(&(li / 2)) {
+//                *loss = calculate_loss_gt_constada_nosimd_sm(
+//                    &genot.vals_snv_s_u8(li / 2, li % 2),
+//                    //predictions.predict_snv_s(li / 2, li % 2),
+//                    sample_weight.ps().unwrap(),
+//                    //ps,
+//                    phe,
+//                    ef_,
+//                    epsilons,
+//                    boost_param.eps(),
+//                );
+//            } else {
+//                *loss = f64::MAX;
+//            }
+//        })
+//    //log::debug!("losss {:?}", losss);
+//    //losss
+//}
 
 /*
 /// calculate loss for FreeModelMissing
@@ -470,7 +541,7 @@ unsafe fn calculate_table7_sum_simd(
         let ys_b32 = u32::from_le_bytes(ys[4 * ni..4 * (ni + 1)].try_into().unwrap());
         let yv_32 = _mm256_set1_epi32(ys_b32 as i32);
 
-        // bitwise not is fastest in xor by xor(v, ones)
+        // bitwise not is fastest using xor by xor(v, ones)
         // D2sum = y & pred0 & pred1 = y & ( pred0 & pred1 )
         // N2sum = !y & pred0 & pred1 = !y & ( pred0 & pred1 )
         // D1sum = y & pred0 & !pred1 = y & ( !pred1 & pred0 )
@@ -635,11 +706,97 @@ unsafe fn calculate_table7_sum_simd(
 }
 */
 
+// unsafe is necessary with #[target_feature]
+//pub unsafe fn calculate_loss_gt_freemodelmissing_simd(
+//#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+//#[target_feature(enable = "avx2")]
+#[allow(unused_variables)]
+#[allow(unreachable_code)]
+pub fn calc_loss_freemodelmissing(
+    losss: &mut LossStruct,
+    dataset: &Dataset,
+    //genot: &Genot,
+    sample_weight: &SampleWeight,
+    //ps_pad: &[f64],
+    //phe: &Phe,
+    boost_param: &BoostParam,
+    extract_snvs: Option<&HashSet<usize>>,
+    //skip_snv: &HashSet<usize>,
+    alphas_save: Option<&mut Vec<f64>>,
+) {
+    if alphas_save.is_some() {
+        unimplemented!("alphas_save not implemented");
+    }
+    unimplemented!("ny eff_eps");
+
+    let genot = dataset.genot();
+    let phe = dataset.samples().phe_unwrap();
+
+    //let n = phe.n();
+    let epsilons = epsilon::calculate_epsilons(sample_weight.ps().unwrap(), phe, boost_param.eps());
+    log::debug!("epsilon case, cont: {:.4e},{:.4e}", epsilons.0, epsilons.1);
+
+    assert_eq!(losss.inner_mut().len(), genot.m());
+
+    unsafe {
+        //let func = ();
+
+        losss
+            .inner_mut()
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(mi, loss)| {
+                //if skip_snv.contains(&mi) {
+                if extract_snvs.is_none() || extract_snvs.unwrap().contains(&mi) {
+                    //*loss = calculate_loss_gt_freemodelmissing_simd_sm(
+                    *loss = calc_loss_freemodelmissing_mi()(
+                        &genot.to_genot_snv(mi),
+                        sample_weight.ps_pad().unwrap(),
+                        //ps_pad,
+                        phe,
+                        epsilons,
+                        boost_param.eps(),
+                        boost_param.eff_eps(),
+                        boost_param.boost_type(),
+                    )
+                } else {
+                    *loss = f64::NAN;
+                    //*loss = f64::MAX;
+                }
+            });
+    }
+}
+
+unsafe fn calc_loss_freemodelmissing_mi(
+) -> unsafe fn(&GenotSnvRef, &[f64], &Phe, (f64, f64), Option<Eps>, Option<EffEps>, BoostType) -> f64
+{
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            return calc_loss_freemodelmissing_simd_mi;
+        }
+    }
+    return calc_loss_freemodelmissing_nosimd_mi;
+}
+
+#[allow(unused_variables)]
+unsafe fn calc_loss_freemodelmissing_nosimd_mi(
+    gsnv: &GenotSnvRef,
+    ps_pad: &[f64],
+    phe: &Phe,
+    epsilons: (f64, f64), //(epsilon_case: f64, epsilon_cont: f64,)
+    eps: Option<Eps>,
+    eff_eps: Option<EffEps>,
+    boost_type: BoostType,
+) -> f64 {
+    unimplemented!()
+}
+
 /// calculate loss for FreeModelMissing
 ///  loss = M + 2*(sqrt(D2 * N2)+sqrt(D1 * N1)+sqrt(D0 *N0))
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-unsafe fn calculate_loss_gt_freemodelmissing_simd_sm(
+unsafe fn calc_loss_freemodelmissing_simd_mi(
     gsnv: &GenotSnvRef,
     ps_pad: &[f64],
     phe: &Phe,
@@ -668,7 +825,7 @@ unsafe fn calculate_loss_gt_freemodelmissing_simd_sm(
     );
     //let coef = coefficient::calculate_coef_freemodelmissing_eps(table7,eff_eps);
 
-    let loss_ = calculate_loss_table7_coef(table7, coef);
+    let loss_ = calc_loss_table7_coef(table7, coef);
     // faster but not using eff_eps
     //let loss_ = calculate_loss_table7(table7);
     loss_
@@ -701,86 +858,537 @@ unsafe fn calculate_loss_gt_freemodelmissing_simd_sm(
 }
 
 // unsafe is necessary with #[target_feature]
-//pub unsafe fn calculate_loss_gt_freemodelmissing_simd(
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe fn calculate_loss_gt_freemodelmissing_simd(
+pub fn calc_loss_logit(
     losss: &mut LossStruct,
-    genot: &Genot,
+    dataset: &Dataset,
     sample_weight: &SampleWeight,
-    //ps_pad: &[f64],
-    phe: &Phe,
-    boost_param: BoostParam,
-    skip_snv: &HashSet<usize>,
+    boost_param: &BoostParam,
+    extract_snvs: Option<&HashSet<usize>>,
+    alphas_save: Option<&mut Vec<f64>>,
 ) {
-    //let n = phe.n();
-    let epsilons = epsilon::calculate_epsilons(sample_weight.ps().unwrap(), phe, boost_param.eps());
-    log::debug!("epsilon case, cont: {:.4e},{:.4e}", epsilons.0, epsilons.1);
+    if alphas_save.is_some() {
+        unimplemented!("alphas_save not implemented");
+    }
+
+    let genot = dataset.genot();
+    let phe = dataset.samples().phe_unwrap();
+
+    // TODO: implement sample_weight.clean_pad() to make pad zero
+
+    let epsilons_wzs =
+        epsilon::calc_epsilons_logit_wzs(sample_weight.wzs().unwrap(), phe, boost_param.eps());
+    log::debug!(
+        "epsilon_wzs case, cont: {:.4e},{:.4e}",
+        epsilons_wzs.0,
+        epsilons_wzs.1
+    );
+
+    let epsilons_wls =
+        epsilon::calc_epsilons_logit_wls(sample_weight.wls().unwrap(), phe, boost_param.eps());
+    log::debug!(
+        "epsilon_wls case, cont: {:.4e},{:.4e}",
+        epsilons_wls.0,
+        epsilons_wls.1
+    );
 
     assert_eq!(losss.inner_mut().len(), genot.m());
 
-    //unsafe {
-    losss
-        .inner_mut()
-        .par_iter_mut()
-        .enumerate()
-        .for_each(|(mi, loss)| {
-            if skip_snv.contains(&mi) {
-                *loss = f64::MAX;
-            } else {
-                *loss = calculate_loss_gt_freemodelmissing_simd_sm(
-                    &genot.to_genot_snv(mi),
-                    sample_weight.ps_pad().unwrap(),
-                    //ps_pad,
-                    phe,
-                    epsilons,
-                    boost_param.eps(),
-                    boost_param.eff_eps(),
-                    boost_param.boost_type(),
-                )
-            }
-        });
-    //}
+    let loss_max_theory = calc_loss_max_least_square_theory(
+        sample_weight.zs().unwrap(),
+        sample_weight.wls().unwrap(),
+    );
+    log::debug!("loss_max_theory {}", loss_max_theory);
+
+    unsafe {
+        losss
+            .inner_mut()
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(mi, loss)| {
+                //if extract_snvs.contains(&mi) {
+                if extract_snvs.is_none() || extract_snvs.unwrap().contains(&mi) {
+                    let (coef, _, _) = coefficient::calculate_coef_logit_eps(
+                        &genot.to_genot_snv(mi),
+                        sample_weight.wzs_pad().unwrap(),
+                        sample_weight.wls_pad().unwrap(),
+                        phe,
+                        epsilons_wzs,
+                        epsilons_wls,
+                        boost_param.eps(),
+                        //boost_param.learning_rate(),
+                        boost_param.eff_eps(),
+                        boost_param.boost_type(),
+                        true,
+                        false,
+                    );
+                    //*loss = calculate_loss_gt_logit_simd_sm(
+                    *loss = calc_loss_logit_mi()(
+                        &genot.to_genot_snv(mi),
+                        &coef,
+                        sample_weight.wls_pad().unwrap(),
+                        sample_weight.zs_pad().unwrap(),
+                        //use_adjloss,
+                        loss_max_theory,
+                    );
+                } else {
+                    *loss = f64::NAN;
+                    //*loss = f64::MAX;
+                }
+            });
+    }
+}
+
+/// \sum_i w*z^2
+//fn compute_loss_least_square_max_theory(zs: &[f64], wls: &[f64], n: usize) -> f64 {
+fn calc_loss_max_least_square_theory(zs: &[f64], wls: &[f64]) -> f64 {
+    zs.iter().zip(wls.iter()).map(|(z, w)| w * z * z).sum()
+}
+
+unsafe fn calc_loss_logit_mi() -> unsafe fn(&GenotSnvRef, &Coef, &[f64], &[f64], f64) -> f64 {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            return calc_loss_logit_simd_mi;
+        }
+    }
+    return calc_loss_logit_nosimd_mi;
+}
+
+#[allow(unused_variables)]
+unsafe fn calc_loss_logit_nosimd_mi(
+    gsnv: &GenotSnvRef,
+    coef: &Coef,
+    wls_pad: &[f64],
+    zs_pad: &[f64],
+    loss_max_theory: f64,
+) -> f64 {
+    unimplemented!();
 }
 
 /// compute decreasing loss of logistic loss function not least-square loss
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-unsafe fn calculate_loss_gt_logit_simd_sm(
+unsafe fn calc_loss_logit_simd_mi(
     gsnv: &GenotSnvRef,
     coef: &Coef,
     wls_pad: &[f64],
     zs_pad: &[f64],
-    use_adjloss: bool,
+    //use_adjloss: bool,
     loss_max_theory: f64,
 ) -> f64 {
-    let (s0, s1, s2) = match coef {
+    let loss_least_square: f64 = match coef {
         Coef::Score3(_) => {
             let (s0, s1, s2) = coef.score3_f64();
-            (s0, s1, s2)
+            let scores = (s0, s1, s2);
+            calc_least_square_logit_simd_mi_nomissing(
+                gsnv.predict_s(0),
+                gsnv.predict_s(1),
+                gsnv.n(),
+                wls_pad,
+                zs_pad,
+                scores,
+            )
+            //calc_least_square_logit_simd_mi_nomissing(gsnv, wls_pad, zs_pad, scores)
         }
         Coef::Score4(_) => {
             let (s0, s1, s2, sm) = coef.score4_f64();
             if sm.abs() > 1e-10 {
                 panic!("sm should be 0.0");
             }
-            (s0, s1, s2)
+            let scores = (s0, s1, s2);
+            calc_least_square_logit_simd_mi_missing(
+                gsnv.predict_s(0),
+                gsnv.predict_s(1),
+                gsnv.n(),
+                //gsnv,
+                wls_pad,
+                zs_pad,
+                scores,
+            )
         }
         _ => panic!("wrong"),
     };
+
+    //#[cfg(target_arch = "x86")]
+    //use std::arch::x86::*;
+    //#[cfg(target_arch = "x86_64")]
+    //use std::arch::x86_64::*;
+    ////use std::convert::TryInto;
+
+    //let n = gsnv.n();
+    ////let n = phe.n();
+    ////let n_pad=wls.len();
+    ////let n = wls_pad.len() - 32;
+    ////let ys = phe.inner();
+    //let pred_s0m = gsnv.predict_s(0);
+    //let pred_s1m = gsnv.predict_s(1);
+
+    //let bit_ext_mask: __m256i = _mm256_set_epi32(
+    //    0x10101010,
+    //    0x01010101,
+    //    0x20202020,
+    //    0x02020202,
+    //    0x40404040,
+    //    0x04040404,
+    //    -0x7f7f7f80, // =0x80808080
+    //    0x08080808,
+    //);
+    //let zerod: __m256d = _mm256_setzero_pd();
+    //let zeros: __m256i = _mm256_setzero_si256();
+    //let ones: __m256i = _mm256_cmpeq_epi32(zeros, zeros);
+
+    //let s2d: __m256d = _mm256_set1_pd(s2);
+    //let s1d: __m256d = _mm256_set1_pd(s1);
+    //let s0d: __m256d = _mm256_set1_pd(s0);
+
+    //let mut l_acc: __m256d = _mm256_setzero_pd();
+
+    ////let mut wzs_sum2_acc = _mm256_setzero_pd();
+    ////let mut wzs_sum1_acc = _mm256_setzero_pd();
+    ////let mut wzs_sum0_acc = _mm256_setzero_pd();
+    ////let mut wls_sum2_acc = _mm256_setzero_pd();
+    ////let mut wls_sum1_acc = _mm256_setzero_pd();
+    ////let mut wls_sum0_acc = _mm256_setzero_pd();
+
+    //let shifts: [__m256i; 4] = [
+    //    _mm256_set1_epi32(24),
+    //    _mm256_set1_epi32(16),
+    //    _mm256_set1_epi32(8),
+    //    _mm256_set1_epi32(0),
+    //];
+
+    //for ni in 0..(n / 32 + 1) {
+    //    //log::debug!("ni {}", ni);
+
+    //    // broadcast 32bit int to 256bit
+    //    // ex. DCBA -> DCBADCBA...DCBA
+    //    // (D=abcdefgh)
+
+    //    let pred_s0_b32 = u32::from_le_bytes(pred_s0m[4 * ni..4 * (ni + 1)].try_into().unwrap());
+    //    let pred_s1_b32 = u32::from_le_bytes(pred_s1m[4 * ni..4 * (ni + 1)].try_into().unwrap());
+    //    let predv_s0_32 = _mm256_set1_epi32(pred_s0_b32 as i32);
+    //    let predv_s1_32 = _mm256_set1_epi32(pred_s1_b32 as i32);
+
+    //    //let ys_b32 = u32::from_le_bytes(ys[4 * ni..4 * (ni + 1)].try_into().unwrap());
+    //    //let yv_32 = _mm256_set1_epi32(ys_b32 as i32);
+
+    //    // bitwise not is fastest using xor by xor(v, ones)
+    //    // sum2=( pred0 & pred1 )
+    //    // sum1= ( !pred1 & pred0 )
+    //    // sum0= ( !pred0 & (!pred1) )
+    //    let flagv_2_32 = _mm256_and_si256(predv_s0_32, predv_s1_32);
+    //    let flagv_1_32 = _mm256_andnot_si256(predv_s1_32, predv_s0_32);
+    //    let flagv_0_32 = _mm256_andnot_si256(predv_s0_32, _mm256_xor_si256(predv_s1_32, ones));
+
+    //    // ex. D=abcdefgh -> extract d,h,c,g,b,f,a,e for each 32 bit
+    //    // abcdefgh(x4)|...
+    //    // -> extracted (at highest position)
+    //    // 000d0000(x4)|...
+    //    // -> mask
+    //    // 11111111|00000000|00000000|11111111|...
+    //    let flagv_2_32_ext = _mm256_and_si256(flagv_2_32, bit_ext_mask);
+    //    let flagv_1_32_ext = _mm256_and_si256(flagv_1_32, bit_ext_mask);
+    //    let flagv_0_32_ext = _mm256_and_si256(flagv_0_32, bit_ext_mask);
+
+    //    let take_mask_2_32 = _mm256_cmpeq_epi8(flagv_2_32_ext, bit_ext_mask);
+    //    let take_mask_1_32 = _mm256_cmpeq_epi8(flagv_1_32_ext, bit_ext_mask);
+    //    let take_mask_0_32 = _mm256_cmpeq_epi8(flagv_0_32_ext, bit_ext_mask);
+
+    //    // bi=0-3, shift=24,16,8,0
+    //    //const SHIFTS: &'static [i32] = &[24, 16, 8, 0];
+
+    //    for bi in 0usize..4 {
+    //        // DCBADCBA...DCBA
+    //        // -> b=1: for B
+    //        // BA00BA00...BA00
+
+    //        let shift_v = shifts[bi];
+    //        let take_mask_2 = _mm256_sllv_epi32(take_mask_2_32, shift_v);
+    //        let take_mask_1 = _mm256_sllv_epi32(take_mask_1_32, shift_v);
+    //        let take_mask_0 = _mm256_sllv_epi32(take_mask_0_32, shift_v);
+
+    //        //log::debug!("take_mask a s0 {:?}", take_mask_a_s0);
+    //        //log::debug!("take_mask b s0 {:?}", take_mask_b_s0);
+    //        //log::debug!("take_mask a s1 {:?}", take_mask_a_s1);
+    //        //log::debug!("take_mask b s1 {:?}", take_mask_b_s1);
+
+    //        let wlsv_lo_ptr = wls_pad[32 * ni + 8 * bi..32 * ni + 8 * bi + 4].as_ptr();
+    //        let wlsv_hi_ptr = wls_pad[32 * ni + 8 * bi + 4..32 * ni + 8 * (bi + 1)].as_ptr();
+    //        let zsv_lo_ptr = zs_pad[32 * ni + 8 * bi..32 * ni + 8 * bi + 4].as_ptr();
+    //        let zsv_hi_ptr = zs_pad[32 * ni + 8 * bi + 4..32 * ni + 8 * (bi + 1)].as_ptr();
+    //        //let psv_lo_ptr = ps[32 * ni + 8 * bi..32 * ni + 8 * bi + 4].as_ptr();
+    //        //let psv_hi_ptr = ps[32 * ni + 8 * bi + 4..32 * ni + 8 * (bi + 1)].as_ptr();
+
+    //        //log::debug!("ps ind {}", 32 * ni + 8 * bi);
+    //        //log::debug!("ps ind {}", 32 * ni + 8 * bi + 4);
+    //        //log::debug!("ps lo {:?}", &ps[32 * ni + 8 * bi..32 * ni + 8 * bi + 4]);
+    //        //log::debug!(
+    //        //    "ps hi {:?}",
+    //        //    &ps[32 * ni + 8 * bi + 4..32 * ni + 8 * bi + 8]
+    //        //);
+
+    //        let wlsv_lo: __m256d = _mm256_load_pd(wlsv_lo_ptr as *const _);
+    //        let wlsv_hi: __m256d = _mm256_load_pd(wlsv_hi_ptr as *const _);
+    //        let zsv_lo: __m256d = _mm256_load_pd(zsv_lo_ptr as *const _);
+    //        let zsv_hi: __m256d = _mm256_load_pd(zsv_hi_ptr as *const _);
+
+    //        //log::debug!("ps lo {:?}", psv_lo);
+    //        //log::debug!("ps hi {:?}", psv_hi);
+
+    //        // to create f_lo, first set score0 and score1, and then set score2
+    //        //let f_0_lo: __m256d= _mm256_blendv_pd(s0d, s1d, _mm256_castsi256_pd(take_mask_1));
+    //        // missing=0.0
+    //        // TODO: if missing!=0.0, make zerod -> smd
+    //        let f_0_lo: __m256d = _mm256_blendv_pd(zerod, s0d, _mm256_castsi256_pd(take_mask_0));
+    //        let f_01_lo: __m256d = _mm256_blendv_pd(f_0_lo, s1d, _mm256_castsi256_pd(take_mask_1));
+    //        let f_lo: __m256d = _mm256_blendv_pd(f_01_lo, s2d, _mm256_castsi256_pd(take_mask_2));
+    //        // create f-z
+    //        let f_z_lo: __m256d = _mm256_sub_pd(f_lo, zsv_lo);
+    //        // (f-z)**2
+    //        let f_z_2_lo: __m256d = _mm256_mul_pd(f_z_lo, f_z_lo);
+    //        // w * (f-z)**2
+    //        let w_f_z_2_lo: __m256d = _mm256_mul_pd(wlsv_lo, f_z_2_lo);
+
+    //        l_acc = _mm256_add_pd(l_acc, w_f_z_2_lo);
+
+    //        // for high
+    //        let take_mask_2_hi = _mm256_slli_epi64(take_mask_2, 32);
+    //        let take_mask_1_hi = _mm256_slli_epi64(take_mask_1, 32);
+    //        let take_mask_0_hi = _mm256_slli_epi64(take_mask_0, 32);
+
+    //        let f_0_hi: __m256d = _mm256_blendv_pd(zerod, s0d, _mm256_castsi256_pd(take_mask_0_hi));
+    //        let f_01_hi: __m256d =
+    //            _mm256_blendv_pd(f_0_hi, s1d, _mm256_castsi256_pd(take_mask_1_hi));
+    //        //let f_01_hi: __m256d= _mm256_blendv_pd(s0d, s1d, _mm256_castsi256_pd(take_mask_1_hi));
+    //        let f_hi: __m256d = _mm256_blendv_pd(f_01_hi, s2d, _mm256_castsi256_pd(take_mask_2_hi));
+    //        // create f-z
+    //        let f_z_hi: __m256d = _mm256_sub_pd(f_hi, zsv_hi);
+    //        // (f-z)**2
+    //        let f_z_2_hi: __m256d = _mm256_mul_pd(f_z_hi, f_z_hi);
+    //        // w * (f-z)**2
+    //        let w_f_z_2_hi: __m256d = _mm256_mul_pd(wlsv_hi, f_z_2_hi);
+
+    //        l_acc = _mm256_add_pd(l_acc, w_f_z_2_hi);
+    //    }
+    //}
+
+    //// sum 4 double horizontally to get the whole sum
+    //l_acc = _mm256_hadd_pd(l_acc, l_acc);
+
+    //// 1. any way to hadd??
+    //// 2. _mm256_extractf128_pd and _mm256_cvtsd_f64: get 64:0
+
+    //let loss_least_square: f64 =
+    //    _mm256_cvtsd_f64(l_acc) + _mm_cvtsd_f64(_mm256_extractf128_pd(l_acc, 1));
+
+    let loss: f64;
+    //if use_adjloss {
+    loss = 0.5 * (loss_least_square - loss_max_theory);
+    //} else {
+    //loss = loss_least_square;
+    //}
+    //let loss: f64 = 0.5 * (loss_least_square - loss_max_theory);
+
+    return loss;
+}
+
+// input for SIMD is better for premitive type
+/// assume nomissing
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+unsafe fn calc_least_square_logit_simd_mi_nomissing(
+    gsnv_s0: &[u8],
+    gsnv_s1: &[u8],
+    n: usize,
+    //gsnv: &GenotSnvRef,
+    wls_pad: &[f64],
+    zs_pad: &[f64],
+    scores: (f64, f64, f64), // (s0, s1, s2)
+) -> f64 {
+    let (s0, s1, s2) = scores;
 
     #[cfg(target_arch = "x86")]
     use std::arch::x86::*;
     #[cfg(target_arch = "x86_64")]
     use std::arch::x86_64::*;
-    //use std::convert::TryInto;
 
-    //let n = phe.n();
-    //let n_pad=wls.len();
-    let n = wls_pad.len() - 32;
-    //let ys = phe.inner();
-    let pred_s0m = gsnv.predict_s(0);
-    let pred_s1m = gsnv.predict_s(1);
+    //let n = gsnv.n();
+
+    //let gsnv_s0 = gsnv.predict_s(0);
+    //let gsnv_s1 = gsnv.predict_s(1);
+
+    let bit_ext_mask: __m256i = _mm256_set_epi32(
+        0x10101010,
+        0x01010101,
+        0x20202020,
+        0x02020202,
+        0x40404040,
+        0x04040404,
+        -0x7f7f7f80, // =0x80808080
+        0x08080808,
+    );
+    //let zerod: __m256d = _mm256_setzero_pd();
+    //let zeros: __m256i = _mm256_setzero_si256();
+    //let ones: __m256i = _mm256_cmpeq_epi32(zeros, zeros);
+
+    let s2d: __m256d = _mm256_set1_pd(s2);
+    let s1d: __m256d = _mm256_set1_pd(s1);
+    let s0d: __m256d = _mm256_set1_pd(s0);
+
+    let mut l_acc: __m256d = _mm256_setzero_pd();
+
+    //let mut wzs_sum2_acc = _mm256_setzero_pd();
+    //let mut wzs_sum1_acc = _mm256_setzero_pd();
+    //let mut wzs_sum0_acc = _mm256_setzero_pd();
+    //let mut wls_sum2_acc = _mm256_setzero_pd();
+    //let mut wls_sum1_acc = _mm256_setzero_pd();
+    //let mut wls_sum0_acc = _mm256_setzero_pd();
+
+    let shifts: [__m256i; 4] = [
+        _mm256_set1_epi32(24),
+        _mm256_set1_epi32(16),
+        _mm256_set1_epi32(8),
+        _mm256_set1_epi32(0),
+    ];
+
+    for ni in 0..(n / 32 + 1) {
+        //log::debug!("ni {}", ni);
+
+        // broadcast 32bit int to 256bit
+        // ex. DCBA -> DCBADCBA...DCBA
+        // (D=abcdefgh)
+
+        let pred_s0_b32 = u32::from_le_bytes(gsnv_s0[4 * ni..4 * (ni + 1)].try_into().unwrap());
+        let pred_s1_b32 = u32::from_le_bytes(gsnv_s1[4 * ni..4 * (ni + 1)].try_into().unwrap());
+        let predv_s0_32 = _mm256_set1_epi32(pred_s0_b32 as i32);
+        let predv_s1_32 = _mm256_set1_epi32(pred_s1_b32 as i32);
+
+        // bitwise not is fastest using xor by xor(v, ones)
+        // sum2=( pred0 & pred1 )
+        // sum1= ( !pred1 & pred0 )
+        // sum0= ( !pred0 & (!pred1) )
+        let flagv_2_32 = _mm256_and_si256(predv_s0_32, predv_s1_32);
+        let flagv_1_32 = _mm256_andnot_si256(predv_s1_32, predv_s0_32);
+        //let flagv_0_32 = _mm256_andnot_si256(predv_s0_32, _mm256_xor_si256(predv_s1_32, ones));
+
+        // ex. D=abcdefgh -> extract d,h,c,g,b,f,a,e for each 32 bit
+        // abcdefgh(x4)|...
+        // -> extracted (at highest position)
+        // 000d0000(x4)|...
+        // -> mask
+        // 11111111|00000000|00000000|11111111|...
+        let flagv_2_32_ext = _mm256_and_si256(flagv_2_32, bit_ext_mask);
+        let flagv_1_32_ext = _mm256_and_si256(flagv_1_32, bit_ext_mask);
+        //let flagv_0_32_ext = _mm256_and_si256(flagv_0_32, bit_ext_mask);
+
+        let take_mask_2_32 = _mm256_cmpeq_epi8(flagv_2_32_ext, bit_ext_mask);
+        let take_mask_1_32 = _mm256_cmpeq_epi8(flagv_1_32_ext, bit_ext_mask);
+        //let take_mask_0_32 = _mm256_cmpeq_epi8(flagv_0_32_ext, bit_ext_mask);
+
+        // bi=0-3, shift=24,16,8,0
+        //const SHIFTS: &'static [i32] = &[24, 16, 8, 0];
+
+        for bi in 0usize..4 {
+            // DCBADCBA...DCBA
+            // -> b=1: for B
+            // BA00BA00...BA00
+
+            let shift_v = shifts[bi];
+            let take_mask_2 = _mm256_sllv_epi32(take_mask_2_32, shift_v);
+            let take_mask_1 = _mm256_sllv_epi32(take_mask_1_32, shift_v);
+            //let take_mask_0 = _mm256_sllv_epi32(take_mask_0_32, shift_v);
+
+            //log::debug!("take_mask a s0 {:?}", take_mask_a_s0);
+            //log::debug!("take_mask b s0 {:?}", take_mask_b_s0);
+            //log::debug!("take_mask a s1 {:?}", take_mask_a_s1);
+            //log::debug!("take_mask b s1 {:?}", take_mask_b_s1);
+
+            let wlsv_lo_ptr = wls_pad[32 * ni + 8 * bi..32 * ni + 8 * bi + 4].as_ptr();
+            let wlsv_hi_ptr = wls_pad[32 * ni + 8 * bi + 4..32 * ni + 8 * (bi + 1)].as_ptr();
+            let zsv_lo_ptr = zs_pad[32 * ni + 8 * bi..32 * ni + 8 * bi + 4].as_ptr();
+            let zsv_hi_ptr = zs_pad[32 * ni + 8 * bi + 4..32 * ni + 8 * (bi + 1)].as_ptr();
+
+            //log::debug!("ps ind {}", 32 * ni + 8 * bi);
+            //log::debug!("ps ind {}", 32 * ni + 8 * bi + 4);
+            //log::debug!("ps lo {:?}", &ps[32 * ni + 8 * bi..32 * ni + 8 * bi + 4]);
+            //log::debug!(
+            //    "ps hi {:?}",
+            //    &ps[32 * ni + 8 * bi + 4..32 * ni + 8 * bi + 8]
+            //);
+
+            let wlsv_lo: __m256d = _mm256_load_pd(wlsv_lo_ptr as *const _);
+            let wlsv_hi: __m256d = _mm256_load_pd(wlsv_hi_ptr as *const _);
+            let zsv_lo: __m256d = _mm256_load_pd(zsv_lo_ptr as *const _);
+            let zsv_hi: __m256d = _mm256_load_pd(zsv_hi_ptr as *const _);
+
+            //log::debug!("ps lo {:?}", psv_lo);
+            //log::debug!("ps hi {:?}", psv_hi);
+
+            // to create f_lo, first set score0 and score1, and then set score2
+            let f_01_lo: __m256d = _mm256_blendv_pd(s0d, s1d, _mm256_castsi256_pd(take_mask_1));
+            let f_lo: __m256d = _mm256_blendv_pd(f_01_lo, s2d, _mm256_castsi256_pd(take_mask_2));
+            // create f-z
+            let f_z_lo: __m256d = _mm256_sub_pd(f_lo, zsv_lo);
+            // (f-z)**2
+            let f_z_2_lo: __m256d = _mm256_mul_pd(f_z_lo, f_z_lo);
+            // w * (f-z)**2
+            let w_f_z_2_lo: __m256d = _mm256_mul_pd(wlsv_lo, f_z_2_lo);
+
+            l_acc = _mm256_add_pd(l_acc, w_f_z_2_lo);
+
+            // for high
+            let take_mask_2_hi = _mm256_slli_epi64(take_mask_2, 32);
+            let take_mask_1_hi = _mm256_slli_epi64(take_mask_1, 32);
+            //let take_mask_0_hi = _mm256_slli_epi64(take_mask_0, 32);
+
+            let f_01_hi: __m256d = _mm256_blendv_pd(s0d, s1d, _mm256_castsi256_pd(take_mask_1_hi));
+            let f_hi: __m256d = _mm256_blendv_pd(f_01_hi, s2d, _mm256_castsi256_pd(take_mask_2_hi));
+            // create f-z
+            let f_z_hi: __m256d = _mm256_sub_pd(f_hi, zsv_hi);
+            // (f-z)**2
+            let f_z_2_hi: __m256d = _mm256_mul_pd(f_z_hi, f_z_hi);
+            // w * (f-z)**2
+            let w_f_z_2_hi: __m256d = _mm256_mul_pd(wlsv_hi, f_z_2_hi);
+
+            l_acc = _mm256_add_pd(l_acc, w_f_z_2_hi);
+        }
+    }
+
+    // sum 4 double horizontally to get the whole sum
+    l_acc = _mm256_hadd_pd(l_acc, l_acc);
+
+    // 1. any way to hadd??
+    // 2. _mm256_extractf128_pd and _mm256_cvtsd_f64: get 64:0
+
+    let loss_least_square: f64 =
+        _mm256_cvtsd_f64(l_acc) + _mm_cvtsd_f64(_mm256_extractf128_pd(l_acc, 1));
+
+    loss_least_square
+}
+
+/// allow missing genotype
+/// assume sm = 0.0
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+unsafe fn calc_least_square_logit_simd_mi_missing(
+    gsnv_s0: &[u8],
+    gsnv_s1: &[u8],
+    n: usize,
+    //gsnv: &GenotSnvRef,
+    wls_pad: &[f64],
+    zs_pad: &[f64],
+    scores: (f64, f64, f64), // (s0, s1, s2)
+) -> f64 {
+    let (s0, s1, s2) = scores;
+
+    #[cfg(target_arch = "x86")]
+    use std::arch::x86::*;
+    #[cfg(target_arch = "x86_64")]
+    use std::arch::x86_64::*;
+
+    //let n = gsnv.n();
+    //let pred_s0m = gsnv.predict_s(0);
+    //let pred_s1m = gsnv.predict_s(1);
 
     let bit_ext_mask: __m256i = _mm256_set_epi32(
         0x10101010,
@@ -823,15 +1431,12 @@ unsafe fn calculate_loss_gt_logit_simd_sm(
         // ex. DCBA -> DCBADCBA...DCBA
         // (D=abcdefgh)
 
-        let pred_s0_b32 = u32::from_le_bytes(pred_s0m[4 * ni..4 * (ni + 1)].try_into().unwrap());
-        let pred_s1_b32 = u32::from_le_bytes(pred_s1m[4 * ni..4 * (ni + 1)].try_into().unwrap());
+        let pred_s0_b32 = u32::from_le_bytes(gsnv_s0[4 * ni..4 * (ni + 1)].try_into().unwrap());
+        let pred_s1_b32 = u32::from_le_bytes(gsnv_s1[4 * ni..4 * (ni + 1)].try_into().unwrap());
         let predv_s0_32 = _mm256_set1_epi32(pred_s0_b32 as i32);
         let predv_s1_32 = _mm256_set1_epi32(pred_s1_b32 as i32);
 
-        //let ys_b32 = u32::from_le_bytes(ys[4 * ni..4 * (ni + 1)].try_into().unwrap());
-        //let yv_32 = _mm256_set1_epi32(ys_b32 as i32);
-
-        // bitwise not is fastest in xor by xor(v, ones)
+        // bitwise not is fastest using xor by xor(v, ones)
         // sum2=( pred0 & pred1 )
         // sum1= ( !pred1 & pred0 )
         // sum0= ( !pred0 & (!pred1) )
@@ -875,8 +1480,6 @@ unsafe fn calculate_loss_gt_logit_simd_sm(
             let wlsv_hi_ptr = wls_pad[32 * ni + 8 * bi + 4..32 * ni + 8 * (bi + 1)].as_ptr();
             let zsv_lo_ptr = zs_pad[32 * ni + 8 * bi..32 * ni + 8 * bi + 4].as_ptr();
             let zsv_hi_ptr = zs_pad[32 * ni + 8 * bi + 4..32 * ni + 8 * (bi + 1)].as_ptr();
-            //let psv_lo_ptr = ps[32 * ni + 8 * bi..32 * ni + 8 * bi + 4].as_ptr();
-            //let psv_hi_ptr = ps[32 * ni + 8 * bi + 4..32 * ni + 8 * (bi + 1)].as_ptr();
 
             //log::debug!("ps ind {}", 32 * ni + 8 * bi);
             //log::debug!("ps ind {}", 32 * ni + 8 * bi + 4);
@@ -897,7 +1500,7 @@ unsafe fn calculate_loss_gt_logit_simd_sm(
             // to create f_lo, first set score0 and score1, and then set score2
             //let f_0_lo: __m256d= _mm256_blendv_pd(s0d, s1d, _mm256_castsi256_pd(take_mask_1));
             // missing=0.0
-            // TODO: if missing!=0.0, make zerod -> smd
+            // TODO: if missing!=0.0, make zerod -> smd; but be careful of n..n+32 to be 0.0?
             let f_0_lo: __m256d = _mm256_blendv_pd(zerod, s0d, _mm256_castsi256_pd(take_mask_0));
             let f_01_lo: __m256d = _mm256_blendv_pd(f_0_lo, s1d, _mm256_castsi256_pd(take_mask_1));
             let f_lo: __m256d = _mm256_blendv_pd(f_01_lo, s2d, _mm256_castsi256_pd(take_mask_2));
@@ -918,7 +1521,6 @@ unsafe fn calculate_loss_gt_logit_simd_sm(
             let f_0_hi: __m256d = _mm256_blendv_pd(zerod, s0d, _mm256_castsi256_pd(take_mask_0_hi));
             let f_01_hi: __m256d =
                 _mm256_blendv_pd(f_0_hi, s1d, _mm256_castsi256_pd(take_mask_1_hi));
-            //let f_01_hi: __m256d= _mm256_blendv_pd(s0d, s1d, _mm256_castsi256_pd(take_mask_1_hi));
             let f_hi: __m256d = _mm256_blendv_pd(f_01_hi, s2d, _mm256_castsi256_pd(take_mask_2_hi));
             // create f-z
             let f_z_hi: __m256d = _mm256_sub_pd(f_hi, zsv_hi);
@@ -940,15 +1542,94 @@ unsafe fn calculate_loss_gt_logit_simd_sm(
     let loss_least_square: f64 =
         _mm256_cvtsd_f64(l_acc) + _mm_cvtsd_f64(_mm256_extractf128_pd(l_acc, 1));
 
-    let loss: f64;
-    if use_adjloss {
-        loss = 0.5 * (loss_least_square - loss_max_theory);
-    } else {
-        loss = loss_least_square;
-    }
-    //let loss: f64 = 0.5 * (loss_least_square - loss_max_theory);
+    loss_least_square
+}
 
-    return loss;
+//// For interaction, single SNVs will be calculated in this function
+pub fn calc_loss_logit_add(
+    losss: &mut LossStruct,
+    dataset: &Dataset,
+    sample_weight: &SampleWeight,
+    _boost_param: &BoostParam,
+    extract_snvs: Option<&HashSet<usize>>,
+    alphas_save: Option<&mut Vec<f64>>,
+) {
+    let genot = dataset.genot();
+    assert_eq!(losss.inner_mut().len(), genot.m());
+
+    let loss_max_theory = calc_loss_max_least_square_theory(
+        sample_weight.zs().unwrap(),
+        sample_weight.wls().unwrap(),
+    );
+    log::debug!("loss_max_theory {}", loss_max_theory);
+
+    unsafe {
+        if let Some(alphas_save_in) = alphas_save {
+            losss
+                .inner_mut()
+                .par_iter_mut()
+                .zip(alphas_save_in.par_iter_mut())
+                .enumerate()
+                .for_each(|(mi, (loss, alpha))| {
+                    if extract_snvs.is_none() || extract_snvs.unwrap().contains(&mi) {
+                        let coef = coefficient::calculate_coef_logit_add(
+                            &genot.to_genot_snv(mi),
+                            sample_weight.wzs_pad().unwrap(),
+                            sample_weight.wls_pad().unwrap(),
+                            // no lr
+                        );
+                        *alpha = coef.linearconst_f64().1;
+
+                        //log::debug!("coef {:?}", coef);
+                        *loss = calc_loss_logit_add_mi()(
+                            &genot.to_genot_snv(mi),
+                            &coef,
+                            sample_weight.wls_pad().unwrap(),
+                            sample_weight.zs_pad().unwrap(),
+                            loss_max_theory,
+                        );
+                    } else {
+                        *loss = f64::NAN;
+                    }
+                });
+        } else {
+            losss
+                .inner_mut()
+                .par_iter_mut()
+                .enumerate()
+                .for_each(|(mi, loss)| {
+                    if extract_snvs.is_none() || extract_snvs.unwrap().contains(&mi) {
+                        let coef = coefficient::calculate_coef_logit_add(
+                            &genot.to_genot_snv(mi),
+                            sample_weight.wzs_pad().unwrap(),
+                            sample_weight.wls_pad().unwrap(),
+                            // no lr
+                        );
+
+                        //log::debug!("coef {:?}", coef);
+                        *loss = calc_loss_logit_add_mi()(
+                            &genot.to_genot_snv(mi),
+                            &coef,
+                            sample_weight.wls_pad().unwrap(),
+                            sample_weight.zs_pad().unwrap(),
+                            loss_max_theory,
+                        );
+                    } else {
+                        *loss = f64::NAN;
+                    }
+                });
+        }
+    }
+}
+
+unsafe fn calc_loss_logit_add_mi() -> unsafe fn(&GenotSnvRef, &Coef, &[f64], &[f64], f64) -> f64 {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            return calc_loss_logit_add_simd_mi;
+        }
+    }
+    return calc_loss_logit_add_nosimd_mi;
 }
 
 /// only difference from logit is
@@ -956,12 +1637,12 @@ unsafe fn calculate_loss_gt_logit_simd_sm(
 /// 2. assume no missing
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-unsafe fn calculate_loss_gt_logit_add_simd_sm(
-    predicts: &GenotSnvRef,
+unsafe fn calc_loss_logit_add_simd_mi(
+    gsnv: &GenotSnvRef,
     coef: &Coef,
-    wls: &[f64],
-    zs: &[f64],
-    use_adjloss: bool,
+    wls_pad: &[f64],
+    zs_pad: &[f64],
+    //use_adjloss: bool,
     loss_max_theory: f64,
 ) -> f64 {
     let (constt, alphat) = coef.linearconst_f64();
@@ -976,22 +1657,954 @@ unsafe fn calculate_loss_gt_logit_add_simd_sm(
     let s1 = constt + alphat;
     let s2 = constt + 2.0 * alphat;
 
-    //if sm.abs() > 1e-10 {
-    //    panic!("sm should be 0.0");
+    let scores = (s0, s1, s2);
+    let loss_least_square: f64 = calc_least_square_logit_simd_mi_nomissing(
+        gsnv.predict_s(0),
+        gsnv.predict_s(1),
+        gsnv.n(),
+        wls_pad,
+        zs_pad,
+        scores,
+    );
+
+    //#[cfg(target_arch = "x86")]
+    //use std::arch::x86::*;
+    //#[cfg(target_arch = "x86_64")]
+    //use std::arch::x86_64::*;
+    ////use std::convert::TryInto;
+
+    //let n = predicts.n();
+    //let pred_s0m = predicts.predict_s(0);
+    //let pred_s1m = predicts.predict_s(1);
+
+    //let bit_ext_mask: __m256i = _mm256_set_epi32(
+    //    0x10101010,
+    //    0x01010101,
+    //    0x20202020,
+    //    0x02020202,
+    //    0x40404040,
+    //    0x04040404,
+    //    -0x7f7f7f80, // =0x80808080
+    //    0x08080808,
+    //);
+    ////let zerod: __m256d = _mm256_setzero_pd();
+    ////let zeros: __m256i = _mm256_setzero_si256();
+    ////let ones: __m256i = _mm256_cmpeq_epi32(zeros, zeros);
+
+    //let s2d: __m256d = _mm256_set1_pd(s2);
+    //let s1d: __m256d = _mm256_set1_pd(s1);
+    //let s0d: __m256d = _mm256_set1_pd(s0);
+
+    //let mut l_acc: __m256d = _mm256_setzero_pd();
+
+    ////let mut wzs_sum2_acc = _mm256_setzero_pd();
+    ////let mut wzs_sum1_acc = _mm256_setzero_pd();
+    ////let mut wzs_sum0_acc = _mm256_setzero_pd();
+    ////let mut wls_sum2_acc = _mm256_setzero_pd();
+    ////let mut wls_sum1_acc = _mm256_setzero_pd();
+    ////let mut wls_sum0_acc = _mm256_setzero_pd();
+
+    //let shifts: [__m256i; 4] = [
+    //    _mm256_set1_epi32(24),
+    //    _mm256_set1_epi32(16),
+    //    _mm256_set1_epi32(8),
+    //    _mm256_set1_epi32(0),
+    //];
+
+    //for ni in 0..(n / 32 + 1) {
+    //    //log::debug!("ni {}", ni);
+
+    //    // broadcast 32bit int to 256bit
+    //    // ex. DCBA -> DCBADCBA...DCBA
+    //    // (D=abcdefgh)
+
+    //    let pred_s0_b32 = u32::from_le_bytes(pred_s0m[4 * ni..4 * (ni + 1)].try_into().unwrap());
+    //    let pred_s1_b32 = u32::from_le_bytes(pred_s1m[4 * ni..4 * (ni + 1)].try_into().unwrap());
+    //    let predv_s0_32 = _mm256_set1_epi32(pred_s0_b32 as i32);
+    //    let predv_s1_32 = _mm256_set1_epi32(pred_s1_b32 as i32);
+
+    //    //let ys_b32 = u32::from_le_bytes(ys[4 * ni..4 * (ni + 1)].try_into().unwrap());
+    //    //let yv_32 = _mm256_set1_epi32(ys_b32 as i32);
+
+    //    // bitwise not is fastest using xor by xor(v, ones)
+    //    // sum2=( pred0 & pred1 )
+    //    // sum1= ( !pred1 & pred0 )
+    //    // sum0= ( !pred0 & (!pred1) )
+    //    let flagv_2_32 = _mm256_and_si256(predv_s0_32, predv_s1_32);
+    //    let flagv_1_32 = _mm256_andnot_si256(predv_s1_32, predv_s0_32);
+    //    //let flagv_0_32 = _mm256_andnot_si256(predv_s0_32, _mm256_xor_si256(predv_s1_32, ones));
+
+    //    // ex. D=abcdefgh -> extract d,h,c,g,b,f,a,e for each 32 bit
+    //    // abcdefgh(x4)|...
+    //    // -> extracted (at highest position)
+    //    // 000d0000(x4)|...
+    //    // -> mask
+    //    // 11111111|00000000|00000000|11111111|...
+    //    let flagv_2_32_ext = _mm256_and_si256(flagv_2_32, bit_ext_mask);
+    //    let flagv_1_32_ext = _mm256_and_si256(flagv_1_32, bit_ext_mask);
+    //    //let flagv_0_32_ext = _mm256_and_si256(flagv_0_32, bit_ext_mask);
+
+    //    let take_mask_2_32 = _mm256_cmpeq_epi8(flagv_2_32_ext, bit_ext_mask);
+    //    let take_mask_1_32 = _mm256_cmpeq_epi8(flagv_1_32_ext, bit_ext_mask);
+    //    //let take_mask_0_32 = _mm256_cmpeq_epi8(flagv_0_32_ext, bit_ext_mask);
+
+    //    // bi=0-3, shift=24,16,8,0
+    //    //const SHIFTS: &'static [i32] = &[24, 16, 8, 0];
+
+    //    for bi in 0usize..4 {
+    //        // DCBADCBA...DCBA
+    //        // -> b=1: for B
+    //        // BA00BA00...BA00
+
+    //        let shift_v = shifts[bi];
+    //        let take_mask_2 = _mm256_sllv_epi32(take_mask_2_32, shift_v);
+    //        let take_mask_1 = _mm256_sllv_epi32(take_mask_1_32, shift_v);
+    //        //let take_mask_0 = _mm256_sllv_epi32(take_mask_0_32, shift_v);
+
+    //        //log::debug!("take_mask a s0 {:?}", take_mask_a_s0);
+    //        //log::debug!("take_mask b s0 {:?}", take_mask_b_s0);
+    //        //log::debug!("take_mask a s1 {:?}", take_mask_a_s1);
+    //        //log::debug!("take_mask b s1 {:?}", take_mask_b_s1);
+
+    //        let wlsv_lo_ptr = wls_pad[32 * ni + 8 * bi..32 * ni + 8 * bi + 4].as_ptr();
+    //        let wlsv_hi_ptr = wls_pad[32 * ni + 8 * bi + 4..32 * ni + 8 * (bi + 1)].as_ptr();
+    //        let zsv_lo_ptr = zs_pad[32 * ni + 8 * bi..32 * ni + 8 * bi + 4].as_ptr();
+    //        let zsv_hi_ptr = zs_pad[32 * ni + 8 * bi + 4..32 * ni + 8 * (bi + 1)].as_ptr();
+    //        //let psv_lo_ptr = ps[32 * ni + 8 * bi..32 * ni + 8 * bi + 4].as_ptr();
+    //        //let psv_hi_ptr = ps[32 * ni + 8 * bi + 4..32 * ni + 8 * (bi + 1)].as_ptr();
+
+    //        //log::debug!("ps ind {}", 32 * ni + 8 * bi);
+    //        //log::debug!("ps ind {}", 32 * ni + 8 * bi + 4);
+    //        //log::debug!("ps lo {:?}", &ps[32 * ni + 8 * bi..32 * ni + 8 * bi + 4]);
+    //        //log::debug!(
+    //        //    "ps hi {:?}",
+    //        //    &ps[32 * ni + 8 * bi + 4..32 * ni + 8 * bi + 8]
+    //        //);
+
+    //        let wlsv_lo: __m256d = _mm256_load_pd(wlsv_lo_ptr as *const _);
+    //        let wlsv_hi: __m256d = _mm256_load_pd(wlsv_hi_ptr as *const _);
+    //        let zsv_lo: __m256d = _mm256_load_pd(zsv_lo_ptr as *const _);
+    //        let zsv_hi: __m256d = _mm256_load_pd(zsv_hi_ptr as *const _);
+
+    //        //log::debug!("ps lo {:?}", psv_lo);
+    //        //log::debug!("ps hi {:?}", psv_hi);
+
+    //        // to create f_lo, first set score0 and score1, and then set score2
+    //        let f_01_lo: __m256d = _mm256_blendv_pd(s0d, s1d, _mm256_castsi256_pd(take_mask_1));
+    //        // no missing here
+    //        //let f_0_lo: __m256d = _mm256_blendv_pd(zerod, s0d, _mm256_castsi256_pd(take_mask_0));
+    //        //let f_01_lo: __m256d = _mm256_blendv_pd(f_0_lo, s1d, _mm256_castsi256_pd(take_mask_1));
+    //        let f_lo: __m256d = _mm256_blendv_pd(f_01_lo, s2d, _mm256_castsi256_pd(take_mask_2));
+    //        // create f-z
+    //        let f_z_lo: __m256d = _mm256_sub_pd(f_lo, zsv_lo);
+    //        // (f-z)**2
+    //        let f_z_2_lo: __m256d = _mm256_mul_pd(f_z_lo, f_z_lo);
+    //        // w * (f-z)**2
+    //        let w_f_z_2_lo: __m256d = _mm256_mul_pd(wlsv_lo, f_z_2_lo);
+
+    //        l_acc = _mm256_add_pd(l_acc, w_f_z_2_lo);
+
+    //        // for high
+    //        let take_mask_2_hi = _mm256_slli_epi64(take_mask_2, 32);
+    //        let take_mask_1_hi = _mm256_slli_epi64(take_mask_1, 32);
+    //        //let take_mask_0_hi = _mm256_slli_epi64(take_mask_0, 32);
+
+    //        let f_01_hi: __m256d = _mm256_blendv_pd(s0d, s1d, _mm256_castsi256_pd(take_mask_1_hi));
+    //        //let f_0_hi: __m256d = _mm256_blendv_pd(zerod, s0d, _mm256_castsi256_pd(take_mask_0_hi));
+    //        //let f_01_hi: __m256d =
+    //        //_mm256_blendv_pd(f_0_hi, s1d, _mm256_castsi256_pd(take_mask_1_hi));
+    //        //let f_01_hi: __m256d= _mm256_blendv_pd(s0d, s1d, _mm256_castsi256_pd(take_mask_1_hi));
+    //        let f_hi: __m256d = _mm256_blendv_pd(f_01_hi, s2d, _mm256_castsi256_pd(take_mask_2_hi));
+    //        // create f-z
+    //        let f_z_hi: __m256d = _mm256_sub_pd(f_hi, zsv_hi);
+    //        // (f-z)**2
+    //        let f_z_2_hi: __m256d = _mm256_mul_pd(f_z_hi, f_z_hi);
+    //        // w * (f-z)**2
+    //        let w_f_z_2_hi: __m256d = _mm256_mul_pd(wlsv_hi, f_z_2_hi);
+
+    //        l_acc = _mm256_add_pd(l_acc, w_f_z_2_hi);
+    //    }
     //}
 
+    //// sum 4 double horizontally to get the whole sum
+    //l_acc = _mm256_hadd_pd(l_acc, l_acc);
+
+    //// 1. any way to hadd??
+    //// 2. _mm256_extractf128_pd and _mm256_cvtsd_f64: get 64:0
+
+    //let loss_least_square: f64 =
+    //    _mm256_cvtsd_f64(l_acc) + _mm_cvtsd_f64(_mm256_extractf128_pd(l_acc, 1));
+
+    let loss: f64;
+    //if use_adjloss {
+    loss = 0.5 * (loss_least_square - loss_max_theory);
+    //} else {
+    //loss = loss_least_square;
+    //}
+    //let loss: f64 = 0.5 * (loss_least_square - loss_max_theory);
+
+    return loss;
+}
+
+// unsafe to match simd fn
+unsafe fn calc_loss_logit_add_nosimd_mi(
+    predicts: &GenotSnvRef,
+    coef: &Coef,
+    wls: &[f64],
+    zs: &[f64],
+    loss_max_theory: f64,
+) -> f64 {
+    let (constt, alphat) = coef.linearconst_f64();
+
+    if constt.is_nan() || alphat.is_nan() {
+        //log::debug!("coef is nan {}, {}", c, a);
+        return f64::NAN;
+    };
+
+    let s0 = constt;
+    let s1 = constt + alphat;
+    let s2 = constt + 2.0 * alphat;
+
+    let loss_least_square = predicts
+        .iter()
+        .zip(wls.iter())
+        .zip(zs.iter())
+        .map(|((p, w), z)| {
+            let f = match p {
+                0 => s0,
+                1 => s1,
+                2 => s2,
+                _ => panic!("wrong"),
+            };
+            let f_z = f - z;
+            w * f_z * f_z
+        })
+        .sum::<f64>();
+
+    let loss = 0.5 * (loss_least_square - loss_max_theory);
+
+    loss
+}
+
+//// unsafe is necessary with #[target_feature]
+//#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+//#[target_feature(enable = "avx2")]
+//pub unsafe fn calculate_loss_gt_logit_simd(
+//    losss: &mut LossStruct,
+//    dataset: &Dataset,
+//    sample_weight: &SampleWeight,
+//    boost_param: &BoostParam,
+//    extract_snvs: Option<&HashSet<usize>>,
+//) {
+//    let genot = dataset.genot();
+//    let phe = dataset.samples().phe_unwrap();
+//
+//    let epsilons_wzs =
+//        epsilon::calculate_epsilons_logit_wzs(sample_weight.wzs().unwrap(), phe, boost_param.eps());
+//    log::debug!(
+//        "epsilon_wzs case, cont: {:.4e},{:.4e}",
+//        epsilons_wzs.0,
+//        epsilons_wzs.1
+//    );
+//
+//    let epsilons_wls =
+//        epsilon::calculate_epsilons_logit_wls(sample_weight.wls().unwrap(), phe, boost_param.eps());
+//    log::debug!(
+//        "epsilon_wls case, cont: {:.4e},{:.4e}",
+//        epsilons_wls.0,
+//        epsilons_wls.1
+//    );
+//
+//    assert_eq!(losss.inner_mut().len(), genot.m());
+//
+//    let loss_max_theory = compute_loss_least_square_max_theory(
+//        sample_weight.zs().unwrap(),
+//        sample_weight.wls().unwrap(),
+//    );
+//    log::debug!("loss_max_theory {}", loss_max_theory);
+//
+//    //unsafe {
+//    losss
+//        .inner_mut()
+//        .par_iter_mut()
+//        .enumerate()
+//        .for_each(|(mi, loss)| {
+//            //if extract_snvs.contains(&mi) {
+//            if extract_snvs.is_none() || extract_snvs.unwrap().contains(&mi) {
+//                let (coef, _, _) = coefficient::calculate_coef_logit_eps(
+//                    &genot.to_genot_snv(mi),
+//                    sample_weight.wzs_pad().unwrap(),
+//                    sample_weight.wls_pad().unwrap(),
+//                    phe,
+//                    epsilons_wzs,
+//                    epsilons_wls,
+//                    boost_param.eps(),
+//                    //boost_param.learning_rate(),
+//                    boost_param.eff_eps(),
+//                    boost_param.boost_type(),
+//                    true,
+//                    false,
+//                );
+//                *loss = calculate_loss_gt_logit_simd_sm(
+//                    &genot.to_genot_snv(mi),
+//                    &coef,
+//                    sample_weight.wls_pad().unwrap(),
+//                    sample_weight.zs_pad().unwrap(),
+//                    //use_adjloss,
+//                    loss_max_theory,
+//                );
+//            } else {
+//                *loss = f64::MAX;
+//            }
+//        });
+//    //}
+//}
+
+//// For interaction, single SNVs will be calculated
+//#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+//#[target_feature(enable = "avx2")]
+//pub unsafe fn calculate_loss_gt_logit_add_simd(
+//    losss: &mut LossStruct,
+//    dataset: &Dataset,
+//    sample_weight: &SampleWeight,
+//    _boost_param: &BoostParam,
+//    extract_snvs: Option<&HashSet<usize>>,
+//    //skip_snv: &HashSet<usize>,
+//    //use_adjloss: bool,
+//) {
+//    let genot = dataset.genot();
+//    //let phe = dataset.samples().phe_unwrap();
+//
+//    let loss_max_theory = compute_loss_least_square_max_theory(
+//        sample_weight.zs().unwrap(),
+//        sample_weight.wls().unwrap(),
+//    );
+//    log::debug!("loss_max_theory {}", loss_max_theory);
+//
+//    assert_eq!(losss.inner_mut().len(), genot.m());
+//
+//    losss
+//        .inner_mut()
+//        .par_iter_mut()
+//        .enumerate()
+//        .for_each(|(mi, loss)| {
+//            if extract_snvs.is_none() || extract_snvs.unwrap().contains(&mi) {
+//                //if skip_snv.contains(&mi) {
+//                let coef = coefficient::calculate_coef_logit_add(
+//                    &genot.to_genot_snv(mi),
+//                    sample_weight.wzs_pad().unwrap(),
+//                    sample_weight.wls_pad().unwrap(),
+//                    // no lr
+//                );
+//                //log::debug!("coef {:?}", coef);
+//                *loss = calculate_loss_gt_logit_add_simd_sm(
+//                    &genot.to_genot_snv(mi),
+//                    &coef,
+//                    sample_weight.wls_pad().unwrap(),
+//                    sample_weight.zs_pad().unwrap(),
+//                    //use_adjloss,
+//                    loss_max_theory,
+//                );
+//            } else {
+//                *loss = f64::MAX;
+//            }
+//        });
+//    //}
+//}
+
+pub fn calc_loss_logit_mhcnomissing(
+    losss: &mut LossStruct,
+    dataset: &Dataset,
+    sample_weight: &SampleWeight,
+    boost_param: &BoostParam,
+    extract_snvs: Option<&HashSet<usize>>,
+    //skip_snv: &HashSet<usize>,
+    alphas_save: Option<&mut Vec<f64>>,
+) {
+    if alphas_save.is_some() {
+        unimplemented!("alphas_save not implemented");
+    }
+    let genot = dataset.genot();
+    let phe = dataset.samples().phe_unwrap();
+
+    assert_eq!(losss.inner_mut().len(), genot.m());
+
+    let epsilons_wzs =
+        epsilon::calc_epsilons_logit_wzs(sample_weight.wzs().unwrap(), phe, boost_param.eps());
+    log::debug!(
+        "epsilon_wzs case, cont: {:.4e},{:.4e}",
+        epsilons_wzs.0,
+        epsilons_wzs.1
+    );
+    let epsilons_wls =
+        epsilon::calc_epsilons_logit_wls(sample_weight.wls().unwrap(), phe, boost_param.eps());
+    log::debug!(
+        "epsilon_wls case, cont: {:.4e},{:.4e}",
+        epsilons_wls.0,
+        epsilons_wls.1
+    );
+
+    let loss_max_theory = calc_loss_max_least_square_theory(
+        sample_weight.zs().unwrap(),
+        sample_weight.wls().unwrap(),
+    );
+    log::debug!("loss_max_theory {}", loss_max_theory);
+
+    let snvs_index = dataset.snvs().snv_ids();
+
+    let mhc_region = boost_param.mhc_region().unwrap();
+
+    unsafe {
+        losss
+            .inner_mut()
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(mi, loss)| {
+                //if skip_snv.contains(&mi) {
+                if extract_snvs.is_some() && !extract_snvs.unwrap().contains(&mi) {
+                    *loss = f64::NAN;
+                    //*loss = f64::MAX;
+                } else if snvs_index[mi].is_in_region(&mhc_region.0, &mhc_region.1) {
+                    // in MHC, nonadd
+                    let (coef, _, _) = coefficient::calculate_coef_logit_eps(
+                        &genot.to_genot_snv(mi),
+                        sample_weight.wzs_pad().unwrap(),
+                        sample_weight.wls_pad().unwrap(),
+                        phe,
+                        epsilons_wzs,
+                        epsilons_wls,
+                        boost_param.eps(),
+                        //boost_param.learning_rate(),
+                        boost_param.eff_eps(),
+                        //boost_param.boost_type(),
+                        BoostType::LogitNoMissing,
+                        true,
+                        false,
+                    );
+                    //*loss = calculate_loss_gt_logit_simd_sm(
+                    *loss = calc_loss_logit_mi()(
+                        &genot.to_genot_snv(mi),
+                        &coef,
+                        sample_weight.wls_pad().unwrap(),
+                        sample_weight.zs_pad().unwrap(),
+                        //use_adjloss,
+                        loss_max_theory,
+                    );
+                } else {
+                    // not in MHC, additive
+                    let coef = coefficient::calculate_coef_logit_add(
+                        &genot.to_genot_snv(mi),
+                        sample_weight.wzs_pad().unwrap(),
+                        sample_weight.wls_pad().unwrap(),
+                        // no lr
+                    );
+                    //*loss = calculate_loss_gt_logit_add_simd_sm(
+                    *loss = calc_loss_logit_add_mi()(
+                        &genot.to_genot_snv(mi),
+                        &coef,
+                        sample_weight.wls_pad().unwrap(),
+                        sample_weight.zs_pad().unwrap(),
+                        loss_max_theory,
+                    );
+                }
+            });
+    }
+}
+
+//#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+//#[target_feature(enable = "avx2")]
+//pub unsafe fn calculate_loss_gt_logit_mhcnomissing_simd(
+//    losss: &mut LossStruct,
+//    dataset: &Dataset,
+//    //genot: &Genot,
+//    sample_weight: &SampleWeight,
+//    //phe: &Phe,
+//    boost_param: &BoostParam,
+//    extract_snvs: Option<&HashSet<usize>>,
+//    //skip_snv: &HashSet<usize>,
+//) {
+//    let genot = dataset.genot();
+//    let phe = dataset.samples().phe_unwrap();
+//
+//    assert_eq!(losss.inner_mut().len(), genot.m());
+//
+//    let epsilons_wzs =
+//        epsilon::calculate_epsilons_logit_wzs(sample_weight.wzs().unwrap(), phe, boost_param.eps());
+//    log::debug!(
+//        "epsilon_wzs case, cont: {:.4e},{:.4e}",
+//        epsilons_wzs.0,
+//        epsilons_wzs.1
+//    );
+//    let epsilons_wls =
+//        epsilon::calculate_epsilons_logit_wls(sample_weight.wls().unwrap(), phe, boost_param.eps());
+//    log::debug!(
+//        "epsilon_wls case, cont: {:.4e},{:.4e}",
+//        epsilons_wls.0,
+//        epsilons_wls.1
+//    );
+//
+//    let loss_max_theory = compute_loss_least_square_max_theory(
+//        sample_weight.zs().unwrap(),
+//        sample_weight.wls().unwrap(),
+//    );
+//    log::debug!("loss_max_theory {}", loss_max_theory);
+//
+//    let snvs_index = dataset.snvs().snv_indexs();
+//
+//    let mhc_region = boost_param.mhc_region().unwrap();
+//
+//    //unsafe {
+//    losss
+//        .inner_mut()
+//        .par_iter_mut()
+//        .enumerate()
+//        .for_each(|(mi, loss)| {
+//            //if skip_snv.contains(&mi) {
+//            if extract_snvs.is_some() && !extract_snvs.unwrap().contains(&mi) {
+//                *loss = f64::MAX;
+//            } else if snvs_index[mi].is_in_region(&mhc_region.0, &mhc_region.1) {
+//                // in MHC, nonadd
+//                let (coef, _, _) = coefficient::calculate_coef_logit_eps(
+//                    &genot.to_genot_snv(mi),
+//                    sample_weight.wzs_pad().unwrap(),
+//                    sample_weight.wls_pad().unwrap(),
+//                    phe,
+//                    epsilons_wzs,
+//                    epsilons_wls,
+//                    boost_param.eps(),
+//                    //boost_param.learning_rate(),
+//                    boost_param.eff_eps(),
+//                    //boost_param.boost_type(),
+//                    BoostType::LogitNoMissing,
+//                    true,
+//                    false,
+//                );
+//                *loss = calculate_loss_gt_logit_simd_sm(
+//                    &genot.to_genot_snv(mi),
+//                    &coef,
+//                    sample_weight.wls_pad().unwrap(),
+//                    sample_weight.zs_pad().unwrap(),
+//                    //use_adjloss,
+//                    loss_max_theory,
+//                );
+//            } else {
+//                // not in MHC, additive
+//                let coef = coefficient::calculate_coef_logit_add(
+//                    &genot.to_genot_snv(mi),
+//                    sample_weight.wzs_pad().unwrap(),
+//                    sample_weight.wls_pad().unwrap(),
+//                    // no lr
+//                );
+//                *loss = calculate_loss_gt_logit_add_simd_sm(
+//                    &genot.to_genot_snv(mi),
+//                    &coef,
+//                    sample_weight.wls_pad().unwrap(),
+//                    sample_weight.zs_pad().unwrap(),
+//                    loss_max_theory,
+//                );
+//            }
+//        });
+//}
+
+pub fn calc_loss_logit_common(
+    losss: &mut LossStruct,
+    dataset: &Dataset,
+    //genot: &Genot,
+    sample_weight: &SampleWeight,
+    //phe: &Phe,
+    boost_param: &BoostParam,
+    extract_snvs: Option<&HashSet<usize>>,
+    //skip_snv: &HashSet<usize>,
+    alphas_save: Option<&mut Vec<f64>>,
+) {
+    if alphas_save.is_some() {
+        unimplemented!("alphas_save not implemented");
+    }
+    let genot = dataset.genot();
+    let phe = dataset.samples().phe_unwrap();
+
+    assert_eq!(losss.inner_mut().len(), genot.m());
+
+    let epsilons_wzs =
+        epsilon::calc_epsilons_logit_wzs(sample_weight.wzs().unwrap(), phe, boost_param.eps());
+    log::debug!(
+        "epsilon_wzs case, cont: {:.4e},{:.4e}",
+        epsilons_wzs.0,
+        epsilons_wzs.1
+    );
+    let epsilons_wls =
+        epsilon::calc_epsilons_logit_wls(sample_weight.wls().unwrap(), phe, boost_param.eps());
+    log::debug!(
+        "epsilon_wls case, cont: {:.4e},{:.4e}",
+        epsilons_wls.0,
+        epsilons_wls.1
+    );
+
+    let loss_max_theory = calc_loss_max_least_square_theory(
+        sample_weight.zs().unwrap(),
+        sample_weight.wls().unwrap(),
+    );
+    log::debug!("loss_max_theory {}", loss_max_theory);
+
+    let maf_thre = boost_param.maf_threshold_logit_common().unwrap();
+    let mafs = dataset.snvs().mafs().unwrap();
+
+    unsafe {
+        //let func_nonadd = ;
+        //let func_add =;
+
+        losss
+            .inner_mut()
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(mi, loss)| {
+                //if skip_snv.contains(&mi) {
+                if extract_snvs.is_some() && !extract_snvs.unwrap().contains(&mi) {
+                    *loss = f64::NAN;
+                    //*loss = f64::MAX;
+                } else if mafs[mi] > maf_thre {
+                    // common, nonadd
+                    let (coef, _, _) = coefficient::calculate_coef_logit_eps(
+                        &genot.to_genot_snv(mi),
+                        sample_weight.wzs_pad().unwrap(),
+                        sample_weight.wls_pad().unwrap(),
+                        phe,
+                        epsilons_wzs,
+                        epsilons_wls,
+                        boost_param.eps(),
+                        //boost_param.learning_rate(),
+                        boost_param.eff_eps(),
+                        //boost_param.boost_type(),
+                        BoostType::LogitNoMissing,
+                        true,
+                        false,
+                    );
+                    //*loss = calculate_loss_gt_logit_simd_sm(
+                    *loss = calc_loss_logit_mi()(
+                        &genot.to_genot_snv(mi),
+                        &coef,
+                        sample_weight.wls_pad().unwrap(),
+                        sample_weight.zs_pad().unwrap(),
+                        //use_adjloss,
+                        loss_max_theory,
+                    );
+                } else {
+                    // rare, additive
+                    let coef = coefficient::calculate_coef_logit_add(
+                        &genot.to_genot_snv(mi),
+                        sample_weight.wzs_pad().unwrap(),
+                        sample_weight.wls_pad().unwrap(),
+                        // no lr
+                    );
+                    //*loss = calculate_loss_gt_logit_add_simd_sm(
+                    *loss = calc_loss_logit_add_mi()(
+                        &genot.to_genot_snv(mi),
+                        &coef,
+                        sample_weight.wls_pad().unwrap(),
+                        sample_weight.zs_pad().unwrap(),
+                        loss_max_theory,
+                    );
+                }
+            });
+    }
+}
+
+//unsafe fn test_fn(g: &GenotSnvRef) -> f64 {
+//    1.0
+//}
+// /// ok
+//unsafe fn call_test_fn() -> unsafe fn(&GenotSnvRef) -> f64 {
+//    unsafe { test_fn }
+//}
+
+//#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+//#[target_feature(enable = "avx2")]
+//pub unsafe fn calculate_loss_gt_logitaddinteraction_simd(
+pub fn calc_loss_logitaddinteraction(
+    losss: &mut LossStruct,
+    dataset: &Dataset,
+    sample_weight: &SampleWeight,
+    _boost_param: &BoostParam,
+    extract_snvs: Option<&HashSet<usize>>,
+    extract_interaction: &Vec<(usize, usize)>, // order is important for loss
+) {
+    //let genot = dataset.genot();
+    //assert_eq!(losss.inner_mut().len(), genot.m());
+
+    // For additive for single snv
+    calc_loss_logit_add(
+        losss,
+        dataset,
+        sample_weight,
+        _boost_param,
+        extract_snvs,
+        None,
+    );
+
+    // For Interaction
+    calc_loss_logit_interaction(
+        losss,
+        dataset,
+        sample_weight,
+        _boost_param,
+        extract_interaction,
+    );
+
+    //unsafe {
+    //    // For Interaction
+
+    //    // common for interaction
+    //    let loss_max_theory = calc_loss_max_least_square_theory(
+    //        sample_weight.zs().unwrap(),
+    //        sample_weight.wls().unwrap(),
+    //    );
+    //    log::debug!("loss_max_theory {}", loss_max_theory);
+
+    //    //let func = ;
+
+    //    let mafs = dataset.snvs().mafs().unwrap();
+
+    //    // for interaction, len(loss) is len(extract_interaction)
+    //    losss
+    //        .inner_interaction_mut()
+    //        .par_iter_mut()
+    //        .zip(extract_interaction.par_iter())
+    //        .for_each(|(loss, snv_pair)| {
+    //            let (m1, m2) = *snv_pair;
+    //            let coef = coefficient::calculate_coef_logit_interaction(
+    //                &genot.to_genot_snv(m1),
+    //                &genot.to_genot_snv(m2),
+    //                sample_weight.wzs_pad().unwrap(),
+    //                sample_weight.wls_pad().unwrap(),
+    //                // no lr
+    //                mafs[m1],
+    //                mafs[m2],
+    //            );
+    //            //log::debug!("coef {:?}", coef);
+    //            //*loss = calculate_loss_gt_logit_add_simd_sm(
+    //            *loss = calc_loss_logit_interaction_mi()(
+    //                &genot.to_genot_snv(m1),
+    //                &genot.to_genot_snv(m2),
+    //                &coef,
+    //                sample_weight.wls_pad().unwrap(),
+    //                sample_weight.zs_pad().unwrap(),
+    //                mafs[m1],
+    //                mafs[m2],
+    //                //use_adjloss,
+    //                loss_max_theory,
+    //            );
+    //        });
+    //}
+    //}
+}
+
+// TODO: move to loss.rs? like calc_loss_logit()
+pub fn calc_loss_logit_interaction(
+    losss: &mut LossStruct,
+    dataset: &Dataset,
+    sample_weight: &SampleWeight,
+    _boost_param: &BoostParam,
+    extract_interaction: &Vec<(usize, usize)>, // order is important for LossStruct
+) {
+    let genot = dataset.genot();
+    assert_eq!(
+        losss.inner_interaction_mut().len(),
+        extract_interaction.len()
+    );
+    //assert_eq!(losss.inner_mut().len(), genot.m());
+
+    // unnecessary
+    // if extract_interaction.len()==0{
+    //     return;
+    // }
+
+    let loss_max_theory = calc_loss_max_least_square_theory(
+        sample_weight.zs().unwrap(),
+        sample_weight.wls().unwrap(),
+    );
+    log::debug!("loss_max_theory {}", loss_max_theory);
+
+    let mafs = dataset.snvs().mafs().unwrap();
+
+    unsafe {
+        // for interaction, len(loss) == len(extract_interaction)
+        losss
+            .inner_interaction_mut()
+            .par_iter_mut()
+            .zip(extract_interaction.par_iter())
+            .for_each(|(loss, snv_pair)| {
+                let (m1, m2) = *snv_pair;
+                let coef = coefficient::calculate_coef_logit_interaction(
+                    &genot.to_genot_snv(m1),
+                    &genot.to_genot_snv(m2),
+                    sample_weight.wzs_pad().unwrap(),
+                    sample_weight.wls_pad().unwrap(),
+                    // no lr
+                    mafs[m1],
+                    mafs[m2],
+                );
+                //log::debug!("coef {:?}", coef);
+                //*loss = calculate_loss_gt_logit_add_simd_sm(
+                *loss = calc_loss_logit_interaction_mi()(
+                    &genot.to_genot_snv(m1),
+                    &genot.to_genot_snv(m2),
+                    &coef,
+                    sample_weight.wls_pad().unwrap(),
+                    sample_weight.zs_pad().unwrap(),
+                    mafs[m1],
+                    mafs[m2],
+                    //use_adjloss,
+                    loss_max_theory,
+                );
+            });
+    }
+}
+
+unsafe fn calc_loss_logit_interaction_mi(
+) -> unsafe fn(&GenotSnvRef, &GenotSnvRef, &Coef, &[f64], &[f64], f64, f64, f64) -> f64 {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            return calc_loss_logit_interaction_simd_mi;
+        }
+    }
+
+    return calc_loss_logit_interaction_nosimd_mi;
+}
+
+// unsafe to match simd fn
+unsafe fn calc_loss_logit_interaction_nosimd_mi(
+    predicts1: &GenotSnvRef,
+    predicts2: &GenotSnvRef,
+    coef: &Coef,
+    wls_pad: &[f64],
+    zs_pad: &[f64],
+    maf_1: f64,
+    maf_2: f64,
+    loss_max_theory: f64,
+) -> f64 {
+    let (constt, alphat) = coef.linearconstinteraction_f64();
+
+    if constt.is_nan() || alphat.is_nan() {
+        //log::debug!("coef is nan {}, {}", c, a);
+        return f64::NAN;
+    };
+
+    //let score_wgt = coefficient::interaction_genotype(maf_1, maf_2)
+    let score_wgt = gscore::interaction_genotype(maf_1, maf_2)
+        .linearconst(constt, alphat)
+        .to_tuple();
+
+    //let x_inter = coefficient::interaction_genotype(maf_1, maf_2);
+    //let x_inter = x_inter.to_tuple();
+
+    //let s0 = constt;
+    //let s1 = constt + alphat;
+    //let s2 = constt + 2.0 * alphat;
+    //let s4 = constt + 4.0 * alphat;
+
+    // length should be n due to predicts1.iter()
+    let loss_least_square = predicts1
+        .iter()
+        .zip(predicts2.iter())
+        .zip(wls_pad.iter().zip(zs_pad.iter()))
+        .map(|((g1, g2), (w, z))| {
+            let f = match (g1, g2) {
+                (0, 0) => score_wgt.0 .0,
+                (0, 1) => score_wgt.0 .1,
+                (0, 2) => score_wgt.0 .2,
+                (1, 0) => score_wgt.1 .0,
+                (1, 1) => score_wgt.1 .1,
+                (1, 2) => score_wgt.1 .2,
+                (2, 0) => score_wgt.2 .0,
+                (2, 1) => score_wgt.2 .1,
+                (2, 2) => score_wgt.2 .2,
+                _ => panic!("wrong genotype pair: {}, {}", g1, g2),
+            };
+            //let f = constt + alphat * x;
+            let f_z = f - z;
+            w * f_z * f_z
+        })
+        .sum::<f64>();
+
+    let loss = 0.5 * (loss_least_square - loss_max_theory);
+
+    loss
+}
+
+//// unsafe to match simd fn
+//unsafe fn calc_loss_logit_interaction_nosimd_mi(
+//    predicts1: &GenotSnvRef,
+//    predicts2: &GenotSnvRef,
+//    coef: &Coef,
+//    wls_pad: &[f64],
+//    zs_pad: &[f64],
+//    loss_max_theory: f64,
+//) -> f64 {
+//    let (constt, alphat) = coef.linearconstinteraction_f64();
+//
+//    if constt.is_nan() || alphat.is_nan() {
+//        //log::debug!("coef is nan {}, {}", c, a);
+//        return f64::NAN;
+//    };
+//
+//    let s0 = constt;
+//    let s1 = constt + alphat;
+//    let s2 = constt + 2.0 * alphat;
+//    let s4 = constt + 4.0 * alphat;
+//
+//    // length should be n due to predicts1.iter()
+//    let loss_least_square = predicts1
+//        .iter()
+//        .zip(predicts2.iter())
+//        .zip(wls_pad.iter().zip(zs_pad.iter()))
+//        .map(|((p1, p2), (w, z))| {
+//            let f = match p1 * p2 {
+//                0 => s0,
+//                1 => s1,
+//                2 => s2,
+//                4 => s4,
+//                _ => panic!("wrong"),
+//            };
+//            let f_z = f - z;
+//            w * f_z * f_z
+//        })
+//        .sum::<f64>();
+//
+//    let loss = 0.5 * (loss_least_square - loss_max_theory);
+//
+//    loss
+//}
+
+/// assume no missing
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+unsafe fn calc_least_square_logit_interaction_simd_mi(
+    gsnv1_s0: &[u8],
+    gsnv1_s1: &[u8],
+    gsnv2_s0: &[u8],
+    gsnv2_s1: &[u8],
+    n: usize,
+    wls_pad: &[f64],
+    zs_pad: &[f64],
+    score_wgt: ((f64, f64, f64), (f64, f64, f64), (f64, f64, f64)),
+) -> f64 {
     #[cfg(target_arch = "x86")]
     use std::arch::x86::*;
     #[cfg(target_arch = "x86_64")]
     use std::arch::x86_64::*;
-    //use std::convert::TryInto;
 
-    //let n = phe.n();
-    //let n_pad=wls.len();
-    let n = wls.len() - 32;
-    //let ys = phe.inner();
-    let pred_s0m = predicts.predict_s(0);
-    let pred_s1m = predicts.predict_s(1);
+    let ((s00, s01, s02), (s10, s11, s12), (s20, s21, s22)) = score_wgt;
+
+    let s_0_0_d: __m256d = _mm256_set1_pd(s00);
+    let s_0_1_d: __m256d = _mm256_set1_pd(s01);
+    let s_0_2_d: __m256d = _mm256_set1_pd(s02);
+    let s_1_0_d: __m256d = _mm256_set1_pd(s10);
+    let s_1_1_d: __m256d = _mm256_set1_pd(s11);
+    let s_1_2_d: __m256d = _mm256_set1_pd(s12);
+    let s_2_0_d: __m256d = _mm256_set1_pd(s20);
+    let s_2_1_d: __m256d = _mm256_set1_pd(s21);
+    let s_2_2_d: __m256d = _mm256_set1_pd(s22);
 
     let bit_ext_mask: __m256i = _mm256_set_epi32(
         0x10101010,
@@ -1003,22 +2616,20 @@ unsafe fn calculate_loss_gt_logit_add_simd_sm(
         -0x7f7f7f80, // =0x80808080
         0x08080808,
     );
-    //let zerod: __m256d = _mm256_setzero_pd();
-    //let zeros: __m256i = _mm256_setzero_si256();
-    //let ones: __m256i = _mm256_cmpeq_epi32(zeros, zeros);
 
-    let s2d: __m256d = _mm256_set1_pd(s2);
-    let s1d: __m256d = _mm256_set1_pd(s1);
-    let s0d: __m256d = _mm256_set1_pd(s0);
+    let zeros: __m256i = _mm256_setzero_si256();
+    let ones: __m256i = _mm256_cmpeq_epi32(zeros, zeros);
+
+    //let s2d: __m256d = _mm256_set1_pd(s2);
+    //let s1d: __m256d = _mm256_set1_pd(s1);
+    //let s0d: __m256d = _mm256_set1_pd(s0);
+
+    //let s4d: __m256d = _mm256_set1_pd(s4);
+    //let s2d: __m256d = _mm256_set1_pd(s2);
+    //let s1d: __m256d = _mm256_set1_pd(s1);
+    //let s0d: __m256d = _mm256_set1_pd(s0);
 
     let mut l_acc: __m256d = _mm256_setzero_pd();
-
-    //let mut wzs_sum2_acc = _mm256_setzero_pd();
-    //let mut wzs_sum1_acc = _mm256_setzero_pd();
-    //let mut wzs_sum0_acc = _mm256_setzero_pd();
-    //let mut wls_sum2_acc = _mm256_setzero_pd();
-    //let mut wls_sum1_acc = _mm256_setzero_pd();
-    //let mut wls_sum0_acc = _mm256_setzero_pd();
 
     let shifts: [__m256i; 4] = [
         _mm256_set1_epi32(24),
@@ -1034,35 +2645,67 @@ unsafe fn calculate_loss_gt_logit_add_simd_sm(
         // ex. DCBA -> DCBADCBA...DCBA
         // (D=abcdefgh)
 
-        let pred_s0_b32 = u32::from_le_bytes(pred_s0m[4 * ni..4 * (ni + 1)].try_into().unwrap());
-        let pred_s1_b32 = u32::from_le_bytes(pred_s1m[4 * ni..4 * (ni + 1)].try_into().unwrap());
-        let predv_s0_32 = _mm256_set1_epi32(pred_s0_b32 as i32);
-        let predv_s1_32 = _mm256_set1_epi32(pred_s1_b32 as i32);
+        let pred1_s0_b32 = u32::from_le_bytes(gsnv1_s0[4 * ni..4 * (ni + 1)].try_into().unwrap());
+        let pred1_s1_b32 = u32::from_le_bytes(gsnv1_s1[4 * ni..4 * (ni + 1)].try_into().unwrap());
+        let pred2_s0_b32 = u32::from_le_bytes(gsnv2_s0[4 * ni..4 * (ni + 1)].try_into().unwrap());
+        let pred2_s1_b32 = u32::from_le_bytes(gsnv2_s1[4 * ni..4 * (ni + 1)].try_into().unwrap());
+
+        let predv1_s0_32 = _mm256_set1_epi32(pred1_s0_b32 as i32);
+        let predv1_s1_32 = _mm256_set1_epi32(pred1_s1_b32 as i32);
+        let predv2_s0_32 = _mm256_set1_epi32(pred2_s0_b32 as i32);
+        let predv2_s1_32 = _mm256_set1_epi32(pred2_s1_b32 as i32);
 
         //let ys_b32 = u32::from_le_bytes(ys[4 * ni..4 * (ni + 1)].try_into().unwrap());
         //let yv_32 = _mm256_set1_epi32(ys_b32 as i32);
 
-        // bitwise not is fastest in xor by xor(v, ones)
+        // bitwise not is fastest using xor by xor(v, ones)
         // sum2=( pred0 & pred1 )
         // sum1= ( !pred1 & pred0 )
         // sum0= ( !pred0 & (!pred1) )
-        let flagv_2_32 = _mm256_and_si256(predv_s0_32, predv_s1_32);
-        let flagv_1_32 = _mm256_andnot_si256(predv_s1_32, predv_s0_32);
-        //let flagv_0_32 = _mm256_andnot_si256(predv_s0_32, _mm256_xor_si256(predv_s1_32, ones));
+        let flagv1_2_32 = _mm256_and_si256(predv1_s0_32, predv1_s1_32);
+        let flagv1_1_32 = _mm256_andnot_si256(predv1_s1_32, predv1_s0_32);
+        let flagv1_0_32 = _mm256_andnot_si256(predv1_s0_32, _mm256_xor_si256(predv1_s1_32, ones));
 
+        let flagv2_2_32 = _mm256_and_si256(predv2_s0_32, predv2_s1_32);
+        let flagv2_1_32 = _mm256_andnot_si256(predv2_s1_32, predv2_s0_32);
+        let flagv2_0_32 = _mm256_andnot_si256(predv2_s0_32, _mm256_xor_si256(predv2_s1_32, ones));
+
+        // interaction
+        // (g1, g2)=(0,0)
+        //let flagv_by_0_0_32 = _mm256_and_si256(flagv1_0_32, flagv2_0_32);
         // ex. D=abcdefgh -> extract d,h,c,g,b,f,a,e for each 32 bit
         // abcdefgh(x4)|...
         // -> extracted (at highest position)
         // 000d0000(x4)|...
         // -> mask
         // 11111111|00000000|00000000|11111111|...
-        let flagv_2_32_ext = _mm256_and_si256(flagv_2_32, bit_ext_mask);
-        let flagv_1_32_ext = _mm256_and_si256(flagv_1_32, bit_ext_mask);
-        //let flagv_0_32_ext = _mm256_and_si256(flagv_0_32, bit_ext_mask);
+        //let flagv_by_0_0_32_ext = _mm256_and_si256(flagv_by_0_0_32, bit_ext_mask);
+        //let take_mask_0_0_32 = _mm256_cmpeq_epi8(flagv_by_0_0_32_ext, bit_ext_mask);
 
-        let take_mask_2_32 = _mm256_cmpeq_epi8(flagv_2_32_ext, bit_ext_mask);
-        let take_mask_1_32 = _mm256_cmpeq_epi8(flagv_1_32_ext, bit_ext_mask);
-        //let take_mask_0_32 = _mm256_cmpeq_epi8(flagv_0_32_ext, bit_ext_mask);
+        let flagv_by_0_1_32 = _mm256_and_si256(flagv1_0_32, flagv2_1_32);
+        let flagv_by_0_1_32_ext = _mm256_and_si256(flagv_by_0_1_32, bit_ext_mask);
+        let take_mask_0_1_32 = _mm256_cmpeq_epi8(flagv_by_0_1_32_ext, bit_ext_mask);
+        let flagv_by_0_2_32 = _mm256_and_si256(flagv1_0_32, flagv2_2_32);
+        let flagv_by_0_2_32_ext = _mm256_and_si256(flagv_by_0_2_32, bit_ext_mask);
+        let take_mask_0_2_32 = _mm256_cmpeq_epi8(flagv_by_0_2_32_ext, bit_ext_mask);
+        let flagv_by_1_0_32 = _mm256_and_si256(flagv1_1_32, flagv2_0_32);
+        let flagv_by_1_0_32_ext = _mm256_and_si256(flagv_by_1_0_32, bit_ext_mask);
+        let take_mask_1_0_32 = _mm256_cmpeq_epi8(flagv_by_1_0_32_ext, bit_ext_mask);
+        let flagv_by_1_1_32 = _mm256_and_si256(flagv1_1_32, flagv2_1_32);
+        let flagv_by_1_1_32_ext = _mm256_and_si256(flagv_by_1_1_32, bit_ext_mask);
+        let take_mask_1_1_32 = _mm256_cmpeq_epi8(flagv_by_1_1_32_ext, bit_ext_mask);
+        let flagv_by_1_2_32 = _mm256_and_si256(flagv1_1_32, flagv2_2_32);
+        let flagv_by_1_2_32_ext = _mm256_and_si256(flagv_by_1_2_32, bit_ext_mask);
+        let take_mask_1_2_32 = _mm256_cmpeq_epi8(flagv_by_1_2_32_ext, bit_ext_mask);
+        let flagv_by_2_0_32 = _mm256_and_si256(flagv1_2_32, flagv2_0_32);
+        let flagv_by_2_0_32_ext = _mm256_and_si256(flagv_by_2_0_32, bit_ext_mask);
+        let take_mask_2_0_32 = _mm256_cmpeq_epi8(flagv_by_2_0_32_ext, bit_ext_mask);
+        let flagv_by_2_1_32 = _mm256_and_si256(flagv1_2_32, flagv2_1_32);
+        let flagv_by_2_1_32_ext = _mm256_and_si256(flagv_by_2_1_32, bit_ext_mask);
+        let take_mask_2_1_32 = _mm256_cmpeq_epi8(flagv_by_2_1_32_ext, bit_ext_mask);
+        let flagv_by_2_2_32 = _mm256_and_si256(flagv1_2_32, flagv2_2_32);
+        let flagv_by_2_2_32_ext = _mm256_and_si256(flagv_by_2_2_32, bit_ext_mask);
+        let take_mask_2_2_32 = _mm256_cmpeq_epi8(flagv_by_2_2_32_ext, bit_ext_mask);
 
         // bi=0-3, shift=24,16,8,0
         //const SHIFTS: &'static [i32] = &[24, 16, 8, 0];
@@ -1073,21 +2716,20 @@ unsafe fn calculate_loss_gt_logit_add_simd_sm(
             // BA00BA00...BA00
 
             let shift_v = shifts[bi];
-            let take_mask_2 = _mm256_sllv_epi32(take_mask_2_32, shift_v);
-            let take_mask_1 = _mm256_sllv_epi32(take_mask_1_32, shift_v);
-            //let take_mask_0 = _mm256_sllv_epi32(take_mask_0_32, shift_v);
+            //let take_mask_0_0 = _mm256_sllv_epi32(take_mask_0_0_32, shift_v);
+            let take_mask_0_1 = _mm256_sllv_epi32(take_mask_0_1_32, shift_v);
+            let take_mask_0_2 = _mm256_sllv_epi32(take_mask_0_2_32, shift_v);
+            let take_mask_1_0 = _mm256_sllv_epi32(take_mask_1_0_32, shift_v);
+            let take_mask_1_1 = _mm256_sllv_epi32(take_mask_1_1_32, shift_v);
+            let take_mask_1_2 = _mm256_sllv_epi32(take_mask_1_2_32, shift_v);
+            let take_mask_2_0 = _mm256_sllv_epi32(take_mask_2_0_32, shift_v);
+            let take_mask_2_1 = _mm256_sllv_epi32(take_mask_2_1_32, shift_v);
+            let take_mask_2_2 = _mm256_sllv_epi32(take_mask_2_2_32, shift_v);
 
-            //log::debug!("take_mask a s0 {:?}", take_mask_a_s0);
-            //log::debug!("take_mask b s0 {:?}", take_mask_b_s0);
-            //log::debug!("take_mask a s1 {:?}", take_mask_a_s1);
-            //log::debug!("take_mask b s1 {:?}", take_mask_b_s1);
-
-            let wlsv_lo_ptr = wls[32 * ni + 8 * bi..32 * ni + 8 * bi + 4].as_ptr();
-            let wlsv_hi_ptr = wls[32 * ni + 8 * bi + 4..32 * ni + 8 * (bi + 1)].as_ptr();
-            let zsv_lo_ptr = zs[32 * ni + 8 * bi..32 * ni + 8 * bi + 4].as_ptr();
-            let zsv_hi_ptr = zs[32 * ni + 8 * bi + 4..32 * ni + 8 * (bi + 1)].as_ptr();
-            //let psv_lo_ptr = ps[32 * ni + 8 * bi..32 * ni + 8 * bi + 4].as_ptr();
-            //let psv_hi_ptr = ps[32 * ni + 8 * bi + 4..32 * ni + 8 * (bi + 1)].as_ptr();
+            let wlsv_lo_ptr = wls_pad[32 * ni + 8 * bi..32 * ni + 8 * bi + 4].as_ptr();
+            let wlsv_hi_ptr = wls_pad[32 * ni + 8 * bi + 4..32 * ni + 8 * (bi + 1)].as_ptr();
+            let zsv_lo_ptr = zs_pad[32 * ni + 8 * bi..32 * ni + 8 * bi + 4].as_ptr();
+            let zsv_hi_ptr = zs_pad[32 * ni + 8 * bi + 4..32 * ni + 8 * (bi + 1)].as_ptr();
 
             //log::debug!("ps ind {}", 32 * ni + 8 * bi);
             //log::debug!("ps ind {}", 32 * ni + 8 * bi + 4);
@@ -1102,15 +2744,46 @@ unsafe fn calculate_loss_gt_logit_add_simd_sm(
             let zsv_lo: __m256d = _mm256_load_pd(zsv_lo_ptr as *const _);
             let zsv_hi: __m256d = _mm256_load_pd(zsv_hi_ptr as *const _);
 
+            //let take_mask_4 = _mm256_sllv_epi32(take_mask_4_32, shift_v);
+            //let take_mask_2 = _mm256_sllv_epi32(take_mask_2_32, shift_v);
+            //let take_mask_1 = _mm256_sllv_epi32(take_mask_1_32, shift_v);
+            //let take_mask_0 = _mm256_sllv_epi32(take_mask_0_32, shift_v);
+            //log::debug!("take_mask a s0 {:?}", take_mask_a_s0);
+            //log::debug!("take_mask b s0 {:?}", take_mask_b_s0);
+            //log::debug!("take_mask a s1 {:?}", take_mask_a_s1);
+            //log::debug!("take_mask b s1 {:?}", take_mask_b_s1);
+
             //log::debug!("ps lo {:?}", psv_lo);
             //log::debug!("ps hi {:?}", psv_hi);
 
             // to create f_lo, first set score0 and score1, and then set score2
-            let f_01_lo: __m256d = _mm256_blendv_pd(s0d, s1d, _mm256_castsi256_pd(take_mask_1));
+            let f_0_1_lo: __m256d =
+                _mm256_blendv_pd(s_0_0_d, s_0_1_d, _mm256_castsi256_pd(take_mask_0_1));
+            let f_0_2_lo: __m256d =
+                _mm256_blendv_pd(f_0_1_lo, s_0_2_d, _mm256_castsi256_pd(take_mask_0_2));
+            let f_1_0_lo: __m256d =
+                _mm256_blendv_pd(f_0_2_lo, s_1_0_d, _mm256_castsi256_pd(take_mask_1_0));
+            let f_1_1_lo: __m256d =
+                _mm256_blendv_pd(f_1_0_lo, s_1_1_d, _mm256_castsi256_pd(take_mask_1_1));
+            let f_1_2_lo: __m256d =
+                _mm256_blendv_pd(f_1_1_lo, s_1_2_d, _mm256_castsi256_pd(take_mask_1_2));
+            let f_2_0_lo: __m256d =
+                _mm256_blendv_pd(f_1_2_lo, s_2_0_d, _mm256_castsi256_pd(take_mask_2_0));
+            let f_2_1_lo: __m256d =
+                _mm256_blendv_pd(f_2_0_lo, s_2_1_d, _mm256_castsi256_pd(take_mask_2_1));
+            let f_lo: __m256d =
+                _mm256_blendv_pd(f_2_1_lo, s_2_2_d, _mm256_castsi256_pd(take_mask_2_2));
+
+            //let f_01_lo: __m256d = _mm256_blendv_pd(s0d, s1d, _mm256_castsi256_pd(take_mask_1));
             // no missing here
             //let f_0_lo: __m256d = _mm256_blendv_pd(zerod, s0d, _mm256_castsi256_pd(take_mask_0));
             //let f_01_lo: __m256d = _mm256_blendv_pd(f_0_lo, s1d, _mm256_castsi256_pd(take_mask_1));
-            let f_lo: __m256d = _mm256_blendv_pd(f_01_lo, s2d, _mm256_castsi256_pd(take_mask_2));
+            //let f_lo: __m256d = _mm256_blendv_pd(f_01_lo, s2d, _mm256_castsi256_pd(take_mask_2));
+            //let f_012_lo: __m256d =
+            //_mm256_blendv_pd(f_01_lo, s2d, _mm256_castsi256_pd(take_mask_2));
+            // 0,1,2,4
+            //let f_lo: __m256d = _mm256_blendv_pd(f_012_lo, s4d, _mm256_castsi256_pd(take_mask_4));
+
             // create f-z
             let f_z_lo: __m256d = _mm256_sub_pd(f_lo, zsv_lo);
             // (f-z)**2
@@ -1121,16 +2794,47 @@ unsafe fn calculate_loss_gt_logit_add_simd_sm(
             l_acc = _mm256_add_pd(l_acc, w_f_z_2_lo);
 
             // for high
-            let take_mask_2_hi = _mm256_slli_epi64(take_mask_2, 32);
-            let take_mask_1_hi = _mm256_slli_epi64(take_mask_1, 32);
+            let take_mask_0_1_hi = _mm256_slli_epi64(take_mask_0_1, 32);
+            let f_0_1_hi: __m256d =
+                _mm256_blendv_pd(s_0_0_d, s_0_1_d, _mm256_castsi256_pd(take_mask_0_1_hi));
+            let take_mask_0_2_hi = _mm256_slli_epi64(take_mask_0_2, 32);
+            let f_0_2_hi: __m256d =
+                _mm256_blendv_pd(f_0_1_hi, s_0_2_d, _mm256_castsi256_pd(take_mask_0_2_hi));
+            let take_mask_1_0_hi = _mm256_slli_epi64(take_mask_1_0, 32);
+            let f_1_0_hi: __m256d =
+                _mm256_blendv_pd(f_0_2_hi, s_1_0_d, _mm256_castsi256_pd(take_mask_1_0_hi));
+            let take_mask_1_1_hi = _mm256_slli_epi64(take_mask_1_1, 32);
+            let f_1_1_hi: __m256d =
+                _mm256_blendv_pd(f_1_0_hi, s_1_1_d, _mm256_castsi256_pd(take_mask_1_1_hi));
+            let take_mask_1_2_hi = _mm256_slli_epi64(take_mask_1_2, 32);
+            let f_1_2_hi: __m256d =
+                _mm256_blendv_pd(f_1_1_hi, s_1_2_d, _mm256_castsi256_pd(take_mask_1_2_hi));
+            let take_mask_2_0_hi = _mm256_slli_epi64(take_mask_2_0, 32);
+            let f_2_0_hi: __m256d =
+                _mm256_blendv_pd(f_1_2_hi, s_2_0_d, _mm256_castsi256_pd(take_mask_2_0_hi));
+            let take_mask_2_1_hi = _mm256_slli_epi64(take_mask_2_1, 32);
+            let f_2_1_hi: __m256d =
+                _mm256_blendv_pd(f_2_0_hi, s_2_1_d, _mm256_castsi256_pd(take_mask_2_1_hi));
+            let take_mask_2_2_hi = _mm256_slli_epi64(take_mask_2_2, 32);
+            let f_hi: __m256d =
+                _mm256_blendv_pd(f_2_1_hi, s_2_2_d, _mm256_castsi256_pd(take_mask_2_2_hi));
+
+            //let take_mask_4_hi = _mm256_slli_epi64(take_mask_4, 32);
+            //let take_mask_2_hi = _mm256_slli_epi64(take_mask_2, 32);
+            //let take_mask_1_hi = _mm256_slli_epi64(take_mask_1, 32);
             //let take_mask_0_hi = _mm256_slli_epi64(take_mask_0, 32);
 
-            let f_01_hi: __m256d = _mm256_blendv_pd(s0d, s1d, _mm256_castsi256_pd(take_mask_1_hi));
+            //let f_01_hi: __m256d = _mm256_blendv_pd(s0d, s1d, _mm256_castsi256_pd(take_mask_1_hi));
             //let f_0_hi: __m256d = _mm256_blendv_pd(zerod, s0d, _mm256_castsi256_pd(take_mask_0_hi));
             //let f_01_hi: __m256d =
             //_mm256_blendv_pd(f_0_hi, s1d, _mm256_castsi256_pd(take_mask_1_hi));
             //let f_01_hi: __m256d= _mm256_blendv_pd(s0d, s1d, _mm256_castsi256_pd(take_mask_1_hi));
-            let f_hi: __m256d = _mm256_blendv_pd(f_01_hi, s2d, _mm256_castsi256_pd(take_mask_2_hi));
+            //let f_012_hi: __m256d =
+            //_mm256_blendv_pd(f_01_hi, s2d, _mm256_castsi256_pd(take_mask_2_hi));
+            //let f_hi: __m256d =
+            //_mm256_blendv_pd(f_012_hi, s4d, _mm256_castsi256_pd(take_mask_4_hi));
+            //let f_hi: __m256d = _mm256_blendv_pd(f_01_hi, s2d, _mm256_castsi256_pd(take_mask_2_hi));
+
             // create f-z
             let f_z_hi: __m256d = _mm256_sub_pd(f_hi, zsv_hi);
             // (f-z)**2
@@ -1151,169 +2855,548 @@ unsafe fn calculate_loss_gt_logit_add_simd_sm(
     let loss_least_square: f64 =
         _mm256_cvtsd_f64(l_acc) + _mm_cvtsd_f64(_mm256_extractf128_pd(l_acc, 1));
 
+    loss_least_square
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+unsafe fn calc_loss_logit_interaction_simd_mi(
+    gsnv1: &GenotSnvRef,
+    gsnv2: &GenotSnvRef,
+    coef: &Coef,
+    wls_pad: &[f64],
+    zs_pad: &[f64],
+    maf_1: f64,
+    maf_2: f64,
+    loss_max_theory: f64,
+) -> f64 {
+    let (constt, alphat) = coef.linearconstinteraction_f64();
+
+    if constt.is_nan() || alphat.is_nan() {
+        //log::debug!("coef is nan {}, {}", c, a);
+        return f64::NAN;
+    };
+
+    //let score_wgt = coefficient::interaction_genotype(maf_1, maf_2)
+    let score_wgt = gscore::interaction_genotype(maf_1, maf_2)
+        .linearconst(constt, alphat)
+        .to_tuple();
+
+    let loss_least_square: f64 = calc_least_square_logit_interaction_simd_mi(
+        gsnv1.predict_s(0),
+        gsnv1.predict_s(1),
+        gsnv2.predict_s(0),
+        gsnv2.predict_s(1),
+        gsnv1.n(),
+        wls_pad,
+        zs_pad,
+        score_wgt,
+    );
+
+    //#[cfg(target_arch = "x86")]
+    //use std::arch::x86::*;
+    //#[cfg(target_arch = "x86_64")]
+    //use std::arch::x86_64::*;
+
+    //let n = gsnv1.n();
+
+    //let pred1_s0m = gsnv1.predict_s(0);
+    //let pred1_s1m = gsnv1.predict_s(1);
+    //let pred2_s0m = gsnv2.predict_s(0);
+    //let pred2_s1m = gsnv2.predict_s(1);
+
+    //let bit_ext_mask: __m256i = _mm256_set_epi32(
+    //    0x10101010,
+    //    0x01010101,
+    //    0x20202020,
+    //    0x02020202,
+    //    0x40404040,
+    //    0x04040404,
+    //    -0x7f7f7f80, // =0x80808080
+    //    0x08080808,
+    //);
+
+    //let zeros: __m256i = _mm256_setzero_si256();
+    //let ones: __m256i = _mm256_cmpeq_epi32(zeros, zeros);
+
+    //let ((s00, s01, s02), (s10, s11, s12), (s20, s21, s22)) =
+    //    coefficient::interaction_genotype(maf_1, maf_2)
+    //        .linearconst(constt, alphat)
+    //        .to_tuple();
+
+    //let s_0_0_d: __m256d = _mm256_set1_pd(s00);
+    //let s_0_1_d: __m256d = _mm256_set1_pd(s01);
+    //let s_0_2_d: __m256d = _mm256_set1_pd(s02);
+    //let s_1_0_d: __m256d = _mm256_set1_pd(s10);
+    //let s_1_1_d: __m256d = _mm256_set1_pd(s11);
+    //let s_1_2_d: __m256d = _mm256_set1_pd(s12);
+    //let s_2_0_d: __m256d = _mm256_set1_pd(s20);
+    //let s_2_1_d: __m256d = _mm256_set1_pd(s21);
+    //let s_2_2_d: __m256d = _mm256_set1_pd(s22);
+
+    ////let s2d: __m256d = _mm256_set1_pd(s2);
+    ////let s1d: __m256d = _mm256_set1_pd(s1);
+    ////let s0d: __m256d = _mm256_set1_pd(s0);
+
+    ////let s4d: __m256d = _mm256_set1_pd(s4);
+    ////let s2d: __m256d = _mm256_set1_pd(s2);
+    ////let s1d: __m256d = _mm256_set1_pd(s1);
+    ////let s0d: __m256d = _mm256_set1_pd(s0);
+
+    //let mut l_acc: __m256d = _mm256_setzero_pd();
+
+    //let shifts: [__m256i; 4] = [
+    //    _mm256_set1_epi32(24),
+    //    _mm256_set1_epi32(16),
+    //    _mm256_set1_epi32(8),
+    //    _mm256_set1_epi32(0),
+    //];
+
+    //for ni in 0..(n / 32 + 1) {
+    //    //log::debug!("ni {}", ni);
+
+    //    // broadcast 32bit int to 256bit
+    //    // ex. DCBA -> DCBADCBA...DCBA
+    //    // (D=abcdefgh)
+
+    //    let pred1_s0_b32 = u32::from_le_bytes(pred1_s0m[4 * ni..4 * (ni + 1)].try_into().unwrap());
+    //    let pred1_s1_b32 = u32::from_le_bytes(pred1_s1m[4 * ni..4 * (ni + 1)].try_into().unwrap());
+    //    let pred2_s0_b32 = u32::from_le_bytes(pred2_s0m[4 * ni..4 * (ni + 1)].try_into().unwrap());
+    //    let pred2_s1_b32 = u32::from_le_bytes(pred2_s1m[4 * ni..4 * (ni + 1)].try_into().unwrap());
+
+    //    let predv1_s0_32 = _mm256_set1_epi32(pred1_s0_b32 as i32);
+    //    let predv1_s1_32 = _mm256_set1_epi32(pred1_s1_b32 as i32);
+    //    let predv2_s0_32 = _mm256_set1_epi32(pred2_s0_b32 as i32);
+    //    let predv2_s1_32 = _mm256_set1_epi32(pred2_s1_b32 as i32);
+
+    //    //let ys_b32 = u32::from_le_bytes(ys[4 * ni..4 * (ni + 1)].try_into().unwrap());
+    //    //let yv_32 = _mm256_set1_epi32(ys_b32 as i32);
+
+    //    // bitwise not is fastest using xor by xor(v, ones)
+    //    // sum2=( pred0 & pred1 )
+    //    // sum1= ( !pred1 & pred0 )
+    //    // sum0= ( !pred0 & (!pred1) )
+    //    let flagv1_2_32 = _mm256_and_si256(predv1_s0_32, predv1_s1_32);
+    //    let flagv1_1_32 = _mm256_andnot_si256(predv1_s1_32, predv1_s0_32);
+    //    let flagv1_0_32 = _mm256_andnot_si256(predv1_s0_32, _mm256_xor_si256(predv1_s1_32, ones));
+
+    //    let flagv2_2_32 = _mm256_and_si256(predv2_s0_32, predv2_s1_32);
+    //    let flagv2_1_32 = _mm256_andnot_si256(predv2_s1_32, predv2_s0_32);
+    //    let flagv2_0_32 = _mm256_andnot_si256(predv2_s0_32, _mm256_xor_si256(predv2_s1_32, ones));
+
+    //    // interaction
+    //    // (g1, g2)=(0,0)
+    //    //let flagv_by_0_0_32 = _mm256_and_si256(flagv1_0_32, flagv2_0_32);
+    //    // ex. D=abcdefgh -> extract d,h,c,g,b,f,a,e for each 32 bit
+    //    // abcdefgh(x4)|...
+    //    // -> extracted (at highest position)
+    //    // 000d0000(x4)|...
+    //    // -> mask
+    //    // 11111111|00000000|00000000|11111111|...
+    //    //let flagv_by_0_0_32_ext = _mm256_and_si256(flagv_by_0_0_32, bit_ext_mask);
+    //    //let take_mask_0_0_32 = _mm256_cmpeq_epi8(flagv_by_0_0_32_ext, bit_ext_mask);
+
+    //    let flagv_by_0_1_32 = _mm256_and_si256(flagv1_0_32, flagv2_1_32);
+    //    let flagv_by_0_1_32_ext = _mm256_and_si256(flagv_by_0_1_32, bit_ext_mask);
+    //    let take_mask_0_1_32 = _mm256_cmpeq_epi8(flagv_by_0_1_32_ext, bit_ext_mask);
+    //    let flagv_by_0_2_32 = _mm256_and_si256(flagv1_0_32, flagv2_2_32);
+    //    let flagv_by_0_2_32_ext = _mm256_and_si256(flagv_by_0_2_32, bit_ext_mask);
+    //    let take_mask_0_2_32 = _mm256_cmpeq_epi8(flagv_by_0_2_32_ext, bit_ext_mask);
+    //    let flagv_by_1_0_32 = _mm256_and_si256(flagv1_1_32, flagv2_0_32);
+    //    let flagv_by_1_0_32_ext = _mm256_and_si256(flagv_by_1_0_32, bit_ext_mask);
+    //    let take_mask_1_0_32 = _mm256_cmpeq_epi8(flagv_by_1_0_32_ext, bit_ext_mask);
+    //    let flagv_by_1_1_32 = _mm256_and_si256(flagv1_1_32, flagv2_1_32);
+    //    let flagv_by_1_1_32_ext = _mm256_and_si256(flagv_by_1_1_32, bit_ext_mask);
+    //    let take_mask_1_1_32 = _mm256_cmpeq_epi8(flagv_by_1_1_32_ext, bit_ext_mask);
+    //    let flagv_by_1_2_32 = _mm256_and_si256(flagv1_1_32, flagv2_2_32);
+    //    let flagv_by_1_2_32_ext = _mm256_and_si256(flagv_by_1_2_32, bit_ext_mask);
+    //    let take_mask_1_2_32 = _mm256_cmpeq_epi8(flagv_by_1_2_32_ext, bit_ext_mask);
+    //    let flagv_by_2_0_32 = _mm256_and_si256(flagv1_2_32, flagv2_0_32);
+    //    let flagv_by_2_0_32_ext = _mm256_and_si256(flagv_by_2_0_32, bit_ext_mask);
+    //    let take_mask_2_0_32 = _mm256_cmpeq_epi8(flagv_by_2_0_32_ext, bit_ext_mask);
+    //    let flagv_by_2_1_32 = _mm256_and_si256(flagv1_2_32, flagv2_1_32);
+    //    let flagv_by_2_1_32_ext = _mm256_and_si256(flagv_by_2_1_32, bit_ext_mask);
+    //    let take_mask_2_1_32 = _mm256_cmpeq_epi8(flagv_by_2_1_32_ext, bit_ext_mask);
+    //    let flagv_by_2_2_32 = _mm256_and_si256(flagv1_2_32, flagv2_2_32);
+    //    let flagv_by_2_2_32_ext = _mm256_and_si256(flagv_by_2_2_32, bit_ext_mask);
+    //    let take_mask_2_2_32 = _mm256_cmpeq_epi8(flagv_by_2_2_32_ext, bit_ext_mask);
+
+    //    // bi=0-3, shift=24,16,8,0
+    //    //const SHIFTS: &'static [i32] = &[24, 16, 8, 0];
+
+    //    for bi in 0usize..4 {
+    //        // DCBADCBA...DCBA
+    //        // -> b=1: for B
+    //        // BA00BA00...BA00
+
+    //        let shift_v = shifts[bi];
+    //        //let take_mask_0_0 = _mm256_sllv_epi32(take_mask_0_0_32, shift_v);
+    //        let take_mask_0_1 = _mm256_sllv_epi32(take_mask_0_1_32, shift_v);
+    //        let take_mask_0_2 = _mm256_sllv_epi32(take_mask_0_2_32, shift_v);
+    //        let take_mask_1_0 = _mm256_sllv_epi32(take_mask_1_0_32, shift_v);
+    //        let take_mask_1_1 = _mm256_sllv_epi32(take_mask_1_1_32, shift_v);
+    //        let take_mask_1_2 = _mm256_sllv_epi32(take_mask_1_2_32, shift_v);
+    //        let take_mask_2_0 = _mm256_sllv_epi32(take_mask_2_0_32, shift_v);
+    //        let take_mask_2_1 = _mm256_sllv_epi32(take_mask_2_1_32, shift_v);
+    //        let take_mask_2_2 = _mm256_sllv_epi32(take_mask_2_2_32, shift_v);
+
+    //        let wlsv_lo_ptr = wls_pad[32 * ni + 8 * bi..32 * ni + 8 * bi + 4].as_ptr();
+    //        let wlsv_hi_ptr = wls_pad[32 * ni + 8 * bi + 4..32 * ni + 8 * (bi + 1)].as_ptr();
+    //        let zsv_lo_ptr = zs_pad[32 * ni + 8 * bi..32 * ni + 8 * bi + 4].as_ptr();
+    //        let zsv_hi_ptr = zs_pad[32 * ni + 8 * bi + 4..32 * ni + 8 * (bi + 1)].as_ptr();
+
+    //        //log::debug!("ps ind {}", 32 * ni + 8 * bi);
+    //        //log::debug!("ps ind {}", 32 * ni + 8 * bi + 4);
+    //        //log::debug!("ps lo {:?}", &ps[32 * ni + 8 * bi..32 * ni + 8 * bi + 4]);
+    //        //log::debug!(
+    //        //    "ps hi {:?}",
+    //        //    &ps[32 * ni + 8 * bi + 4..32 * ni + 8 * bi + 8]
+    //        //);
+
+    //        let wlsv_lo: __m256d = _mm256_load_pd(wlsv_lo_ptr as *const _);
+    //        let wlsv_hi: __m256d = _mm256_load_pd(wlsv_hi_ptr as *const _);
+    //        let zsv_lo: __m256d = _mm256_load_pd(zsv_lo_ptr as *const _);
+    //        let zsv_hi: __m256d = _mm256_load_pd(zsv_hi_ptr as *const _);
+
+    //        //let take_mask_4 = _mm256_sllv_epi32(take_mask_4_32, shift_v);
+    //        //let take_mask_2 = _mm256_sllv_epi32(take_mask_2_32, shift_v);
+    //        //let take_mask_1 = _mm256_sllv_epi32(take_mask_1_32, shift_v);
+    //        //let take_mask_0 = _mm256_sllv_epi32(take_mask_0_32, shift_v);
+    //        //log::debug!("take_mask a s0 {:?}", take_mask_a_s0);
+    //        //log::debug!("take_mask b s0 {:?}", take_mask_b_s0);
+    //        //log::debug!("take_mask a s1 {:?}", take_mask_a_s1);
+    //        //log::debug!("take_mask b s1 {:?}", take_mask_b_s1);
+
+    //        //log::debug!("ps lo {:?}", psv_lo);
+    //        //log::debug!("ps hi {:?}", psv_hi);
+
+    //        // to create f_lo, first set score0 and score1, and then set score2
+    //        let f_0_1_lo: __m256d =
+    //            _mm256_blendv_pd(s_0_0_d, s_0_1_d, _mm256_castsi256_pd(take_mask_0_1));
+    //        let f_0_2_lo: __m256d =
+    //            _mm256_blendv_pd(f_0_1_lo, s_0_2_d, _mm256_castsi256_pd(take_mask_0_2));
+    //        let f_1_0_lo: __m256d =
+    //            _mm256_blendv_pd(f_0_2_lo, s_1_0_d, _mm256_castsi256_pd(take_mask_1_0));
+    //        let f_1_1_lo: __m256d =
+    //            _mm256_blendv_pd(f_1_0_lo, s_1_1_d, _mm256_castsi256_pd(take_mask_1_1));
+    //        let f_1_2_lo: __m256d =
+    //            _mm256_blendv_pd(f_1_1_lo, s_1_2_d, _mm256_castsi256_pd(take_mask_1_2));
+    //        let f_2_0_lo: __m256d =
+    //            _mm256_blendv_pd(f_1_2_lo, s_2_0_d, _mm256_castsi256_pd(take_mask_2_0));
+    //        let f_2_1_lo: __m256d =
+    //            _mm256_blendv_pd(f_2_0_lo, s_2_1_d, _mm256_castsi256_pd(take_mask_2_1));
+    //        let f_lo: __m256d =
+    //            _mm256_blendv_pd(f_2_1_lo, s_2_2_d, _mm256_castsi256_pd(take_mask_2_2));
+
+    //        //let f_01_lo: __m256d = _mm256_blendv_pd(s0d, s1d, _mm256_castsi256_pd(take_mask_1));
+    //        // no missing here
+    //        //let f_0_lo: __m256d = _mm256_blendv_pd(zerod, s0d, _mm256_castsi256_pd(take_mask_0));
+    //        //let f_01_lo: __m256d = _mm256_blendv_pd(f_0_lo, s1d, _mm256_castsi256_pd(take_mask_1));
+    //        //let f_lo: __m256d = _mm256_blendv_pd(f_01_lo, s2d, _mm256_castsi256_pd(take_mask_2));
+    //        //let f_012_lo: __m256d =
+    //        //_mm256_blendv_pd(f_01_lo, s2d, _mm256_castsi256_pd(take_mask_2));
+    //        // 0,1,2,4
+    //        //let f_lo: __m256d = _mm256_blendv_pd(f_012_lo, s4d, _mm256_castsi256_pd(take_mask_4));
+
+    //        // create f-z
+    //        let f_z_lo: __m256d = _mm256_sub_pd(f_lo, zsv_lo);
+    //        // (f-z)**2
+    //        let f_z_2_lo: __m256d = _mm256_mul_pd(f_z_lo, f_z_lo);
+    //        // w * (f-z)**2
+    //        let w_f_z_2_lo: __m256d = _mm256_mul_pd(wlsv_lo, f_z_2_lo);
+
+    //        l_acc = _mm256_add_pd(l_acc, w_f_z_2_lo);
+
+    //        // for high
+    //        let take_mask_0_1_hi = _mm256_slli_epi64(take_mask_0_1, 32);
+    //        let f_0_1_hi: __m256d =
+    //            _mm256_blendv_pd(s_0_0_d, s_0_1_d, _mm256_castsi256_pd(take_mask_0_1_hi));
+    //        let take_mask_0_2_hi = _mm256_slli_epi64(take_mask_0_2, 32);
+    //        let f_0_2_hi: __m256d =
+    //            _mm256_blendv_pd(f_0_1_hi, s_0_2_d, _mm256_castsi256_pd(take_mask_0_2_hi));
+    //        let take_mask_1_0_hi = _mm256_slli_epi64(take_mask_1_0, 32);
+    //        let f_1_0_hi: __m256d =
+    //            _mm256_blendv_pd(f_0_2_hi, s_1_0_d, _mm256_castsi256_pd(take_mask_1_0_hi));
+    //        let take_mask_1_1_hi = _mm256_slli_epi64(take_mask_1_1, 32);
+    //        let f_1_1_hi: __m256d =
+    //            _mm256_blendv_pd(f_1_0_hi, s_1_1_d, _mm256_castsi256_pd(take_mask_1_1_hi));
+    //        let take_mask_1_2_hi = _mm256_slli_epi64(take_mask_1_2, 32);
+    //        let f_1_2_hi: __m256d =
+    //            _mm256_blendv_pd(f_1_1_hi, s_1_2_d, _mm256_castsi256_pd(take_mask_1_2_hi));
+    //        let take_mask_2_0_hi = _mm256_slli_epi64(take_mask_2_0, 32);
+    //        let f_2_0_hi: __m256d =
+    //            _mm256_blendv_pd(f_1_2_hi, s_2_0_d, _mm256_castsi256_pd(take_mask_2_0_hi));
+    //        let take_mask_2_1_hi = _mm256_slli_epi64(take_mask_2_1, 32);
+    //        let f_2_1_hi: __m256d =
+    //            _mm256_blendv_pd(f_2_0_hi, s_2_1_d, _mm256_castsi256_pd(take_mask_2_1_hi));
+    //        let take_mask_2_2_hi = _mm256_slli_epi64(take_mask_2_2, 32);
+    //        let f_hi: __m256d =
+    //            _mm256_blendv_pd(f_2_1_hi, s_2_2_d, _mm256_castsi256_pd(take_mask_2_2_hi));
+
+    //        //let take_mask_4_hi = _mm256_slli_epi64(take_mask_4, 32);
+    //        //let take_mask_2_hi = _mm256_slli_epi64(take_mask_2, 32);
+    //        //let take_mask_1_hi = _mm256_slli_epi64(take_mask_1, 32);
+    //        //let take_mask_0_hi = _mm256_slli_epi64(take_mask_0, 32);
+
+    //        //let f_01_hi: __m256d = _mm256_blendv_pd(s0d, s1d, _mm256_castsi256_pd(take_mask_1_hi));
+    //        //let f_0_hi: __m256d = _mm256_blendv_pd(zerod, s0d, _mm256_castsi256_pd(take_mask_0_hi));
+    //        //let f_01_hi: __m256d =
+    //        //_mm256_blendv_pd(f_0_hi, s1d, _mm256_castsi256_pd(take_mask_1_hi));
+    //        //let f_01_hi: __m256d= _mm256_blendv_pd(s0d, s1d, _mm256_castsi256_pd(take_mask_1_hi));
+    //        //let f_012_hi: __m256d =
+    //        //_mm256_blendv_pd(f_01_hi, s2d, _mm256_castsi256_pd(take_mask_2_hi));
+    //        //let f_hi: __m256d =
+    //        //_mm256_blendv_pd(f_012_hi, s4d, _mm256_castsi256_pd(take_mask_4_hi));
+    //        //let f_hi: __m256d = _mm256_blendv_pd(f_01_hi, s2d, _mm256_castsi256_pd(take_mask_2_hi));
+
+    //        // create f-z
+    //        let f_z_hi: __m256d = _mm256_sub_pd(f_hi, zsv_hi);
+    //        // (f-z)**2
+    //        let f_z_2_hi: __m256d = _mm256_mul_pd(f_z_hi, f_z_hi);
+    //        // w * (f-z)**2
+    //        let w_f_z_2_hi: __m256d = _mm256_mul_pd(wlsv_hi, f_z_2_hi);
+
+    //        l_acc = _mm256_add_pd(l_acc, w_f_z_2_hi);
+    //    }
+    //}
+
+    //// sum 4 double horizontally to get the whole sum
+    //l_acc = _mm256_hadd_pd(l_acc, l_acc);
+
+    //// 1. any way to hadd??
+    //// 2. _mm256_extractf128_pd and _mm256_cvtsd_f64: get 64:0
+
+    //let loss_least_square: f64 =
+    //    _mm256_cvtsd_f64(l_acc) + _mm_cvtsd_f64(_mm256_extractf128_pd(l_acc, 1));
+
     let loss: f64;
-    if use_adjloss {
-        loss = 0.5 * (loss_least_square - loss_max_theory);
-    } else {
-        loss = loss_least_square;
-    }
+    //if use_adjloss {
+    loss = 0.5 * (loss_least_square - loss_max_theory);
+    //} else {
+    //loss = loss_least_square;
+    //}
     //let loss: f64 = 0.5 * (loss_least_square - loss_max_theory);
 
     return loss;
 }
 
-//fn compute_loss_least_square_max_theory(zs: &[f64], wls: &[f64], n: usize) -> f64 {
-fn compute_loss_least_square_max_theory(zs: &[f64], wls: &[f64]) -> f64 {
-    zs.iter().zip(wls.iter()).map(|(z, w)| w * z * z).sum()
-}
-
-// unsafe is necessary with #[target_feature]
-//pub unsafe fn calculate_loss_gt_freemodelmissing_simd(
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe fn calculate_loss_gt_logit_simd(
-    losss: &mut LossStruct,
-    genot: &Genot,
-    sample_weight: &SampleWeight,
-    //wzs_pad: &[f64],
-    //wls_pad: &[f64],
-    //zs_pad: &[f64],
-    phe: &Phe,
-    boost_param: BoostParam,
-    skip_snv: &HashSet<usize>,
-    use_adjloss: bool,
-) {
-    let epsilons_wzs =
-        epsilon::calculate_epsilons_logit_wzs(sample_weight.wzs().unwrap(), phe, boost_param.eps());
-    //let n=phe.n();
-    //let epsilons_wzs = epsilon::calculate_epsilons_logit_wzs(&wzs_pad[..n], phe, boost_param.eps());
-    //let epsilons_wzs = epsilon::calculate_epsilons_logit_wzs(wzs_pad, phe, boost_param.eps());
-    log::debug!(
-        "epsilon_wzs case, cont: {:.4e},{:.4e}",
-        epsilons_wzs.0,
-        epsilons_wzs.1
-    );
-
-    let epsilons_wls =
-        epsilon::calculate_epsilons_logit_wls(sample_weight.wls().unwrap(), phe, boost_param.eps());
-    //let epsilons_wls = epsilon::calculate_epsilons_logit_wls(&wls_pad[..n], phe, boost_param.eps());
-    //let epsilons_wls = epsilon::calculate_epsilons_logit_wls(wls_pad, phe, boost_param.eps());
-    log::debug!(
-        "epsilon_wls case, cont: {:.4e},{:.4e}",
-        epsilons_wls.0,
-        epsilons_wls.1
-    );
-
-    assert_eq!(losss.inner_mut().len(), genot.m());
-
-    let loss_max_theory = compute_loss_least_square_max_theory(
-        sample_weight.zs().unwrap(),
-        sample_weight.wls().unwrap(),
-    );
-    //let loss_max_theory = compute_loss_least_square_max_theory(&zs_pad[..n], &wls_pad[..n]);
-    log::debug!("loss_max_theory {}", loss_max_theory);
-
-    //unsafe {
-    losss
-        .inner_mut()
-        .par_iter_mut()
-        .enumerate()
-        .for_each(|(mi, loss)| {
-            if skip_snv.contains(&mi) {
-                *loss = f64::MAX;
-            } else {
-                let (coef, _, _) = coefficient::calculate_coef_logit_eps(
-                    &genot.to_genot_snv(mi),
-                    sample_weight.wzs_pad().unwrap(),
-                    sample_weight.wls_pad().unwrap(),
-                    //wzs_pad,
-                    //wls_pad,
-                    phe,
-                    epsilons_wzs,
-                    epsilons_wls,
-                    boost_param.eps(),
-                    //boost_param.learning_rate(),
-                    boost_param.eff_eps(),
-                    boost_param.boost_type(),
-                    true,
-                    false,
-                );
-                *loss = calculate_loss_gt_logit_simd_sm(
-                    &genot.to_genot_snv(mi),
-                    &coef,
-                    sample_weight.wls_pad().unwrap(),
-                    sample_weight.zs_pad().unwrap(),
-                    //wls_pad,
-                    //zs_pad,
-                    use_adjloss,
-                    loss_max_theory,
-                );
-            }
-        });
-    //}
-}
-
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe fn calculate_loss_gt_logit_add_simd(
-    losss: &mut LossStruct,
-    genot: &Genot,
-    sample_weight: &SampleWeight,
-    //wzs_pad: &[f64],
-    //wls_pad: &[f64],
-    //zs_pad: &[f64],
-    //phe: &Phe,
-    _boost_param: BoostParam,
-    skip_snv: &HashSet<usize>,
-    use_adjloss: bool,
-) {
-    assert_eq!(losss.inner_mut().len(), genot.m());
-
-    let loss_max_theory = compute_loss_least_square_max_theory(
-        sample_weight.zs().unwrap(),
-        sample_weight.wls().unwrap(),
-    );
-    //let n = genot.n();
-    //let loss_max_theory = compute_loss_least_square_max_theory(&zs_pad[..n], &wls_pad[..n]);
-    log::debug!("loss_max_theory {}", loss_max_theory);
-
-    //unsafe {
-    losss
-        .inner_mut()
-        .par_iter_mut()
-        .enumerate()
-        .for_each(|(mi, loss)| {
-            if skip_snv.contains(&mi) {
-                *loss = f64::MAX;
-            } else {
-                let coef = coefficient::calculate_coef_logit_add(
-                    &genot.to_genot_snv(mi),
-                    sample_weight.wzs_pad().unwrap(),
-                    sample_weight.wls_pad().unwrap(),
-                    // no lr
-                );
-                // debug
-                //let (c, a) = coef.linearconst_f64();
-                //if c.is_nan() || a.is_nan() {
-                //    log::debug!("coef is nan {}, {}", c, a);
-                //};
-                *loss = calculate_loss_gt_logit_add_simd_sm(
-                    &genot.to_genot_snv(mi),
-                    &coef,
-                    sample_weight.wls_pad().unwrap(),
-                    sample_weight.zs_pad().unwrap(),
-                    //wls_pad,
-                    //zs_pad,
-                    use_adjloss,
-                    loss_max_theory,
-                );
-                //if loss.is_nan() {
-                //    log::debug!("loss is nan {}", loss);
-                //};
-            }
-        });
-    //}
-}
+//#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+//#[target_feature(enable = "avx2")]
+//unsafe fn calc_loss_logit_interaction_simd_mi(
+//    gsnv1: &GenotSnvRef,
+//    gsnv2: &GenotSnvRef,
+//    coef: &Coef,
+//    wls_pad: &[f64],
+//    zs_pad: &[f64],
+//    loss_max_theory: f64,
+//) -> f64 {
+//    let (constt, alphat) = coef.linearconstinteraction_f64();
+//
+//    if constt.is_nan() || alphat.is_nan() {
+//        //log::debug!("coef is nan {}, {}", c, a);
+//        return f64::NAN;
+//    };
+//
+//    let s0 = constt;
+//    let s1 = constt + alphat;
+//    let s2 = constt + 2.0 * alphat;
+//    let s4 = constt + 4.0 * alphat;
+//
+//    #[cfg(target_arch = "x86")]
+//    use std::arch::x86::*;
+//    #[cfg(target_arch = "x86_64")]
+//    use std::arch::x86_64::*;
+//
+//    let n = gsnv1.n();
+//
+//    let pred1_s0m = gsnv1.predict_s(0);
+//    let pred1_s1m = gsnv1.predict_s(1);
+//    let pred2_s0m = gsnv2.predict_s(0);
+//    let pred2_s1m = gsnv2.predict_s(1);
+//
+//    let bit_ext_mask: __m256i = _mm256_set_epi32(
+//        0x10101010,
+//        0x01010101,
+//        0x20202020,
+//        0x02020202,
+//        0x40404040,
+//        0x04040404,
+//        -0x7f7f7f80, // =0x80808080
+//        0x08080808,
+//    );
+//
+//    let s4d: __m256d = _mm256_set1_pd(s4);
+//    let s2d: __m256d = _mm256_set1_pd(s2);
+//    let s1d: __m256d = _mm256_set1_pd(s1);
+//    let s0d: __m256d = _mm256_set1_pd(s0);
+//
+//    let mut l_acc: __m256d = _mm256_setzero_pd();
+//
+//    let shifts: [__m256i; 4] = [
+//        _mm256_set1_epi32(24),
+//        _mm256_set1_epi32(16),
+//        _mm256_set1_epi32(8),
+//        _mm256_set1_epi32(0),
+//    ];
+//
+//    for ni in 0..(n / 32 + 1) {
+//        //log::debug!("ni {}", ni);
+//
+//        // broadcast 32bit int to 256bit
+//        // ex. DCBA -> DCBADCBA...DCBA
+//        // (D=abcdefgh)
+//
+//        let pred1_s0_b32 = u32::from_le_bytes(pred1_s0m[4 * ni..4 * (ni + 1)].try_into().unwrap());
+//        let pred1_s1_b32 = u32::from_le_bytes(pred1_s1m[4 * ni..4 * (ni + 1)].try_into().unwrap());
+//        let pred2_s0_b32 = u32::from_le_bytes(pred2_s0m[4 * ni..4 * (ni + 1)].try_into().unwrap());
+//        let pred2_s1_b32 = u32::from_le_bytes(pred2_s1m[4 * ni..4 * (ni + 1)].try_into().unwrap());
+//
+//        let predv1_s0_32 = _mm256_set1_epi32(pred1_s0_b32 as i32);
+//        let predv1_s1_32 = _mm256_set1_epi32(pred1_s1_b32 as i32);
+//        let predv2_s0_32 = _mm256_set1_epi32(pred2_s0_b32 as i32);
+//        let predv2_s1_32 = _mm256_set1_epi32(pred2_s1_b32 as i32);
+//
+//        //let ys_b32 = u32::from_le_bytes(ys[4 * ni..4 * (ni + 1)].try_into().unwrap());
+//        //let yv_32 = _mm256_set1_epi32(ys_b32 as i32);
+//
+//        // bitwise not is fastest using xor by xor(v, ones)
+//        // sum2=( pred0 & pred1 )
+//        // sum1= ( !pred1 & pred0 )
+//        // sum0= ( !pred0 & (!pred1) )
+//        let flagv1_2_32 = _mm256_and_si256(predv1_s0_32, predv1_s1_32);
+//        let flagv1_1_32 = _mm256_andnot_si256(predv1_s1_32, predv1_s0_32);
+//        //let flagv_0_32 = _mm256_andnot_si256(predv_s0_32, _mm256_xor_si256(predv_s1_32, ones));
+//
+//        let flagv2_2_32 = _mm256_and_si256(predv2_s0_32, predv2_s1_32);
+//        let flagv2_1_32 = _mm256_andnot_si256(predv2_s1_32, predv2_s0_32);
+//
+//        // g1 * g2 = 1,2,4 // remaining is 0
+//        let flagv_by_4_32 = _mm256_and_si256(flagv1_2_32, flagv2_2_32);
+//        let flagv_by_1_32 = _mm256_and_si256(flagv1_1_32, flagv2_1_32);
+//        let flagv_by_2_32_1 = _mm256_and_si256(flagv1_1_32, flagv2_2_32);
+//        let flagv_by_2_32_2 = _mm256_and_si256(flagv1_2_32, flagv2_1_32);
+//        let flagv_by_2_32 = _mm256_or_si256(flagv_by_2_32_1, flagv_by_2_32_2);
+//
+//        // ex. D=abcdefgh -> extract d,h,c,g,b,f,a,e for each 32 bit
+//        // abcdefgh(x4)|...
+//        // -> extracted (at highest position)
+//        // 000d0000(x4)|...
+//        // -> mask
+//        // 11111111|00000000|00000000|11111111|...
+//        let flagv_by_4_32_ext = _mm256_and_si256(flagv_by_4_32, bit_ext_mask);
+//        let flagv_by_2_32_ext = _mm256_and_si256(flagv_by_2_32, bit_ext_mask);
+//        let flagv_by_1_32_ext = _mm256_and_si256(flagv_by_1_32, bit_ext_mask);
+//        //let flagv_0_32_ext = _mm256_and_si256(flagv_0_32, bit_ext_mask);
+//
+//        let take_mask_4_32 = _mm256_cmpeq_epi8(flagv_by_4_32_ext, bit_ext_mask);
+//        let take_mask_2_32 = _mm256_cmpeq_epi8(flagv_by_2_32_ext, bit_ext_mask);
+//        let take_mask_1_32 = _mm256_cmpeq_epi8(flagv_by_1_32_ext, bit_ext_mask);
+//        //let take_mask_0_32 = _mm256_cmpeq_epi8(flagv_0_32_ext, bit_ext_mask);
+//
+//        // bi=0-3, shift=24,16,8,0
+//        //const SHIFTS: &'static [i32] = &[24, 16, 8, 0];
+//
+//        for bi in 0usize..4 {
+//            // DCBADCBA...DCBA
+//            // -> b=1: for B
+//            // BA00BA00...BA00
+//
+//            let wlsv_lo_ptr = wls_pad[32 * ni + 8 * bi..32 * ni + 8 * bi + 4].as_ptr();
+//            let wlsv_hi_ptr = wls_pad[32 * ni + 8 * bi + 4..32 * ni + 8 * (bi + 1)].as_ptr();
+//            let zsv_lo_ptr = zs_pad[32 * ni + 8 * bi..32 * ni + 8 * bi + 4].as_ptr();
+//            let zsv_hi_ptr = zs_pad[32 * ni + 8 * bi + 4..32 * ni + 8 * (bi + 1)].as_ptr();
+//
+//            //log::debug!("ps ind {}", 32 * ni + 8 * bi);
+//            //log::debug!("ps ind {}", 32 * ni + 8 * bi + 4);
+//            //log::debug!("ps lo {:?}", &ps[32 * ni + 8 * bi..32 * ni + 8 * bi + 4]);
+//            //log::debug!(
+//            //    "ps hi {:?}",
+//            //    &ps[32 * ni + 8 * bi + 4..32 * ni + 8 * bi + 8]
+//            //);
+//
+//            let wlsv_lo: __m256d = _mm256_load_pd(wlsv_lo_ptr as *const _);
+//            let wlsv_hi: __m256d = _mm256_load_pd(wlsv_hi_ptr as *const _);
+//            let zsv_lo: __m256d = _mm256_load_pd(zsv_lo_ptr as *const _);
+//            let zsv_hi: __m256d = _mm256_load_pd(zsv_hi_ptr as *const _);
+//
+//            let shift_v = shifts[bi];
+//            let take_mask_4 = _mm256_sllv_epi32(take_mask_4_32, shift_v);
+//            let take_mask_2 = _mm256_sllv_epi32(take_mask_2_32, shift_v);
+//            let take_mask_1 = _mm256_sllv_epi32(take_mask_1_32, shift_v);
+//            //let take_mask_0 = _mm256_sllv_epi32(take_mask_0_32, shift_v);
+//            //log::debug!("take_mask a s0 {:?}", take_mask_a_s0);
+//            //log::debug!("take_mask b s0 {:?}", take_mask_b_s0);
+//            //log::debug!("take_mask a s1 {:?}", take_mask_a_s1);
+//            //log::debug!("take_mask b s1 {:?}", take_mask_b_s1);
+//
+//            //log::debug!("ps lo {:?}", psv_lo);
+//            //log::debug!("ps hi {:?}", psv_hi);
+//
+//            // to create f_lo, first set score0 and score1, and then set score2
+//            let f_01_lo: __m256d = _mm256_blendv_pd(s0d, s1d, _mm256_castsi256_pd(take_mask_1));
+//            // no missing here
+//            //let f_0_lo: __m256d = _mm256_blendv_pd(zerod, s0d, _mm256_castsi256_pd(take_mask_0));
+//            //let f_01_lo: __m256d = _mm256_blendv_pd(f_0_lo, s1d, _mm256_castsi256_pd(take_mask_1));
+//            //let f_lo: __m256d = _mm256_blendv_pd(f_01_lo, s2d, _mm256_castsi256_pd(take_mask_2));
+//            let f_012_lo: __m256d =
+//                _mm256_blendv_pd(f_01_lo, s2d, _mm256_castsi256_pd(take_mask_2));
+//            // 0,1,2,4
+//            let f_lo: __m256d = _mm256_blendv_pd(f_012_lo, s4d, _mm256_castsi256_pd(take_mask_4));
+//            // create f-z
+//            let f_z_lo: __m256d = _mm256_sub_pd(f_lo, zsv_lo);
+//            // (f-z)**2
+//            let f_z_2_lo: __m256d = _mm256_mul_pd(f_z_lo, f_z_lo);
+//            // w * (f-z)**2
+//            let w_f_z_2_lo: __m256d = _mm256_mul_pd(wlsv_lo, f_z_2_lo);
+//
+//            l_acc = _mm256_add_pd(l_acc, w_f_z_2_lo);
+//
+//            // for high
+//            let take_mask_4_hi = _mm256_slli_epi64(take_mask_4, 32);
+//            let take_mask_2_hi = _mm256_slli_epi64(take_mask_2, 32);
+//            let take_mask_1_hi = _mm256_slli_epi64(take_mask_1, 32);
+//            //let take_mask_0_hi = _mm256_slli_epi64(take_mask_0, 32);
+//
+//            let f_01_hi: __m256d = _mm256_blendv_pd(s0d, s1d, _mm256_castsi256_pd(take_mask_1_hi));
+//            //let f_0_hi: __m256d = _mm256_blendv_pd(zerod, s0d, _mm256_castsi256_pd(take_mask_0_hi));
+//            //let f_01_hi: __m256d =
+//            //_mm256_blendv_pd(f_0_hi, s1d, _mm256_castsi256_pd(take_mask_1_hi));
+//            //let f_01_hi: __m256d= _mm256_blendv_pd(s0d, s1d, _mm256_castsi256_pd(take_mask_1_hi));
+//            let f_012_hi: __m256d =
+//                _mm256_blendv_pd(f_01_hi, s2d, _mm256_castsi256_pd(take_mask_2_hi));
+//            let f_hi: __m256d =
+//                _mm256_blendv_pd(f_012_hi, s4d, _mm256_castsi256_pd(take_mask_4_hi));
+//            //let f_hi: __m256d = _mm256_blendv_pd(f_01_hi, s2d, _mm256_castsi256_pd(take_mask_2_hi));
+//            // create f-z
+//            let f_z_hi: __m256d = _mm256_sub_pd(f_hi, zsv_hi);
+//            // (f-z)**2
+//            let f_z_2_hi: __m256d = _mm256_mul_pd(f_z_hi, f_z_hi);
+//            // w * (f-z)**2
+//            let w_f_z_2_hi: __m256d = _mm256_mul_pd(wlsv_hi, f_z_2_hi);
+//
+//            l_acc = _mm256_add_pd(l_acc, w_f_z_2_hi);
+//        }
+//    }
+//
+//    // sum 4 double horizontally to get the whole sum
+//    l_acc = _mm256_hadd_pd(l_acc, l_acc);
+//
+//    // 1. any way to hadd??
+//    // 2. _mm256_extractf128_pd and _mm256_cvtsd_f64: get 64:0
+//
+//    let loss_least_square: f64 =
+//        _mm256_cvtsd_f64(l_acc) + _mm_cvtsd_f64(_mm256_extractf128_pd(l_acc, 1));
+//
+//    let loss: f64;
+//    //if use_adjloss {
+//    loss = 0.5 * (loss_least_square - loss_max_theory);
+//    //} else {
+//    //loss = loss_least_square;
+//    //}
+//    //let loss: f64 = 0.5 * (loss_least_square - loss_max_theory);
+//
+//    return loss;
+//}
 
 /* pub fn calculate_loss_gt_freemodelmissing_simd(
     losss: &mut [f64],
@@ -1368,57 +3451,169 @@ pub unsafe fn calculate_loss_gt_logit_add_simd(
 }
  */
 
-fn calculate_loss_gt_freemodelmissing_nosimd_sm(
-    pred_s: &[u8],
-    //pred_s: &GenotSnvRef,
-    //pred_s: &[B8],
-    ps: &[f64],
-    phe: &Phe,
-    epsilons: (f64, f64),
-    eps: Option<Eps>,
-) -> f64 {
-    //let pred = pred_s.vals();
-    let (table, _) = table::calculate_table7_epsilons(&pred_s, ps, phe, epsilons, eps);
+//fn calculate_loss_gt_freemodelmissing_nosimd_sm(
+//    pred_s: &[u8],
+//    //pred_s: &GenotSnvRef,
+//    //pred_s: &[B8],
+//    ps: &[f64],
+//    phe: &Phe,
+//    epsilons: (f64, f64),
+//    eps: Option<Eps>,
+//) -> f64 {
+//    //let pred = pred_s.vals();
+//    let (table, _) = table::calculate_table7_epsilons(&pred_s, ps, phe, epsilons, eps);
+//
+//    calculate_loss_table7(table)
+//}
+//
+//// TODO: this can be integrated to freemodelmissing_simd() by changing function only?
+//#[allow(unused_variables)]
+//#[allow(unreachable_code)]
+//pub fn calculate_loss_gt_freemodelmissing_nosimd(
+//    losss: &mut LossStruct,
+//    dataset: &Dataset,
+//    //genot: &Genot,
+//    //predictions: &GenotBi<Vec<u8>>,
+//    //predictions: &[B8],
+//    //ps: &[f64],
+//    sample_weight: &SampleWeight,
+//    //phe: &Phe,
+//    boost_param: &BoostParam,
+//    extract_snvs: Option<&HashSet<usize>>,
+//) {
+//    unimplemented!("ny eff_eps");
+//
+//    let genot = dataset.genot();
+//    let phe = dataset.samples().phe_unwrap();
+//
+//    let epsilons = epsilon::calculate_epsilons(sample_weight.ps().unwrap(), phe, boost_param.eps());
+//    //log::debug!("epsilon case, cont: {:.2e},{:.2e}", epsilons.0, epsilons.1);
+//
+//    assert_eq!(losss.inner_mut().len(), genot.m());
+//
+//    losss
+//        .inner_mut()
+//        .par_iter_mut()
+//        .enumerate()
+//        .for_each(|(mi, loss)| {
+//            if extract_snvs.is_none() || extract_snvs.unwrap().contains(&mi) {
+//                *loss = calculate_loss_gt_freemodelmissing_nosimd_sm(
+//                    &genot.vals_snv(mi),
+//                    //&predictions.to_genot_snv(mi).vals(),
+//                    //&predictions.vals_snv(mi),
+//                    sample_weight.ps().unwrap(),
+//                    //ps,
+//                    phe,
+//                    epsilons,
+//                    boost_param.eps(),
+//                );
+//            } else {
+//                *loss = f64::MAX;
+//            }
+//        })
+//    //log::debug!("losss {:?}", losss);
+//    //losss
+//}
 
-    calculate_loss_table7(table)
+// consider when f(x) = c
+// another way is to use regresssion but here, I want to compare to cont_table
+#[inline]
+fn calc_loss_max_least_square_theory_cont_table(n: usize, ncase: usize, ncont: usize) -> f64 {
+    (n as f64) - (ncase as f64 - ncont as f64) * (ncase as f64 - ncont as f64) / (n as f64)
+
+    // This is the max loss when f(x) = 0
+    //n as f64
 }
 
-// TODO: this can be integrated to freemodelmissing_simd()
-pub fn calculate_loss_gt_freemodelmissing_nosimd(
+// for initial screening
+// calculate loss from contingency table not sample weight
+// this means loss is not adjusted for covariates
+// Ignore max_least_square for speed
+pub fn calc_loss_logit_interaction_cont_table(
     losss: &mut LossStruct,
-    genot: &Genot,
-    //predictions: &GenotBi<Vec<u8>>,
-    //predictions: &[B8],
-    //ps: &[f64],
-    sample_weight: &SampleWeight,
-    phe: &Phe,
-    boost_param: BoostParam,
+    dataset: &Dataset,
+    //sample_weight: &SampleWeight,
+    _boost_param: &BoostParam,
+    extract_interaction: &Vec<(usize, usize)>, // order is important for LossStruct
+    alphas: &mut Vec<f64>,
 ) {
-    assert_eq!(losss.inner_mut().len(), genot.m());
+    let genot = dataset.genot();
+    assert_eq!(
+        losss.inner_interaction_mut().len(),
+        extract_interaction.len()
+    );
 
-    unimplemented!("ny eff_eps");
+    //let n = genot.n();
+    let phe = dataset.samples().phe_unwrap();
+    let n = phe.n();
+    let ncase = phe.count();
+    let ncont = phe.count_false();
 
-    let epsilons = epsilon::calculate_epsilons(sample_weight.ps().unwrap(), phe, boost_param.eps());
-    //log::debug!("epsilon case, cont: {:.2e},{:.2e}", epsilons.0, epsilons.1);
+    let loss_max_theory = calc_loss_max_least_square_theory_cont_table(n, ncase, ncont);
+    //log::debug!("loss_max_theory {}", loss_max_theory);
 
+    let mafs = dataset.snvs().mafs().unwrap();
+
+    // for interaction, len(loss) == len(extract_interaction)
     losss
-        .inner_mut()
+        .inner_interaction_mut()
         .par_iter_mut()
-        .enumerate()
-        .for_each(|(mi, loss)| {
-            *loss = calculate_loss_gt_freemodelmissing_nosimd_sm(
-                &genot.vals_snv(mi),
-                //&predictions.to_genot_snv(mi).vals(),
-                //&predictions.vals_snv(mi),
-                sample_weight.ps().unwrap(),
-                //ps,
-                phe,
-                epsilons,
-                boost_param.eps(),
+        .zip(alphas.par_iter_mut())
+        .zip(extract_interaction.par_iter())
+        .for_each(|((loss, alpha_save), snv_pair)| {
+            let (m1, m2) = *snv_pair;
+            let (cont_tables_case, cont_tables_cont, cont_tables_both) =
+                genot_calc::count_table_by_phe(
+                    &genot.to_genot_snv(m1),
+                    &genot.to_genot_snv(m2),
+                    phe,
+                );
+
+            let sums_both = Sum3by3Ar::from_table(cont_tables_both);
+            let sums_case = Sum3by3Ar::from_table(cont_tables_case);
+            let sums_cont = Sum3by3Ar::from_table(cont_tables_cont);
+            let (coef, x_inter) = coefficient::calculate_coef_logit_interaction_cont_table(
+                sums_both, sums_case, sums_cont, // no lr
+                mafs[m1], mafs[m2], n,
             );
-        })
-    //log::debug!("losss {:?}", losss);
-    //losss
+            *alpha_save = coef.linearconstinteraction_f64().1;
+            //log::debug!("coef {:?}", coef);
+            //*loss = calculate_loss_gt_logit_add_simd_sm(
+            *loss = calc_loss_logit_interaction_mi_cont_table(
+                sums_case,
+                sums_cont,
+                &coef,
+                x_inter,
+                loss_max_theory,
+            );
+        });
+}
+
+pub fn calc_loss_logit_interaction_mi_cont_table(
+    sums_case: Sum3by3Ar,
+    sums_cont: Sum3by3Ar,
+    coef: &Coef,
+    x_inter: Sum3by3Ar,
+    //maf_1: f64,
+    //maf_2: f64,
+    loss_max_theory: f64,
+) -> f64 {
+    //let x_inter = Sum3by3Ar::interaction_genotype(maf_1, maf_2);
+    let (c, a) = coef.linearconstinteraction_f64();
+
+    let scores_case = x_inter.linearconst(c - 2.0, a);
+
+    // loss for case
+    let l_case = sums_case.multiply_pow(&scores_case).sum();
+
+    let scores_cont = scores_case.add_scalar(4.0);
+    let l_cont = sums_cont.multiply_pow(&scores_cont).sum();
+
+    let loss_least_square = 0.25 * (l_case + l_cont);
+
+    let loss = 0.5 * (loss_least_square - loss_max_theory);
+
+    loss
 }
 
 // TODO: since I have integrated loss_gt_simd and loss_gt_nosimd into one func. many tests cannot be tested...
@@ -1426,13 +3621,29 @@ pub fn calculate_loss_gt_freemodelmissing_nosimd(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use crate::boosting_train::sample_weight::SampleWeight;
     use genetics::alloc;
+    //use crate::boosting_train::sample_weight::SampleWeight;
+    //use genetics::{alloc, Samples, Snvs};
 
-    //fn is_eq_f64(v: f64, w: f64, e: f64) -> bool {
-    //    (v - w).abs() < e
-    //}
+    fn initialize_zs_wls(n: usize, val: f64) -> (Vec<f64>, Vec<f64>) {
+        let v = vec![val; n];
+        let zs_pad = alloc::vec_align_f64(v, n + 32);
+        let v = vec![val; n];
+        let wls_pad = alloc::vec_align_f64(v, n + 32);
+
+        (zs_pad, wls_pad)
+    }
+
+    fn initialize_zs_wls_2(n: usize) -> (Vec<f64>, Vec<f64>) {
+        let val1 = 0.01;
+        let v = (0..n).map(|i| (i as f64) * val1).collect::<Vec<f64>>();
+        let wzs_pad = alloc::vec_align_f64(v, n + 32);
+        let val2 = 0.005;
+        let v = (0..n).map(|i| (i as f64) * val2).collect::<Vec<f64>>();
+        let wls_pad = alloc::vec_align_f64(v, n + 32);
+
+        (wzs_pad, wls_pad)
+    }
 
     #[test]
     fn test_cast() {
@@ -1586,69 +3797,69 @@ mod tests {
     // TODO: larger test
     // with eps
     //fn setup_test2() -> (Genot, Phe, Vec<f64>) {
-    fn setup_test2() -> (Genot, Phe, SampleWeight) {
-        let x = vec![0u8, 1, 1, 2];
-        let n = x.len();
-        let genot = Genot::new(1, n, &x);
-        let y = vec![false, true, false, true];
-        let phe = Phe::new(&y);
+    //fn setup_test2() -> (Genot, Phe, SampleWeight) {
+    //    let x = vec![0u8, 1, 1, 2];
+    //    let n = x.len();
+    //    let genot = Genot::new(1, n, &x);
+    //    let y = vec![false, true, false, true];
+    //    let phe = Phe::new(&y);
 
-        let mut ps_pad: Vec<f64> = alloc::with_capacity_align_f64(n + 32);
-        for p in [0.1, 0.2, 0.3, 0.4].iter() {
-            ps_pad.push(*p);
-        }
-        for _ in 0..32 {
-            ps_pad.push(0.0);
-        }
-        // ps:  [0.1,0.2,0.3,0.4]
-        // ys:  [0,1,0,1]
-        // predict
-        // dom: [0,1,1,1]
-        // rec: [0,0,0,1]
-        //
-        // abcd
-        // dom: [0.6,0.3,0.0,0.1]
-        // rec: [0.4,0.0,0.2,0.4]
+    //    let mut ps_pad: Vec<f64> = alloc::with_capacity_align_f64(n + 32);
+    //    for p in [0.1, 0.2, 0.3, 0.4].iter() {
+    //        ps_pad.push(*p);
+    //    }
+    //    for _ in 0..32 {
+    //        ps_pad.push(0.0);
+    //    }
+    //    // ps:  [0.1,0.2,0.3,0.4]
+    //    // ys:  [0,1,0,1]
+    //    // predict
+    //    // dom: [0,1,1,1]
+    //    // rec: [0,0,0,1]
+    //    //
+    //    // abcd
+    //    // dom: [0.6,0.3,0.0,0.1]
+    //    // rec: [0.4,0.0,0.2,0.4]
 
-        let sw = SampleWeight::_new_test(n, ps_pad);
+    //    let sw = SampleWeight::_new_test(n, ps_pad);
 
-        //let sw = SampleWeight {
-        //    n,
-        //    len_n: n + 32,
-        //    ps_pad: Some(ps_pad),
-        //    ..Default::default()
-        //};
-        (genot, phe, sw)
-        //(genot, phe, ps_pad)
-    }
+    //    //let sw = SampleWeight {
+    //    //    n,
+    //    //    len_n: n + 32,
+    //    //    ps_pad: Some(ps_pad),
+    //    //    ..Default::default()
+    //    //};
+    //    (genot, phe, sw)
+    //    //(genot, phe, ps_pad)
+    //}
 
-    // with eps
-    //fn setup_test3() -> (Genot, Phe, Vec<f64>) {
-    fn setup_test3() -> (Genot, Phe, SampleWeight) {
-        let x = vec![0u8, 0, 0, 0, 1, 1, 1, 2, 2, 3];
-        let n = x.len();
-        let genot = Genot::new(1, n, &x);
-        let y = vec![
-            true, true, false, false, true, false, false, false, false, true,
-        ];
-        let phe = Phe::new(&y);
+    //// with eps
+    ////fn setup_test3() -> (Genot, Phe, Vec<f64>) {
+    //fn setup_test3() -> (Genot, Phe, SampleWeight) {
+    //    let x = vec![0u8, 0, 0, 0, 1, 1, 1, 2, 2, 3];
+    //    let n = x.len();
+    //    let genot = Genot::new(1, n, &x);
+    //    let y = vec![
+    //        true, true, false, false, true, false, false, false, false, true,
+    //    ];
+    //    let phe = Phe::new(&y);
 
-        let mut ps_pad: Vec<f64> = alloc::with_capacity_align_f64(n + 32);
-        for _ in 0..n {
-            ps_pad.push(0.1);
-        }
-        for _ in 0..32 {
-            ps_pad.push(0.0);
-        }
-        // ps:  [0.1] * 10
-        // ys:
-        // table7: [0.0,0.2,0.1,0.2,0.2,0.2,0.1]
+    //    let mut ps_pad: Vec<f64> = alloc::with_capacity_align::<f64>(n + 32);
+    //    for _ in 0..n {
+    //        ps_pad.push(0.1);
+    //    }
+    //    for _ in 0..32 {
+    //        ps_pad.push(0.0);
+    //    }
+    //    // ps:  [0.1] * 10
+    //    // ys:
+    //    // table7: [0.0,0.2,0.1,0.2,0.2,0.2,0.1]
 
-        let sw = SampleWeight::_new_test(n, ps_pad);
+    //    let sw = SampleWeight::_new_test(n, ps_pad);
 
-        (genot, phe, sw)
-        //(genot, phe, ps)
-    }
+    //    (genot, phe, sw)
+    //    //(genot, phe, ps)
+    //}
 
     // TODO: after eff_eps
     // #[test]
@@ -1746,42 +3957,51 @@ mod tests {
     //     }
     // }
 
-    #[test]
-    fn test_calculate_loss_gt_freemodelmissing_simd_3() {
-        // This error below is due to that SIMD memory is not aligned.
-        // "process didn't exit successfully: (signal: 11, SIGSEGV: invalid memory reference)"
+    //  TODO: recover after implement eff_eps
+    //#[test]
+    //fn test_calculate_loss_gt_freemodelmissing_simd_3() {
+    //    // This error below is due to that SIMD memory address is not aligned.
+    //    // "process didn't exit successfully: (signal: 11, SIGSEGV: invalid memory reference)"
 
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        {
-            if is_x86_feature_detected!("avx2") {
-                let (genot, phe, ps) = setup_test3();
+    //    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    //    {
+    //        if is_x86_feature_detected!("avx2") {
+    //            let (genot, phe, ps) = setup_test3();
 
-                let m = genot.m();
-                let losss = vec![0.0f64; m];
-                let mut losss = LossStruct::LossOne(losss, m);
+    //            let m = genot.m();
+    //            let losss = vec![0.0f64; m];
+    //            let mut losss = LossStruct::LossOne(losss, m);
 
-                unsafe {
-                    calculate_loss_gt_freemodelmissing_simd(
-                        &mut losss,
-                        &genot,
-                        &ps,
-                        &phe,
-                        BoostParam::new_type2(),
-                        //BoostParam::new_type1(),
-                        &HashSet::<usize>::new(),
-                    );
-                }
+    //            let n = phe.n();
+    //            let dataset = Dataset::new_field_phe(
+    //                genot,
+    //                Samples::new(Some(phe), None, None, n),
+    //                Snvs::new_empty(),
+    //            );
 
-                // abcd
-                // eps: (0.05, 0.05)
-                // table7: [0.0,0.2,0.1,0.2,0.2,0.2,0.1]
-                //         ->[0.05,0.25,0.15,0.25,0.25,0.25,0.1]
-                // -> not realistic due to small n
-                assert_float_absolute_eq!(losss.inner_mut()[0], 1.21090513);
-                //assert!(is_eq_f64(losss.inner_mut()[0], 1.21090513, 1e-7));
-            }
-        }
-    }
+    //            unsafe {
+    //                calculate_loss_gt_freemodelmissing_simd(
+    //                    &mut losss,
+    //                    &dataset,
+    //                    //&genot,
+    //                    &ps,
+    //                    //&phe,
+    //                    &BoostParam::new_type2(),
+    //                    //BoostParam::new_type1(),
+    //                    None, //&HashSet::<usize>::new(),
+    //                );
+    //            }
+
+    //            // abcd
+    //            // eps: (0.05, 0.05)
+    //            // table7: [0.0,0.2,0.1,0.2,0.2,0.2,0.1]
+    //            //         ->[0.05,0.25,0.15,0.25,0.25,0.25,0.1]
+    //            // -> not realistic due to small n
+    //            assert_float_absolute_eq!(losss.inner_mut()[0], 1.21090513);
+    //            //assert!(is_eq_f64(losss.inner_mut()[0], 1.21090513, 1e-7));
+    //        }
+    //    }
+    //}
 
     // #[test]
     // fn test_calculate_loss_gt_freemodelmissing_nosimd_3() {
@@ -1825,4 +4045,245 @@ mod tests {
     //         }
     //     }
     // }
+
+    // TODO: logit for missing and nomissing
+
+    // TODO
+    //#[test]
+    //fn test_calc_loss_logit_add_nosimd_mi() {
+    //}
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[test]
+    fn test_calc_loss_logit_add_nosimd_mi_vs_simd() {
+        // check when n>32
+        // n=33
+
+        let vec = vec![vec![0, 1, 2]; 11];
+        let vec = vec.into_iter().flatten().collect::<Vec<u8>>();
+
+        assert_eq!(vec.len(), 33);
+
+        let gsnv = GenotSnv::new(&vec);
+
+        let n = gsnv.n();
+        //let (zs_pad, wls_pad) = initialize_zs_wls(n, 0.1f64);
+        let (zs_pad, wls_pad) = initialize_zs_wls_2(n);
+
+        let coef = Coef::LinearConst((0.2, 0.3));
+        let loss_max_theory = 0.1;
+
+        if is_x86_feature_detected!("avx2") {
+            unsafe {
+                let ans_nosimd = calc_loss_logit_add_nosimd_mi(
+                    &gsnv.as_genot_snv(),
+                    &coef,
+                    &wls_pad,
+                    &zs_pad,
+                    loss_max_theory,
+                );
+
+                let ans_simd = calc_loss_logit_add_simd_mi(
+                    &gsnv.as_genot_snv(),
+                    &coef,
+                    &wls_pad,
+                    &zs_pad,
+                    loss_max_theory,
+                );
+
+                assert_float_absolute_eq!(ans_nosimd, ans_simd);
+            }
+        } //else {
+          // panic!("not avx2")
+          // else do nth
+    }
+
+    // TODO: more complicated test
+    #[test]
+    fn test_calc_loss_logit_interaction_nosimd_mi() {
+        // all patterns
+        let vec1 = vec![0, 0, 0, 1, 1, 1, 2, 2, 2];
+        let vec2 = vec![0, 1, 2, 0, 1, 2, 0, 1, 2];
+        let gsnv1 = GenotSnv::new(&vec1);
+        let gsnv2 = GenotSnv::new(&vec2);
+        let maf_1 = 0.5;
+        let maf_2 = 0.5;
+
+        let n = gsnv1.n();
+        assert_eq!(n, vec1.len());
+        assert_eq!(n, vec2.len());
+
+        let (zs_pad, wls_pad) = initialize_zs_wls(n, 0.1f64);
+
+        let coef = Coef::LinearConstInteraction((0.2, 0.3));
+        let loss_max_theory = 0.025;
+
+        // calculate by hand
+        let loss_exp = 0.01;
+
+        unsafe {
+            let loss = calc_loss_logit_interaction_nosimd_mi(
+                &gsnv1.as_genot_snv(),
+                &gsnv2.as_genot_snv(),
+                &coef,
+                &wls_pad,
+                &zs_pad,
+                maf_1,
+                maf_2,
+                loss_max_theory,
+            );
+
+            assert_float_absolute_eq!(loss, loss_exp);
+            //assert_eq!(loss, loss_exp);
+        }
+    }
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[test]
+    fn test_calc_loss_logit_interaction_nosimd_mi_vs_simd() {
+        // check when n>32
+        // n=33
+        let mut vec1 = vec![0u8; 11];
+        let vec1_1 = vec![1u8; 11];
+        let vec1_2 = vec![2u8; 11];
+        vec1.extend(vec1_1);
+        vec1.extend(vec1_2);
+
+        let vec2 = vec![vec![0, 1, 2]; 11];
+        let vec2 = vec2.into_iter().flatten().collect::<Vec<u8>>();
+
+        assert_eq!(vec1.len(), 33);
+        assert_eq!(vec2.len(), 33);
+
+        let gsnv1 = GenotSnv::new(&vec1);
+        let gsnv2 = GenotSnv::new(&vec2);
+        let maf_1 = 0.2;
+        let maf_2 = 0.3;
+
+        let n = gsnv1.n();
+        //let (zs_pad, wls_pad) = initialize_zs_wls(n, 0.1f64);
+        let (zs_pad, wls_pad) = initialize_zs_wls_2(n);
+
+        let coef = Coef::LinearConstInteraction((0.2, 0.3));
+        let loss_max_theory = 0.1;
+
+        if is_x86_feature_detected!("avx2") {
+            unsafe {
+                let ans_nosimd = calc_loss_logit_interaction_nosimd_mi(
+                    &gsnv1.as_genot_snv(),
+                    &gsnv2.as_genot_snv(),
+                    &coef,
+                    &wls_pad,
+                    &zs_pad,
+                    maf_1,
+                    maf_2,
+                    loss_max_theory,
+                );
+
+                let ans_simd = calc_loss_logit_interaction_simd_mi(
+                    &gsnv1.as_genot_snv(),
+                    &gsnv2.as_genot_snv(),
+                    &coef,
+                    &wls_pad,
+                    &zs_pad,
+                    maf_1,
+                    maf_2,
+                    loss_max_theory,
+                );
+
+                assert_float_absolute_eq!(ans_nosimd, ans_simd);
+            }
+        } //else {
+          // panic!("not avx2")
+          // else do nth
+    }
+
+    //#[test]
+    //fn test_calc_loss_logit_interaction_nosimd_mi() {
+    //    // all patterns
+    //    let vec1 = vec![0, 0, 0, 1, 1, 1, 2, 2, 2];
+    //    let vec2 = vec![0, 1, 2, 0, 1, 2, 0, 1, 2];
+    //    let gsnv1 = GenotSnv::new(&vec1);
+    //    let gsnv2 = GenotSnv::new(&vec2);
+
+    //    let n = gsnv1.n();
+    //    assert_eq!(n, vec1.len());
+    //    assert_eq!(n, vec2.len());
+
+    //    let (zs_pad, wls_pad) = initialize_zs_wls(n, 0.1f64);
+
+    //    let coef = Coef::LinearConstInteraction((0.2, 0.3));
+    //    let loss_max_theory = 0.088;
+
+    //    // calculate by hand
+    //    let loss_exp = 0.1;
+
+    //    unsafe {
+    //        let loss = calc_loss_logit_interaction_nosimd_mi(
+    //            &gsnv1.as_genot_snv(),
+    //            &gsnv2.as_genot_snv(),
+    //            &coef,
+    //            &wls_pad,
+    //            &zs_pad,
+    //            loss_max_theory,
+    //        );
+
+    //        assert_float_absolute_eq!(loss, loss_exp);
+    //        //assert_eq!(loss, loss_exp);
+    //    }
+    //}
+
+    //#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    //#[test]
+    //fn test_calc_loss_logit_interaction_nosimd_mi_vs_simd() {
+    //    // check when n>32
+    //    // n=33
+    //    let mut vec1 = vec![0u8; 11];
+    //    let vec1_1 = vec![1u8; 11];
+    //    let vec1_2 = vec![2u8; 11];
+    //    vec1.extend(vec1_1);
+    //    vec1.extend(vec1_2);
+
+    //    let vec2 = vec![vec![0, 1, 2]; 11];
+    //    let vec2 = vec2.into_iter().flatten().collect::<Vec<u8>>();
+
+    //    assert_eq!(vec1.len(), 33);
+    //    assert_eq!(vec2.len(), 33);
+
+    //    let gsnv1 = GenotSnv::new(&vec1);
+    //    let gsnv2 = GenotSnv::new(&vec2);
+
+    //    let n = gsnv1.n();
+    //    //let (zs_pad, wls_pad) = initialize_zs_wls(n, 0.1f64);
+    //    let (zs_pad, wls_pad) = initialize_zs_wls_2(n);
+
+    //    let coef = Coef::LinearConstInteraction((0.2, 0.3));
+    //    let loss_max_theory = 0.1;
+
+    //    if is_x86_feature_detected!("avx2") {
+    //        unsafe {
+    //            let ans_nosimd = calc_loss_logit_interaction_nosimd_mi(
+    //                &gsnv1.as_genot_snv(),
+    //                &gsnv2.as_genot_snv(),
+    //                &coef,
+    //                &wls_pad,
+    //                &zs_pad,
+    //                loss_max_theory,
+    //            );
+
+    //            let ans_simd = calc_loss_logit_interaction_simd_mi(
+    //                &gsnv1.as_genot_snv(),
+    //                &gsnv2.as_genot_snv(),
+    //                &coef,
+    //                &wls_pad,
+    //                &zs_pad,
+    //                loss_max_theory,
+    //            );
+
+    //            assert_float_absolute_eq!(ans_nosimd, ans_simd);
+    //        }
+    //    } //else {
+    //      // panic!("not avx2")
+    //      // else do nth
+    //}
 }

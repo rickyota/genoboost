@@ -1,4 +1,10 @@
-
+pub mod covs;
 pub mod io;
+pub mod samples;
+pub mod split;
+
+pub use covs::*;
+//pub use covs::{CovId, Covs, CovsTrait};
 pub use io::*;
-//pub use io::{make_use_samples,load_samples_use};
+pub use samples::*;
+pub use split::*;

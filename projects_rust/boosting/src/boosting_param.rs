@@ -1,204 +1,77 @@
-use std::str::FromStr;
+//  When adding one parameter, modify the following 4 places
+// 1. BoostParamCommon.set_batch_way()
+// 2. BatchWay::from_str()
+// 3. BoostParamCommonTrait.batch_way()
+// 4. BoostParamCommon.batch_way()
 
-/*
-pub trait BoostingParamTrait: Copy {
-    fn boosting_param(&self) -> BoostingParam;
-    fn iter(&self) -> usize {
-        self.boosting_param().iter()
-    }
-    fn boost_type(&self) -> BoostType {
-        self.boosting_param().boost_type()
-    }
-    fn loss_func(&self) -> LossFunc {
-        self.boosting_param().loss_func()
-    }
-    fn learning_rate(&self) -> Option<f64> {
-        self.boosting_param().learning_rate()
-    }
-    fn eps(&self) -> Eps {
-        self.boosting_param().eps()
-    }
-}
-*/
+use core::panic;
+use std::{collections::HashSet, str::FromStr};
+
+use genetics::{LdCriteria, SnvId};
 
 // for boost_types and learning rates
 #[derive(PartialEq, Clone, Debug, Default)]
 pub struct BoostParamsTypes {
-    // TODO: None for integrate
-    //iteration: Option<IterationNumber>,
-    iteration: IterationNumber,
     boost_types: Vec<BoostType>,
-    //boost_type: BoostType,
-    loss_func: LossFunc,
-    // TODO: make learning_rate out of BoostParam
-    // since this value varies among parameters
     learning_rates: Vec<f64>,
-    //learning_rate: Option<f64>,
-    eps: Option<Eps>,
-    sample_weight_clip: Option<SampleWeightClip>,
-    sample_weight_wls_clip: Option<SampleWeightWlsClip>,
-    is_dom_rec: bool,
-    cov_way: Option<CovWay>,
-    batch_way: Option<BatchWay>,
-    eff_eps: Option<EffEps>,
+    boost_param_common: BoostParamCommon,
+}
+
+impl BoostParamCommonTrait for BoostParamsTypes {
+    fn boost_param_common(&self) -> &BoostParamCommon {
+        &self.boost_param_common
+    }
 }
 
 impl BoostParamsTypes {
-    // or itegrate with set_iteration_snv?
-    pub fn set_iteration(self, iteration: usize) -> Self {
-        Self {
-            iteration: IterationNumber::Iteration(iteration),
-            ..self
-        }
-    }
-
-    pub fn set_iteration_snv(self, iteration: usize) -> Self {
-        Self {
-            iteration: IterationNumber::Snv(iteration),
-            ..self
-        }
-    }
-
-    pub fn set_loss_func(self, loss_func: &str) -> Self {
-        Self {
-            loss_func: LossFunc::from_str(loss_func).unwrap(),
-            ..self
-        }
-    }
-
     pub fn set_boost_types(self, boost_types: Vec<String>) -> Self {
+        if HashSet::<&String>::from_iter(boost_types.iter()).len() != boost_types.len() {
+            panic!("BoostTypes must be unique");
+        }
+
         let boost_types = boost_types
             .iter()
             .map(|x| BoostType::from_str(x).unwrap())
             .collect::<Vec<BoostType>>();
+
         Self {
-            boost_types: boost_types,
+            boost_types,
             ..self
         }
     }
-
-    //pub fn set_boost_type(self, boost_type: &str) -> Self {
-    //    Self {
-    //        boost_types: vec![BoostType::from_str(boost_type).unwrap()],
-    //        ..self
-    //    }
-    //}
-
     pub fn set_learning_rates(self, learning_rates: Vec<f64>) -> Self {
         Self {
             learning_rates,
             ..self
         }
     }
-
-    pub fn set_eps(self, eps: Option<&str>) -> Self {
+    pub fn set_boost_param_common(self, boost_param_common: BoostParamCommon) -> Self {
         Self {
-            eps: eps.map(|x| Eps::from_str(x).unwrap()),
-            ..self
-        }
-    }
-
-    pub fn set_eff_eps(self, eff_eps: Option<&str>) -> Self {
-        Self {
-            eff_eps: eff_eps.map(|x| EffEps::from_str(x).unwrap()),
-            ..self
-        }
-    }
-
-    pub fn set_sample_weight_clip(self, sample_weight_clip: Option<&str>) -> Self {
-        Self {
-            sample_weight_clip: sample_weight_clip.map(|x| SampleWeightClip::from_str(x).unwrap()),
-            ..self
-        }
-    }
-
-    pub fn set_sample_weight_wls_clip(self, sample_weight_wls_clip: Option<&str>) -> Self {
-        Self {
-            sample_weight_wls_clip: sample_weight_wls_clip
-                .map(|x| SampleWeightWlsClip::from_str(x).unwrap()),
-            ..self
-        }
-    }
-
-    pub fn set_is_dom_rec(self, is_dom_rec: bool) -> Self {
-        Self { is_dom_rec, ..self }
-    }
-
-    pub fn set_cov_way(self, cov_way: Option<&str>) -> Self {
-        Self {
-            cov_way: cov_way.map(|x| CovWay::from_str(x).unwrap()),
-            ..self
-        }
-    }
-
-    pub fn set_batch_way(self, batch_way: Option<&str>) -> Self {
-        Self {
-            batch_way: batch_way.map(|x| BatchWay::from_str(x).unwrap()),
+            boost_param_common,
             ..self
         }
     }
 
     pub fn param_num(&self) -> usize {
         self.boost_types().len()
-        //self.learning_rates().len()
     }
 
-    pub fn param_i(&self, i: usize) -> BoostParams {
+    pub fn param_i(&self, i: usize) -> BoostParamLrs {
         if i >= self.param_num() {
             panic!("Exceed the limit of argument {}", i);
         }
-        BoostParams {
-            iteration: self.iteration,
+        BoostParamLrs {
             boost_type: self.boost_types()[i],
-            loss_func: self.loss_func,
             learning_rates: self.learning_rates().to_vec(),
-            eps: self.eps,
-            sample_weight_clip: self.sample_weight_clip,
-            sample_weight_wls_clip: self.sample_weight_wls_clip,
-            is_dom_rec: self.is_dom_rec,
-            cov_way: self.cov_way,
-            batch_way: self.batch_way,
-            eff_eps: self.eff_eps,
+            boost_param_common: self.boost_param_common.clone(),
         }
-    }
-
-    pub fn iteration(&self) -> IterationNumber {
-        self.iteration
     }
 
     pub fn boost_types(&self) -> &[BoostType] {
         &self.boost_types
     }
-    /*     pub fn boost_type(&self) -> BoostType {
-        self.boost_type
-    } */
-    pub fn loss_func(&self) -> LossFunc {
-        self.loss_func
-    }
-    //pub fn learning_rate(&self) -> Option<f64> {
     pub fn learning_rates(&self) -> &[f64] {
         &self.learning_rates
-    }
-    pub fn eps(&self) -> Option<Eps> {
-        self.eps
-    }
-    pub fn sample_weight_clip(&self) -> Option<SampleWeightClip> {
-        self.sample_weight_clip
-    }
-    pub fn sample_weight_wls_clip(&self) -> Option<SampleWeightWlsClip> {
-        self.sample_weight_wls_clip
-    }
-    pub fn is_dom_rec(&self) -> bool {
-        self.is_dom_rec
-    }
-    pub fn cov_way(&self) -> Option<CovWay> {
-        self.cov_way
-    }
-    pub fn batch_way(&self) -> Option<BatchWay> {
-        self.batch_way
-    }
-    pub fn eff_eps(&self) -> Option<EffEps> {
-        self.eff_eps
     }
 
     pub fn into_iter(self) -> BoostParamsTypesIntoIter {
@@ -221,7 +94,7 @@ impl BoostParamsTypesIntoIter {
 }
 
 impl Iterator for BoostParamsTypesIntoIter {
-    type Item = BoostParams;
+    type Item = BoostParamLrs;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx < self.boost_params.param_num() {
@@ -235,28 +108,16 @@ impl Iterator for BoostParamsTypesIntoIter {
 
 // for learning rates
 #[derive(PartialEq, Clone, Debug, Default)]
-pub struct BoostParams {
-    iteration: IterationNumber,
-    //boost_types: Vec<BoostType>,
+pub struct BoostParamLrs {
     boost_type: BoostType,
-    loss_func: LossFunc,
-    // TODO: make learning_rate out of BoostParam
-    // since this value varies among parameters
     learning_rates: Vec<f64>,
-    //learning_rate: Option<f64>,
-    eps: Option<Eps>,
-    sample_weight_clip: Option<SampleWeightClip>,
-    sample_weight_wls_clip: Option<SampleWeightWlsClip>,
-    is_dom_rec: bool,
-    cov_way: Option<CovWay>,
-    batch_way: Option<BatchWay>,
-    eff_eps: Option<EffEps>,
+    boost_param_common: BoostParamCommon,
 }
 
-impl BoostParams {
+impl BoostParamLrs {
     pub fn check(&self) {
         //if (self.boost_type() == BoostType::FreeModelMissing) & self.is_dom_rec {
-        if self.boost_type().is_freemodelmissing() & self.is_dom_rec {
+        if self.boost_type().is_freemodelmissing() && self.is_dom_rec() {
             panic!("Cannot assign is_dom_and_rec in freemodelmissing")
         }
 
@@ -270,7 +131,7 @@ impl BoostParams {
         //    //panic!("Cannot assign SampleWeightClip::None in Logit")
         //}
 
-        if self.boost_type().is_type_logit() & !self.cov_way().unwrap().is_first() {
+        if self.boost_type().is_type_logit() && !self.cov_way().unwrap().is_first() {
             // since now ps is not renewed for iteration
             panic!("Cannot assign except CovWay::First in Logit")
         }
@@ -283,99 +144,29 @@ impl BoostParams {
         //        panic!("Cannot assign EffEps::LimS2 other than Logit or LogitNoMissing")
         //    }
         //}
-    }
 
-    // or itegrate with set_iteration_snv?
-    pub fn set_iteration(self, iteration: usize) -> Self {
-        Self {
-            iteration: IterationNumber::Iteration(iteration),
-            ..self
+        if self.boost_type() == BoostType::LogitCommon
+            && self.maf_threshold_logit_common().is_none()
+        {
+            panic!("maf_threshold_logit_common must be assigned in LogitCommon")
         }
     }
 
-    pub fn set_iteration_snv(self, iteration: usize) -> Self {
-        Self {
-            iteration: IterationNumber::Snv(iteration),
-            ..self
-        }
-    }
-
-    pub fn set_loss_func(self, loss_func: &str) -> Self {
-        Self {
-            loss_func: LossFunc::from_str(loss_func).unwrap(),
-            ..self
-        }
-    }
-
-    //pub fn set_boost_types(self, boost_types: Vec<String>) -> Self {
-    //    let boost_types = boost_types
-    //        .iter()
-    //        .map(|x| BoostType::from_str(x).unwrap())
-    //        .collect::<Vec<BoostType>>();
-    //    Self {
-    //        boost_types: boost_types,
-    //        ..self
-    //    }
-    //}
-
-    // TODO: set_boost_types()
     pub fn set_boost_type(self, boost_type: &str) -> Self {
         Self {
             boost_type: BoostType::from_str(boost_type).unwrap(),
             ..self
         }
     }
-
     pub fn set_learning_rates(self, learning_rates: Vec<f64>) -> Self {
         Self {
             learning_rates,
             ..self
         }
     }
-
-    pub fn set_eps(self, eps: Option<&str>) -> Self {
+    pub fn set_boost_param_common(self, boost_param_common: BoostParamCommon) -> Self {
         Self {
-            eps: eps.map(|x| Eps::from_str(x).unwrap()),
-            ..self
-        }
-    }
-
-    pub fn set_eff_eps(self, eff_eps: Option<&str>) -> Self {
-        Self {
-            eff_eps: eff_eps.map(|x| EffEps::from_str(x).unwrap()),
-            ..self
-        }
-    }
-
-    pub fn set_sample_weight_clip(self, sample_weight_clip: Option<&str>) -> Self {
-        Self {
-            sample_weight_clip: sample_weight_clip.map(|x| SampleWeightClip::from_str(x).unwrap()),
-            ..self
-        }
-    }
-
-    pub fn set_sample_weight_wls_clip(self, sample_weight_wls_clip: Option<&str>) -> Self {
-        Self {
-            sample_weight_wls_clip: sample_weight_wls_clip
-                .map(|x| SampleWeightWlsClip::from_str(x).unwrap()),
-            ..self
-        }
-    }
-
-    pub fn set_is_dom_rec(self, is_dom_rec: bool) -> Self {
-        Self { is_dom_rec, ..self }
-    }
-
-    pub fn set_cov_way(self, cov_way: Option<&str>) -> Self {
-        Self {
-            cov_way: cov_way.map(|x| CovWay::from_str(x).unwrap()),
-            ..self
-        }
-    }
-
-    pub fn set_batch_way(self, batch_way: Option<&str>) -> Self {
-        Self {
-            batch_way: batch_way.map(|x| BatchWay::from_str(x).unwrap()),
+            boost_param_common,
             ..self
         }
     }
@@ -389,73 +180,25 @@ impl BoostParams {
             panic!("Exceed the limit of argument {}", i);
         }
         BoostParam {
-            iteration: self.iteration,
             boost_type: self.boost_type,
-            loss_func: self.loss_func,
             learning_rate: self.learning_rates()[i],
-            eps: self.eps,
-            sample_weight_clip: self.sample_weight_clip,
-            sample_weight_wls_clip: self.sample_weight_wls_clip,
-            is_dom_rec: self.is_dom_rec,
-            cov_way: self.cov_way,
-            batch_way: self.batch_way,
-            eff_eps: self.eff_eps,
+            boost_param_common: self.boost_param_common.clone(),
         }
     }
 
     pub fn param_lr_none(&self) -> BoostParam {
         BoostParam {
-            iteration: self.iteration,
             boost_type: self.boost_type,
-            loss_func: self.loss_func,
             learning_rate: 1.0,
-            eps: self.eps,
-            sample_weight_clip: self.sample_weight_clip,
-            sample_weight_wls_clip: self.sample_weight_wls_clip,
-            is_dom_rec: self.is_dom_rec,
-            cov_way: self.cov_way,
-            batch_way: self.batch_way,
-            eff_eps: self.eff_eps,
+            boost_param_common: self.boost_param_common.clone(),
         }
     }
 
-    pub fn iteration(&self) -> IterationNumber {
-        self.iteration
-    }
-
-    /*     pub fn boost_types(&self) -> &[BoostType] {
-        &self.boost_types
-    } */
     pub fn boost_type(&self) -> BoostType {
         self.boost_type
     }
-    pub fn loss_func(&self) -> LossFunc {
-        self.loss_func
-    }
-    //pub fn learning_rate(&self) -> Option<f64> {
     pub fn learning_rates(&self) -> &[f64] {
         &self.learning_rates
-    }
-    pub fn eps(&self) -> Option<Eps> {
-        self.eps
-    }
-    pub fn sample_weight_clip(&self) -> Option<SampleWeightClip> {
-        self.sample_weight_clip
-    }
-    pub fn sample_weight_wls_clip(&self) -> Option<SampleWeightWlsClip> {
-        self.sample_weight_wls_clip
-    }
-    pub fn is_dom_rec(&self) -> bool {
-        self.is_dom_rec
-    }
-    pub fn cov_way(&self) -> Option<CovWay> {
-        self.cov_way
-    }
-    pub fn batch_way(&self) -> Option<BatchWay> {
-        self.batch_way
-    }
-    pub fn eff_eps(&self) -> Option<EffEps> {
-        self.eff_eps
     }
 
     pub fn into_iter(self) -> BoostParamsIntoIter {
@@ -463,13 +206,19 @@ impl BoostParams {
     }
 }
 
+impl BoostParamCommonTrait for BoostParamLrs {
+    fn boost_param_common(&self) -> &BoostParamCommon {
+        &self.boost_param_common
+    }
+}
+
 pub struct BoostParamsIntoIter {
-    boost_params: BoostParams,
+    boost_params: BoostParamLrs,
     idx: usize,
 }
 
 impl BoostParamsIntoIter {
-    pub fn new(boost_params: BoostParams) -> Self {
+    pub fn new(boost_params: BoostParamLrs) -> Self {
         Self {
             boost_params,
             idx: 0,
@@ -490,42 +239,36 @@ impl Iterator for BoostParamsIntoIter {
     }
 }
 
-#[derive(PartialEq, Copy, Clone, Debug, Default)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct BoostParam {
-    iteration: IterationNumber,
     boost_type: BoostType,
-    loss_func: LossFunc,
-    // TODO: make learning_rate out of BoostParam
-    // since this value varies among parameters
     learning_rate: f64,
-    //learning_rate: Option<f64>,
-    eps: Option<Eps>,
-    sample_weight_clip: Option<SampleWeightClip>,
-    sample_weight_wls_clip: Option<SampleWeightWlsClip>,
-    is_dom_rec: bool,
-    cov_way: Option<CovWay>,
-    batch_way: Option<BatchWay>,
-    eff_eps: Option<EffEps>,
+    boost_param_common: BoostParamCommon,
+}
+
+impl BoostParamCommonTrait for BoostParam {
+    fn boost_param_common(&self) -> &BoostParamCommon {
+        &self.boost_param_common
+    }
 }
 
 impl BoostParam {
     // TODO: use
     pub fn check(&self) {
-        //if (self.boost_type() == BoostType::FreeModelMissing) & self.is_dom_rec {
-        if self.boost_type().is_freemodelmissing() & self.is_dom_rec {
+        if self.boost_type().is_freemodelmissing() && self.is_dom_rec() {
             panic!("Cannot assign is_dom_and_rec in freemodelmissing")
         }
 
-        if self.boost_type().is_type_ada() & self.eps().is_none() {
+        if self.boost_type().is_type_ada() && self.eps().is_none() {
             panic!("Cannot assign Eps::None in freemodelmissing")
         }
 
-        if self.boost_type().is_logit() & self.sample_weight_clip().is_none() {
-            log::info!("WARNING: Cannot assign SampleWeightClip::None in Logit")
-            //panic!("Cannot assign SampleWeightClip::None in Logit")
-        }
+        //if self.boost_type().is_logit() & self.sample_weight_clip().is_none() {
+        //    log::info!("WARNING: Cannot assign SampleWeightClip::None in Logit")
+        //    //panic!("Cannot assign SampleWeightClip::None in Logit")
+        //}
 
-        if self.boost_type().is_type_logit() & !self.cov_way().unwrap().is_first() {
+        if self.boost_type().is_type_logit() && !self.cov_way().unwrap().is_first() {
             // since now ps is not renewed for iteration
             panic!("Cannot assign except CovWay::First in Logit")
         }
@@ -541,61 +284,179 @@ impl BoostParam {
     }
 
     // for test
-    pub fn new_type1() -> Self {
-        BoostParam {
-            iteration: IterationNumber::Iteration(100),
-            boost_type: BoostType::ConstAda,
-            loss_func: LossFunc::Logistic,
-            learning_rate: 1.0,
-            //learning_rate: None,
-            //eps: None,
-            eps: Some(Eps::MedLarge2AllCell),
-            sample_weight_clip: None,
-            sample_weight_wls_clip: None,
-            is_dom_rec: false,
-            cov_way: None,
-            batch_way: None,
-            eff_eps: None,
-        }
-    }
-    // for test
-    pub fn new_type2() -> Self {
-        BoostParam {
-            iteration: IterationNumber::Iteration(100),
-            boost_type: BoostType::FreeModelMissing,
-            loss_func: LossFunc::Logistic,
-            learning_rate: 1.0,
-            //learning_rate: None,
-            //eps: None,
-            eps: Some(Eps::MedLarge2AllCell),
-            sample_weight_clip: None,
-            sample_weight_wls_clip: None,
-            is_dom_rec: false,
-            cov_way: None,
-            batch_way: None,
-            eff_eps: None,
-        }
-    }
-    /*     fn boost_param(&self) -> BoostParam {
-        *self
-    } */
-
-    pub fn iteration(&self) -> IterationNumber {
-        self.iteration
-    }
-
-    //pub fn iter(&self) -> usize {
-    //    self.iter
+    //pub fn new_type1() -> Self {
+    //    BoostParam {
+    //        boost_type: BoostType::ConstAda,
+    //        learning_rate: 1.0,
+    //        boost_param_common: BoostParamCommon {
+    //            iteration: Some(IterationNumber::Iteration(100)),
+    //            loss_func: LossFunc::Logistic,
+    //            eps: Some(Eps::MedLarge2AllCell),
+    //            sample_weight_clip: None,
+    //            sample_weight_wls_clip: None,
+    //            is_dom_rec: false,
+    //            cov_way: None,
+    //            batch_way: None,
+    //            batch_interaction_way: None,
+    //            eff_eps: None,
+    //            is_monitor: false,
+    //            monitor_nsnvs: None,
+    //            mhc_region: None,
+    //            maf_threshold_logit_common: None,
+    //            interaction_way: None,
+    //            ld_criteria: None,
+    //        },
+    //    }
     //}
+    //// for test
+    //pub fn new_type2() -> Self {
+    //    BoostParam {
+    //        boost_type: BoostType::FreeModelMissing,
+    //        learning_rate: 1.0,
+    //        boost_param_common: BoostParamCommon {
+    //            iteration: Some(IterationNumber::Iteration(100)),
+    //            loss_func: LossFunc::Logistic,
+    //            eps: Some(Eps::MedLarge2AllCell),
+    //            sample_weight_clip: None,
+    //            sample_weight_wls_clip: None,
+    //            is_dom_rec: false,
+    //            cov_way: None,
+    //            batch_way: None,
+    //            batch_interaction_way: None,
+    //            eff_eps: None,
+    //            is_monitor: false,
+    //            monitor_nsnvs: None,
+    //            mhc_region: None,
+    //            maf_threshold_logit_common: None,
+    //            interaction_way: None,
+    //            ld_criteria: None,
+    //        },
+    //    }
+    //}
+
+    // for test
+    pub fn new_type3() -> Self {
+        let boost_param_common = BoostParamCommon::default().set_iteration(Some(100), None);
+        BoostParam {
+            boost_type: BoostType::FreeModelMissing,
+            learning_rate: 1.0,
+            boost_param_common,
+        }
+    }
+
     pub fn boost_type(&self) -> BoostType {
         self.boost_type
     }
-    pub fn loss_func(&self) -> LossFunc {
-        self.loss_func
-    }
-    //pub fn learning_rate(&self) -> Option<f64> {
     pub fn learning_rate(&self) -> f64 {
         self.learning_rate
+    }
+}
+
+#[derive(PartialEq, Clone, Debug, Default)]
+pub struct BoostParamCommon {
+    iteration: Option<IterationNumber>,
+    loss_func: LossFunc,
+    eps: Option<Eps>,
+    sample_weight_clip: Option<SampleWeightClip>,
+    sample_weight_wls_clip: Option<SampleWeightWlsClip>,
+    is_dom_rec: bool,
+    cov_way: Option<CovWay>,
+    batch_way: Option<BatchWay>,
+    batch_interaction_way: Option<BatchInteractionWay>,
+    eff_eps: Option<EffEps>,
+    is_monitor: bool,
+    monitor_nsnvs: Option<Vec<usize>>,
+    mhc_region: Option<(SnvId, SnvId)>,
+    maf_threshold_logit_common: Option<f64>, // for BoostType::LogitCommon
+    interaction_way: Option<InteractionWay>,
+    ld_criteria: Option<LdCriteria>,
+    acc_metic: Option<AccMetric>,
+}
+
+pub trait BoostParamCommonTrait {
+    fn boost_param_common(&self) -> &BoostParamCommon;
+
+    //fn boost_param_common_mut(&mut self) -> &mut BoostParamCommon;
+
+    fn iteration(&self) -> Option<IterationNumber> {
+        self.boost_param_common().iteration()
+    }
+
+    fn loss_func(&self) -> LossFunc {
+        self.boost_param_common().loss_func()
+    }
+    fn eps(&self) -> Option<Eps> {
+        self.boost_param_common().eps()
+    }
+    fn sample_weight_clip(&self) -> Option<SampleWeightClip> {
+        self.boost_param_common().sample_weight_clip()
+    }
+    fn sample_weight_wls_clip(&self) -> Option<SampleWeightWlsClip> {
+        self.boost_param_common().sample_weight_wls_clip()
+    }
+    fn is_dom_rec(&self) -> bool {
+        self.boost_param_common().is_dom_rec()
+    }
+    fn cov_way(&self) -> Option<CovWay> {
+        self.boost_param_common().cov_way()
+    }
+    fn batch_way(&self) -> Option<BatchWay> {
+        self.boost_param_common().batch_way()
+    }
+    fn batch_interaction_way(&self) -> Option<BatchInteractionWay> {
+        self.boost_param_common().batch_interaction_way()
+    }
+    fn eff_eps(&self) -> Option<EffEps> {
+        self.boost_param_common().eff_eps()
+    }
+    fn is_monitor(&self) -> bool {
+        self.boost_param_common().is_monitor()
+    }
+    fn monitor_nsnvs(&self) -> Option<&[usize]> {
+        self.boost_param_common().monitor_nsnvs()
+    }
+    fn mhc_region(&self) -> Option<&(SnvId, SnvId)> {
+        self.boost_param_common().mhc_region()
+    }
+
+    fn maf_threshold_logit_common(&self) -> Option<f64> {
+        self.boost_param_common().maf_threshold_logit_common()
+    }
+
+    fn interaction_way(&self) -> Option<InteractionWay> {
+        self.boost_param_common().interaction_way()
+    }
+
+    fn ld_criteria(&self) -> Option<LdCriteria> {
+        self.boost_param_common().ld_criteria()
+    }
+
+    fn acc_metric(&self) -> Option<AccMetric> {
+        self.boost_param_common().acc_metric()
+    }
+
+    // ng: it is hard to use set_() in trait; use in BoostParamCommon
+    //fn set_eps(self, eps: Option<&str>) -> BoostParamCommon {
+    //    BoostParamCommon {
+    //        eps: eps.map(|x| Eps::from_str(x).unwrap()),
+    //        ..self
+    //    }
+    //}
+}
+
+impl BoostParamCommonTrait for BoostParamCommon {
+    fn boost_param_common(&self) -> &BoostParamCommon {
+        self
+    }
+}
+
+impl BoostParamCommon {
+    pub fn iteration(&self) -> Option<IterationNumber> {
+        self.iteration
+    }
+
+    pub fn loss_func(&self) -> LossFunc {
+        self.loss_func
     }
     pub fn eps(&self) -> Option<Eps> {
         self.eps
@@ -615,18 +476,214 @@ impl BoostParam {
     pub fn batch_way(&self) -> Option<BatchWay> {
         self.batch_way
     }
+    pub fn batch_interaction_way(&self) -> Option<BatchInteractionWay> {
+        self.batch_interaction_way
+    }
     pub fn eff_eps(&self) -> Option<EffEps> {
         self.eff_eps
     }
-}
+    pub fn is_monitor(&self) -> bool {
+        self.is_monitor
+    }
+    pub fn monitor_nsnvs(&self) -> Option<&[usize]> {
+        self.monitor_nsnvs.as_deref()
+    }
+    pub fn mhc_region(&self) -> Option<&(SnvId, SnvId)> {
+        self.mhc_region.as_ref()
+    }
+    pub fn maf_threshold_logit_common(&self) -> Option<f64> {
+        self.maf_threshold_logit_common
+    }
 
-/*
-impl BoostingParamTrait for BoostingParam {
-    fn boosting_param(&self) -> BoostingParam {
-        self.boosting_param()
+    pub fn interaction_way(&self) -> Option<InteractionWay> {
+        self.interaction_way
+    }
+
+    pub fn ld_criteria(&self) -> Option<LdCriteria> {
+        self.ld_criteria
+    }
+
+    pub fn acc_metric(&self) -> Option<AccMetric> {
+        self.acc_metic
+    }
+
+    pub fn set_iteration(self, iteration: Option<usize>, iteration_snv: Option<usize>) -> Self {
+        let iteration_opt = match (iteration, iteration_snv) {
+            (None, None) => None,
+            _ => Some(IterationNumber::new(iteration, iteration_snv)),
+        };
+        Self {
+            iteration: iteration_opt,
+            ..self
+        }
+    }
+
+    // pub fn set_iteration(self, iteration: usize) -> Self {
+    //     Self {
+    //         iteration: Some(IterationNumber::Iteration(iteration)),
+    //         ..self
+    //     }
+    // }
+    // pub fn set_iteration_snv(self, iteration: usize) -> Self {
+    //     Self {
+    //         iteration: Some(IterationNumber::Snv(iteration)),
+    //         ..self
+    //     }
+    // }
+    pub fn set_loss_func(self, loss_func: &str) -> Self {
+        Self {
+            loss_func: LossFunc::from_str(loss_func).unwrap(),
+            ..self
+        }
+    }
+    /// Some("None") -> None
+    pub fn set_eps(self, eps: Option<&str>) -> Self {
+        Self {
+            eps: match eps {
+                Some("None") => None,
+                _ => eps.map(|x| Eps::from_str(x).unwrap()),
+            },
+            //eps: eps.map(|x| Eps::from_str(x).unwrap()),
+            ..self
+        }
+    }
+    pub fn set_eff_eps(self, eff_eps: Option<&str>) -> Self {
+        Self {
+            eff_eps: match eff_eps {
+                Some("None") => None,
+                _ => eff_eps.map(|x| EffEps::from_str(x).unwrap()),
+            },
+            ..self
+        }
+    }
+    pub fn set_sample_weight_clip(self, sample_weight_clip: Option<&str>) -> Self {
+        Self {
+            sample_weight_clip: match sample_weight_clip {
+                Some("None") => None,
+                _ => sample_weight_clip.map(|x| SampleWeightClip::from_str(x).unwrap()),
+            },
+            ..self
+        }
+    }
+    pub fn set_sample_weight_wls_clip(self, sample_weight_wls_clip: Option<&str>) -> Self {
+        Self {
+            sample_weight_wls_clip: match sample_weight_wls_clip {
+                Some("None") => None,
+                _ => sample_weight_wls_clip.map(|x| SampleWeightWlsClip::from_str(x).unwrap()),
+            },
+            ..self
+        }
+    }
+    pub fn set_is_dom_rec(self, is_dom_rec: bool) -> Self {
+        Self { is_dom_rec, ..self }
+    }
+    pub fn set_cov_way(self, cov_way: Option<&str>) -> Self {
+        Self {
+            cov_way: match cov_way {
+                Some("None") => None,
+                _ => cov_way.map(|x| CovWay::from_str(x).unwrap()),
+            },
+            ..self
+        }
+    }
+    pub fn set_interaction_way(self, interaction_way: Option<&str>) -> Self {
+        Self {
+            interaction_way: match interaction_way {
+                Some("None") => None,
+                _ => interaction_way.map(|x| InteractionWay::from_str(x).unwrap()),
+            },
+            ..self
+        }
+    }
+
+    pub fn set_batch_way(self, batch_way: Option<&str>) -> Self {
+        Self {
+            batch_way: match batch_way {
+                Some("None") => None,
+                _ => batch_way.map(|x| BatchWay::from_str(x).unwrap()),
+            },
+            ..self
+        }
+    }
+
+    pub fn set_batch_interaction_way(self, batch_interaction_way: Option<&str>) -> Self {
+        Self {
+            batch_interaction_way: match batch_interaction_way {
+                Some("None") => None,
+                _ => batch_interaction_way.map(|x| BatchInteractionWay::from_str(x).unwrap()),
+            },
+            ..self
+        }
+    }
+
+    pub fn set_is_monitor(self, is_monitor: bool) -> Self {
+        Self { is_monitor, ..self }
+    }
+
+    pub fn set_monitor_nsnvs(self, monitor_nsnvs: Option<Vec<usize>>) -> Self {
+        Self {
+            monitor_nsnvs,
+            ..self
+        }
+    }
+
+    pub fn set_mhc_region(self, mhc_region: Option<&str>) -> Self {
+        let mhc_region_parse = match mhc_region {
+            Some(mhc_region) => {
+                //let chrom = mhc_region.split(':').next().unwrap().to_string();
+                let chrom_poss = mhc_region
+                    .split(':')
+                    .map(|x| x.to_string())
+                    .collect::<Vec<String>>();
+                let chrom = chrom_poss[0].clone();
+                let poss = chrom_poss[1].clone();
+
+                let mhc_region_parse = poss
+                    .split('-')
+                    .map(|x| SnvId::new("".to_string(), &chrom, x, "".to_string(), "".to_string()))
+                    .collect::<Vec<SnvId>>();
+                if mhc_region_parse.len() != 2 {
+                    panic!("MHC region must be specified by two snv ids");
+                }
+                Some((mhc_region_parse[0].clone(), mhc_region_parse[1].clone()))
+            }
+            None => None,
+        };
+
+        Self {
+            mhc_region: mhc_region_parse,
+            ..self
+        }
+    }
+
+    pub fn set_maf_threshold_logit_common(self, maf_threshold_logit_common: Option<f64>) -> Self {
+        Self {
+            maf_threshold_logit_common,
+            ..self
+        }
+    }
+
+    pub fn set_ld_criteria(self, ld_r2: Option<f64>, ld_radius: Option<usize>) -> Self {
+        let ld_criteria = match (ld_r2, ld_radius) {
+            (None, None) => None,
+            _ => Some(LdCriteria::new(ld_r2, ld_radius)),
+        };
+        Self {
+            ld_criteria,
+            ..self
+        }
+    }
+
+    pub fn set_acc_metric(self, acc_metric: Option<&str>) -> Self {
+        Self {
+            acc_metic: match acc_metric {
+                Some("None") => None,
+                _ => acc_metric.map(|x| AccMetric::from_str(x).unwrap()),
+            },
+            ..self
+        }
     }
 }
- */
 
 #[derive(Eq, PartialEq, Copy, Clone, Hash, Debug)]
 pub enum BoostType {
@@ -634,13 +691,17 @@ pub enum BoostType {
     ConstAda,
     Logit, // LogitBoost
     LogitNoMissing,
-    LogitAdd, // Additive Logit
+    LogitAdd,          // Additive Logit
+    LogitMhcNoMissing, // Nonadd for MHC and Add for others, MHC region is in BoostParamCommon
+    //LogitMhcNoMissing(SnvId, SnvId), // Nonadd for MHC and Add for others, (start_snv, end_snv) for MHC region
+    LogitAddInteraction, // Additive + interaction Logit
     // both Modelfree and ModelfreeMissing use ModelfreeClassifier
-    //FreeModel,
+    //FreeModel, -> FreeModelNoMissing
     FreeModelMissing,
-    // AdaLogit
-    //Eta(f64), // arg: eta:f64
-    //etalogit(f64)
+    LogitCommon, // Nonadd for common variants only
+                 // AdaLogit
+                 //Eta(f64), // arg: eta:f64
+                 //EtaLogit(f64)
 }
 
 impl BoostType {
@@ -651,19 +712,23 @@ impl BoostType {
             | BoostType::ConstAda
             | BoostType::Logit
             | BoostType::LogitNoMissing
-            | BoostType::LogitAdd => false,
+            | BoostType::LogitAdd
+            | BoostType::LogitMhcNoMissing
+            | BoostType::LogitAddInteraction
+            | BoostType::LogitCommon => false,
         }
     }
 
-    pub fn is_logit(self) -> bool {
-        match self {
-            BoostType::Logit | BoostType::LogitNoMissing => true,
-            BoostType::Ada
-            | BoostType::ConstAda
-            | BoostType::LogitAdd
-            | BoostType::FreeModelMissing => false,
-        }
-    }
+    // use below is_type_logti()
+    //pub fn is_logit(self) -> bool {
+    //    match self {
+    //        BoostType::Logit | BoostType::LogitNoMissing => true,
+    //        BoostType::Ada
+    //        | BoostType::ConstAda
+    //        | BoostType::LogitAdd  // all right?
+    //        | BoostType::FreeModelMissing => false,
+    //    }
+    //}
 
     // FIXME: remove
     // allow missing value in dataset
@@ -683,7 +748,10 @@ impl BoostType {
             BoostType::Ada
             | BoostType::ConstAda
             | BoostType::LogitAdd
-            | BoostType::LogitNoMissing => true,
+            | BoostType::LogitNoMissing
+            | BoostType::LogitMhcNoMissing
+            | BoostType::LogitAddInteraction
+            | BoostType::LogitCommon => true,
             BoostType::FreeModelMissing | BoostType::Logit => false,
         }
     }
@@ -692,14 +760,31 @@ impl BoostType {
     pub fn is_type_ada(self) -> bool {
         match self {
             BoostType::Ada | BoostType::ConstAda | BoostType::FreeModelMissing => true,
-            BoostType::Logit | BoostType::LogitNoMissing | BoostType::LogitAdd => false,
+            BoostType::Logit
+            | BoostType::LogitNoMissing
+            | BoostType::LogitAdd
+            | BoostType::LogitMhcNoMissing
+            | BoostType::LogitAddInteraction
+            | BoostType::LogitCommon => false,
         }
     }
 
     pub fn is_type_logit(self) -> bool {
         match self {
+            BoostType::Logit
+            | BoostType::LogitNoMissing
+            | BoostType::LogitAdd
+            | BoostType::LogitMhcNoMissing
+            | BoostType::LogitAddInteraction
+            | BoostType::LogitCommon => true,
             BoostType::Ada | BoostType::ConstAda | BoostType::FreeModelMissing => false,
-            BoostType::Logit | BoostType::LogitNoMissing | BoostType::LogitAdd => true,
+        }
+    }
+
+    pub fn is_interaction(self) -> bool {
+        match self {
+            BoostType::LogitAddInteraction => true,
+            _ => false,
         }
     }
 
@@ -708,6 +793,8 @@ impl BoostType {
         match self {
             BoostType::Logit | BoostType::LogitNoMissing => "nonadd".to_string(),
             BoostType::LogitAdd => "add".to_string(),
+            BoostType::LogitMhcNoMissing => "mhc_nonadd".to_string(),
+            BoostType::LogitCommon => "common_nonadd".to_string(),
             _ => unimplemented!(),
         }
     }
@@ -730,6 +817,9 @@ impl FromStr for BoostType {
             "logit" => Ok(BoostType::Logit),
             "nonadd" | "logitnomissing" => Ok(BoostType::LogitNoMissing),
             "add" | "logitadd" => Ok(BoostType::LogitAdd),
+            "logitmhcnomissing" => Ok(BoostType::LogitMhcNoMissing),
+            "logitaddinteraction" => Ok(BoostType::LogitAddInteraction),
+            "logitcommon" => Ok(BoostType::LogitCommon),
             _ => Err(format!("Unknown BoostType: {}", str)),
         }
     }
@@ -775,14 +865,6 @@ pub enum Eps {
 }
 
 impl Eps {
-    // TODO -> is_none?
-    /*     pub fn none(self) -> bool {
-        match self {
-            Eps::None => true,
-            _ => false,
-        }
-    } */
-
     pub fn dom(self) -> bool {
         match self {
             Eps::Dom => true,
@@ -980,15 +1062,15 @@ impl FromStr for EffEps {
             //let v = str_iter.next().unwrap().parse::<f64>().unwrap();
             assert_eq!(str_iter.next(), None);
 
-            //if y < 0.0 | y<1.0 {
+            //if y < 0.0 || y<1.0 {
             if y < 1.0 {
                 panic!("y should be 0.0 or positive.")
             }
-            //if z < 0.0 | z<1.0{
+            //if z < 0.0 || z<1.0{
             if z < 1.0 {
                 panic!("z should be 0.0 or positive.")
             }
-            //if u < 0.0 | u<1.0{
+            //if u < 0.0 || u<1.0{
             if u < 1.0 {
                 panic!("u should be 0.0 or positive.")
             }
@@ -1063,7 +1145,7 @@ impl FromStr for EffEps {
             if z < 1.0 {
                 panic!("z should be 0.0 or positive.")
             }
-            if (u < 0.0) | (u > 1.0) {
+            if (u < 0.0) || (u > 1.0) {
                 panic!("u should be 0.0 or positive.")
             }
             //if v < 0.0 {
@@ -1101,7 +1183,7 @@ impl FromStr for EffEps {
             if z < 1.0 {
                 panic!("z should be 0.0 or positive.")
             }
-            if (u < 0.0) | (u > 1.0) {
+            if (u < 0.0) || (u > 1.0) {
                 panic!("u should be 0.0 or positive.")
             }
             //if v < 0.0 {
@@ -1222,23 +1304,28 @@ impl FromStr for SampleWeightWlsClip {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-pub enum BoostMethod {
-    Classic,      // usual boosting
-    Pruning(f64), // arg: clump_r2
-    Ss(f64),
-}
+//// deprecated, use BoostType instead
+//#[derive(Debug, Copy, Clone)]
+//pub enum BoostMethod {
+//    Classic,      // usual boosting
+//    Pruning(f64), // arg: clump_r2
+//    Ss(f64),
+//}
 
-// TODO: mv in boostparam?
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub enum IterationNumber {
     Iteration(usize),
     Snv(usize),
 }
 
-impl Default for IterationNumber {
-    fn default() -> Self {
-        IterationNumber::Snv(100)
+impl IterationNumber {
+    pub fn new(iteration: Option<usize>, iteration_snv: Option<usize>) -> Self {
+        match (iteration, iteration_snv) {
+            (Some(x), None) => Self::Iteration(x),
+            (None, Some(x)) => Self::Snv(x),
+            (None, None) => panic!("Cannot specify neither iteration nor iteration_snv."),
+            (Some(_), Some(_)) => panic!("Cannot specify both iteration and iteration_snv."),
+        }
     }
 }
 
@@ -1276,8 +1363,9 @@ impl FromStr for CovWay {
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub enum BatchWay {
     Every(usize),
-    EveryMaxIter(usize, usize, usize), // (batch_size, batch_max_iter_lr1, batch_max_lr_others)
-    Fix(usize, usize, usize),          // (batch_size, batch_iter_lr1, batch_lr_others)
+    EveryMaxIter(usize, usize, usize), // (batch_size, batch_max_iter_lr1, batch_max_iter_lr_others)
+    Fix(usize, usize, usize),          // (batch_size, batch_iter_lr1, batch_iter_lr_others)
+    LdFix(usize, usize, usize), // (batch_size, batch_iter_lr1, batch_iter_lr_others), batch_size: top # snvs which decreased loss ~ # snvs in LD
 }
 
 impl BatchWay {
@@ -1285,20 +1373,19 @@ impl BatchWay {
         match self {
             Self::Every(x) => x,
             Self::EveryMaxIter(x, ..) | Self::Fix(x, ..) => x,
-            //Self::EveryMaxIter(x, ..) => x,
-            //Self::Fix(x,..) => x,
+            Self::LdFix(x, ..) => x,
         }
     }
     pub fn use_comp_loss(self) -> bool {
         match self {
             Self::Every(..) | Self::EveryMaxIter(..) => true,
-            Self::Fix(..) => false,
+            Self::Fix(..) | Self::LdFix(..) => false,
         }
     }
     pub fn batch_max_iter(self, lr: f64) -> usize {
         match self {
             Self::Every(x) => x,
-            Self::EveryMaxIter(_, x1, x2) | Self::Fix(_, x1, x2) => {
+            Self::EveryMaxIter(_, x1, x2) | Self::Fix(_, x1, x2) | Self::LdFix(_, x1, x2) => {
                 if lr > 0.6f64 {
                     x1
                 } else {
@@ -1359,6 +1446,18 @@ impl FromStr for BatchWay {
             assert_eq!(str_iter.next(), None);
 
             return Ok(BatchWay::Fix(x, y, z));
+        } else if str.starts_with("ldfix-") {
+            let mut str_iter = str.split("-");
+
+            let str0 = str_iter.next().unwrap();
+            assert_eq!(str0, "ldfix");
+
+            let x = str_iter.next().unwrap().parse::<usize>().unwrap();
+            let y = str_iter.next().unwrap().parse::<usize>().unwrap();
+            let z = str_iter.next().unwrap().parse::<usize>().unwrap();
+            assert_eq!(str_iter.next(), None);
+
+            return Ok(BatchWay::LdFix(x, y, z));
         } else {
             // TODO: deprecate
             // assume usize
@@ -1371,6 +1470,212 @@ impl FromStr for BatchWay {
     }
 }
 
+#[derive(PartialEq, Copy, Clone, Debug)]
+pub enum BatchInteractionWay {
+    // batchsize for interaction set, # interaction to filter from batch,  # interaction to filter from batch_all
+    // batchsize is not used to judge renewing batch or not
+    FixFilter(usize, usize, usize),
+    // max # for initial candidates
+    // initial_size, (same as FixFilter)
+    //InitialMaxFixFilter(usize, usize, usize, usize),
+    //
+    // ld_width, (same as FixFilter)
+    // To create initial candidates, prepare snv pairs of SNVs which has largest loss in ld_width bp
+    // For the first iteration, the smallest {#interaction all} will be extract from the candidates.
+    // For the next iteration, the selected SNVs will be added.
+    InitialLdWidthMaxFixFilter(usize, usize, usize, usize),
+    InitialLdWidthRandomFixFilter(usize, usize, usize, usize),
+    InitialAllFixFilter(usize, usize, usize),
+    // TODO: rewite
+    // InitialAllFixFilter{
+    //             batch_size: usize,
+    //              filter_size_batch: usize,
+    //             filter_size_all: usize,
+    //}
+}
+
+impl BatchInteractionWay {
+    pub fn is_filter_all(self) -> bool {
+        match self {
+            Self::FixFilter(..) => true,
+            Self::InitialLdWidthMaxFixFilter(..) => true,
+            Self::InitialLdWidthRandomFixFilter(..) => true,
+            Self::InitialAllFixFilter(..) => true,
+        }
+    }
+
+    pub fn is_initial(self) -> bool {
+        match self {
+            Self::FixFilter(..) => false,
+            Self::InitialLdWidthMaxFixFilter(..) => true,
+            Self::InitialLdWidthRandomFixFilter(..) => true,
+            Self::InitialAllFixFilter(..) => true,
+        }
+    }
+
+    pub fn batch_size(self) -> usize {
+        match self {
+            Self::FixFilter(x, ..) => x,
+            Self::InitialLdWidthMaxFixFilter(_, x, _, _) => x,
+            Self::InitialLdWidthRandomFixFilter(_, x, _, _) => x,
+            Self::InitialAllFixFilter(x, _, _) => x,
+        }
+    }
+
+    pub fn filter_size_batch(self) -> usize {
+        match self {
+            Self::FixFilter(_, x, _) => x,
+            Self::InitialLdWidthMaxFixFilter(_, _, x, _) => x,
+            Self::InitialLdWidthRandomFixFilter(_, _, x, _) => x,
+            Self::InitialAllFixFilter(_, x, _) => x,
+        }
+    }
+
+    pub fn filter_size_all(self) -> usize {
+        match self {
+            Self::FixFilter(.., x) => x,
+            Self::InitialLdWidthMaxFixFilter(_, _, _, x) => x,
+            Self::InitialLdWidthRandomFixFilter(_, _, _, x) => x,
+            Self::InitialAllFixFilter(_, _, x) => x,
+        }
+    }
+
+    pub fn ld_width(self) -> usize {
+        match self {
+            Self::FixFilter(..) => panic!("ld_width is not used for FixFilter."),
+            Self::InitialLdWidthMaxFixFilter(x, ..) => x,
+            Self::InitialLdWidthRandomFixFilter(x, ..) => x,
+            Self::InitialAllFixFilter(..) => {
+                panic!("ld_width is not used for InitialAllFixFilter.")
+            }
+        }
+    }
+}
+
+impl FromStr for BatchInteractionWay {
+    type Err = String;
+    fn from_str(str: &str) -> Result<Self, Self::Err> {
+        if str.starts_with("fixfilter-") {
+            let mut str_iter = str.split("-");
+
+            let str0 = str_iter.next().unwrap();
+            assert_eq!(str0, "fixfilter");
+
+            let x = str_iter.next().unwrap().parse::<usize>().unwrap();
+            let y = str_iter.next().unwrap().parse::<usize>().unwrap();
+            let z = str_iter.next().unwrap().parse::<usize>().unwrap();
+            assert_eq!(str_iter.next(), None);
+
+            if x > z {
+                panic!("batchsize should be <= filter_size_all.")
+            }
+
+            return Ok(BatchInteractionWay::FixFilter(x, y, z));
+        } else if str.starts_with("initialldwidthmaxfixfilter-") {
+            let mut str_iter = str.split("-");
+
+            let str0 = str_iter.next().unwrap();
+            assert_eq!(str0, "initialldwidthmaxfixfilter");
+
+            let u = str_iter.next().unwrap().parse::<usize>().unwrap();
+            let x = str_iter.next().unwrap().parse::<usize>().unwrap();
+            let y = str_iter.next().unwrap().parse::<usize>().unwrap();
+            let z = str_iter.next().unwrap().parse::<usize>().unwrap();
+            assert_eq!(str_iter.next(), None);
+
+            if x > z {
+                panic!("batchsize should be <= filter_size_all.")
+            }
+
+            return Ok(BatchInteractionWay::InitialLdWidthMaxFixFilter(u, x, y, z));
+        } else if str.starts_with("initialldwidthrandomfixfilter-") {
+            let mut str_iter = str.split("-");
+
+            let str0 = str_iter.next().unwrap();
+            assert_eq!(str0, "initialldwidthrandomfixfilter");
+
+            let u = str_iter.next().unwrap().parse::<usize>().unwrap();
+            let x = str_iter.next().unwrap().parse::<usize>().unwrap();
+            let y = str_iter.next().unwrap().parse::<usize>().unwrap();
+            let z = str_iter.next().unwrap().parse::<usize>().unwrap();
+            assert_eq!(str_iter.next(), None);
+
+            if x > z {
+                panic!("batchsize should be <= filter_size_all.")
+            }
+
+            return Ok(BatchInteractionWay::InitialLdWidthRandomFixFilter(
+                u, x, y, z,
+            ));
+        } else if str.starts_with("initialallfixfilter-") {
+            let mut str_iter = str.split("-");
+
+            let str0 = str_iter.next().unwrap();
+            assert_eq!(str0, "initialallfixfilter");
+
+            //let u = str_iter.next().unwrap().parse::<usize>().unwrap();
+            let x = str_iter.next().unwrap().parse::<usize>().unwrap();
+            let y = str_iter.next().unwrap().parse::<usize>().unwrap();
+            let z = str_iter.next().unwrap().parse::<usize>().unwrap();
+            assert_eq!(str_iter.next(), None);
+
+            if x > z {
+                panic!("batchsize should be <= filter_size_all.")
+            }
+
+            return Ok(BatchInteractionWay::InitialAllFixFilter(x, y, z));
+        } else {
+            panic!("Unknown BatchInteractionWay: {}", str);
+        }
+    }
+}
+
+#[derive(PartialEq, Copy, Clone, Debug)]
+pub enum InteractionWay {
+    //OneBySelected,
+    //OneBySelectedLd, // use ld_radius
+    SelectedBySelected,
+    SelectedBySelectedLd,
+    //OneBySelectedForce, //force selecte one interaction term after selecting one SNV
+    //Every(usize),
+}
+
+impl InteractionWay {}
+
+impl FromStr for InteractionWay {
+    type Err = String;
+    fn from_str(str: &str) -> Result<Self, Self::Err> {
+        //if str == "onebyselected" {
+        //    return Ok(InteractionWay::OneBySelected);
+        //} else if str == "onebyselectedld" {
+        //    return Ok(InteractionWay::OneBySelectedLd);
+        if str == "selectedbyselected" {
+            return Ok(InteractionWay::SelectedBySelected);
+        } else if str == "selectedbyselectedld" {
+            return Ok(InteractionWay::SelectedBySelectedLd);
+        }
+        Err(format!("Unknown InteractionWay: {}", str))
+    }
+}
+
+#[derive(PartialEq, Copy, Clone, Debug)]
+pub enum AccMetric {
+    CovAdjustedPseudoR2,
+    AUC,
+}
+
+impl FromStr for AccMetric {
+    type Err = String;
+    fn from_str(str: &str) -> Result<Self, Self::Err> {
+        if str == "cov-adjusted-pseudo-r2" {
+            return Ok(AccMetric::CovAdjustedPseudoR2);
+        } else if str == "auc" {
+            return Ok(AccMetric::AUC);
+        }
+        Err(format!("Unknown AccMetric: {}", str))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1378,7 +1683,7 @@ mod tests {
     #[test]
     fn test_boosting_params() {
         let lrs = vec![1.0, 0.1];
-        let boost_params = BoostParams::default().set_learning_rates(lrs);
+        let boost_params = BoostParamLrs::default().set_learning_rates(lrs);
 
         let mut boost_iter = boost_params.into_iter();
 

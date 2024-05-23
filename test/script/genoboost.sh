@@ -26,12 +26,17 @@ cp ./projects_rust/target/release/genoboost ./genoboost
     --dir "$dir_wgt" \
     --file-genot "$file_plink" \
     --file-phe "$file_cov" \
+	--learning-rates "0.5 0.2" \
     --cov age,sex \
     --major-a2-train \
     --seed 51
 
+
+	#--verbose \
+
 # score
 ./genoboost score \
+	--verbose \
     --dir-score "$dir_score" \
     --dir-wgt "$dir_wgt" \
     --file-genot "$file_plink" \

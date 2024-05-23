@@ -408,7 +408,7 @@ fn adjust_eps_logit_nondom_add_cat(
     let (wzs_sum1_, is_eps1) = add_eps_sum(wzs_sum1, d1, n1, epsilons, negative_for_cont);
     let (wzs_sum0_, is_eps0) = add_eps_sum(wzs_sum0, d0, n0, epsilons, negative_for_cont);
 
-    let is_eps = is_eps2 | is_eps1 | is_eps0;
+    let is_eps = is_eps2 || is_eps1 || is_eps0;
 
     ((wzs_sum2_, wzs_sum1_, wzs_sum0_), is_eps)
 }
@@ -470,7 +470,7 @@ fn adjust_eps_logit_nondom_add_cat_allcellallsnvs(
     let (wzs_sum1_, is_eps1) = add_eps_sum(wzs_sum1, epsilons, negative_for_cont);
     let (wzs_sum0_, is_eps0) = add_eps_sum(wzs_sum0, epsilons, negative_for_cont);
 
-    let is_eps = is_eps2 | is_eps1 | is_eps0;
+    let is_eps = is_eps2 || is_eps1 || is_eps0;
 
     ((wzs_sum2_, wzs_sum1_, wzs_sum0_), is_eps)
 }
@@ -964,7 +964,7 @@ pub unsafe fn calculate_table7_sum_simd(
         let ys_b32 = u32::from_le_bytes(ys[4 * ni..4 * (ni + 1)].try_into().unwrap());
         let yv_32 = _mm256_set1_epi32(ys_b32 as i32);
 
-        // bitwise not is fastest in xor by xor(v, ones)
+        // bitwise not is fastest using xor by xor(v, ones)
         // D2sum = y & pred0 & pred1 = y & ( pred0 & pred1 )
         // N2sum = !y & pred0 & pred1 = !y & ( pred0 & pred1 )
         // D1sum = y & pred0 & !pred1 = y & ( !pred1 & pred0 )

@@ -11,21 +11,22 @@ plink2 = ["genetics/plink2"]
 
 
 [dependencies]
-genetics={ path="../genetics",default-features = false}
-cmatrix={ path="../cmatrix"}
-mysmartcore={ path="../../lib/mysmartcore"}
-clap={version="4.3.4", features = ["derive"]}
-rayon="1.5"
+genetics = { path = "../genetics", default-features = false }
+cmatrix = { path = "../cmatrix" }
+#mysmartcore={ path="../../lib/mysmartcore"}
+clap = { version = "4.3.4", features = ["derive"] }
+rayon = "1.5"
 #rustc-test="0.3"
 #smartcore="0.2.0"
-log="0.4"
-env_logger="0.9"
-crossbeam="0.8"
+log = "0.4"
+env_logger = "0.9"
+crossbeam = "0.8"
 #"numpy"="0.17.2"
 assert_float_eq = "1"
 #itertools = "0.11.0"
-rand = "0.8.5"
-#rand_chacha="0.3.1"
+#rand = "0.8.5"
+indoc = "2"
+csv = "1.1"
 
 ##[dependencies.pyo3]
 ##version="0.17.3"

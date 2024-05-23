@@ -3,8 +3,6 @@
 //! size: sample size or snv size
 //! predictions shape is m * 2 * n and different from 2 * m * n of C++ ver.
 //! This does not require m when getting index of part of predictions
-// TODO: many of functions here should move to genetics_rust::{plink,genotype}
-// rename to GenotTwin->Genot
 
 use super::base_genot::{BaseGenot, BaseGenotMut, BaseGenotSnv, BaseGenotSnvMut};
 use cmatrix::prelude::*;
@@ -43,16 +41,15 @@ pub struct GenotMut<'a>(CMatrixMut<'a>);
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct GenotSnv(CVec);
+
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct GenotSnvRef<'a>(CVecRef<'a>);
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct GenotSnvMut<'a>(CVecMut<'a>);
 
-/*
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct GenotSnvModel(CBits);
- */
+//#[derive(Debug, PartialEq, Eq, Clone)]
+//pub struct GenotSnvModel(CBits);
 
 impl BaseGenot for Genot {
     type Inner = CMatrix;
@@ -84,6 +81,10 @@ impl Genot {
     }
     pub fn new_zeros(m: usize, n: usize) -> Genot {
         Genot(CMatrix::new_zeros(m, n, 2))
+    }
+
+    pub fn byte_self(&self) -> usize {
+        Genot::byte(self.m(), self.n())
     }
 
     pub fn extract_snvs(self, use_snvs: &[bool]) -> Genot {
@@ -270,6 +271,18 @@ mod tests {
     }
 
     #[test]
+    fn test_fill_missing_mode_maf() {
+        let vec = vec![0, 1, 1, 2, 1, 3];
+        let maf = 0.1f64;
+        let vec_exp = vec![0u8, 1, 1, 2, 1, 0];
+        let mut g = GenotSnv::new(&vec);
+
+        g.as_genot_snv_mut_snv().fill_missing_mode_maf(maf);
+
+        assert_eq!(&g.vals(), &vec_exp);
+    }
+
+    #[test]
     fn test_fill_missing_mode() {
         let vec = vec![0, 1, 1, 2, 1, 3];
         let vec_exp = vec![0u8, 1, 1, 2, 1, 1];
@@ -291,8 +304,6 @@ mod tests {
 
         assert_eq!(&g.vals(), &vec_exp);
     }
-
-    //TODO: fill_missing_mode_maf()
 
     #[test]
     fn test_reverse_allele() {

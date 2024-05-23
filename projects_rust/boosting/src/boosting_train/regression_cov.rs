@@ -155,7 +155,7 @@ pub fn logistic_regression_covs(samples: &Samples, iteration_start: usize) -> Ve
     let mut wgts_cov: Vec<WgtBoost> = Vec::new();
     for (wgt_i, wgt) in wgts.into_iter().enumerate() {
         let iteration = iteration_start + wgt_i;
-        let wgt_boost_cov = WgtBoost::construct_wgt_iteration(wgt, iteration);
+        let wgt_boost_cov = WgtBoost::new_wgt_iteration(wgt, iteration);
         wgts_cov.push(wgt_boost_cov);
     }
 

@@ -2,6 +2,9 @@
 
 This code is fork of smartcore v0.3.1 and modified by R.Ohta.
 
+Functions around regression were not modified to avoid error.
+- `./src/optimization/first_order/lbfgs.rs:112` is added by R.Ohta, to avoid too large score and probability being 0 or 1. 
+
 
 ----
 

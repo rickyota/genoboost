@@ -1,5 +1,8 @@
 use std::{convert::TryFrom, str::FromStr};
 
+use crate::genot::prelude::*;
+use crate::{genot_calc, LdCriteria};
+
 use super::Chrom;
 
 type Alleles = (String, String);
@@ -11,17 +14,15 @@ type Alleles = (String, String);
 /// all programs uses minor/major but input plink might have different one
 #[derive(Clone, Hash, Debug, Default)]
 pub struct SnvId {
-    // TODO: rs->id
-    rs: String,
+    id: String,
     chrom: Chrom,
     pos: usize,
     alleles: Alleles,
     // only for one letter
     alleles_flip: Alleles,
-    //alleles_ref_alt: Alleles,
+    // assume (chrom, pos, a1, a2) does not include ":" and sida is unique
     sida: String,
     sid: String,
-    //vid: String,
 }
 
 // how to implement?
@@ -40,8 +41,9 @@ fn flip_allele(a: &str) -> String {
 
 impl SnvId {
     // a1, a2 cannot include other than "ACGT".
-    pub fn construct_snv_index(
-        rs: String,
+    //pub fn new_snv_index(
+    pub fn new(
+        id: String,
         chrom: &str,
         pos: &str,
         a1: String,
@@ -50,7 +52,7 @@ impl SnvId {
         //use_snv_pos: bool,
     ) -> SnvId {
         let mut snv = SnvId {
-            rs,
+            id,
             chrom: Chrom::from_str(&chrom).unwrap(),
             pos: pos.parse::<usize>().unwrap(),
             alleles: (a1, a2),
@@ -59,18 +61,18 @@ impl SnvId {
             sid: "".to_string(),
             //vid: "".to_string(),
         };
+        // TODO: use
         //snv.check_alleles();
         snv.set_alleles_flip();
         snv.set_sida();
         snv.set_sid();
-        //snv.set_vid(use_snv_pos);
         snv
     }
 
     // for use_snvs
-    pub fn construct_snv_index_rs(rs: String) -> SnvId {
+    pub fn new_id(id: String) -> SnvId {
         let snv = SnvId {
-            rs,
+            id,
             // dummy for chrom1
             chrom: Chrom::try_from(1).unwrap(),
             pos: 0,
@@ -85,7 +87,6 @@ impl SnvId {
         snv
     }
 
-    // TODO: better way
     // TODO: add N etc.
     // TODO: 1kg contained '<DEL>'
     /// should consist of A,C,G,T
@@ -132,8 +133,8 @@ impl SnvId {
         self.set_sida();
     }
 
-    pub fn rs(&self) -> &str {
-        &self.rs
+    pub fn id(&self) -> &str {
+        &self.id
     }
 
     pub fn chrom(&self) -> &Chrom {
@@ -152,11 +153,12 @@ impl SnvId {
         &self.sid
     }
 
+    /// To compare snvs with or without alelles
     pub fn vid(&self, use_snv_pos: bool) -> &str {
         if use_snv_pos {
             &self.sid
         } else {
-            &self.rs
+            &self.id
         }
     }
 
@@ -236,7 +238,7 @@ impl SnvId {
     }
 
     // list all candidates
-    // TODO: renmae
+    //fn flip_or_rev(&self) -> Option<((&str, &str), (&str, &str), (&str, &str), (&str, &str))> {
     fn flip_or_rev(
         &self,
     ) -> (
@@ -249,11 +251,13 @@ impl SnvId {
 
         if !self.is_one_letter() {
             return (a, a_rev, None);
+            //return None;
         }
         let a_flip = self.alleles_flip();
         let a_rev_flip = (a_flip.1, a_flip.0);
 
         (a, a_rev, Some((a_flip, a_rev_flip)))
+        //Some((a, a_rev, a_flip, a_rev_flip))
     }
 
     // to reverse genotype
@@ -269,6 +273,82 @@ impl SnvId {
         } else {
             return self.alleles() == snv.alleles_rev();
         }
+    }
+
+    pub fn is_in_region(&self, snv_start: &SnvId, snv_end: &SnvId) -> bool {
+        if snv_start.chrom() != snv_end.chrom() {
+            panic!("chroms are different");
+        }
+
+        if snv_start.pos() > snv_end.pos() {
+            panic!("start pos is larger than end pos");
+        }
+
+        if self.chrom() != snv_start.chrom() {
+            return false;
+        }
+
+        (self.pos() >= snv_start.pos()) && (self.pos() <= snv_end.pos())
+
+        //if self.pos() <= snv_start.pos() {
+        //if self.pos() < snv_start.pos() {
+        //    return false;
+        //}
+        //if self.pos() >= snv_end.pos() {
+        //if self.pos() > snv_end.pos() {
+        //    return false;
+        //}
+        //return true;
+    }
+
+    // TODO: GenotSnv should not be here?
+    pub fn is_in_ld_criteria(
+        &self,
+        snv: &SnvId,
+        ld_criteria: LdCriteria,
+        gsnv_self: &GenotSnvRef,
+        gsnv: &GenotSnvRef,
+    ) -> bool {
+        match ld_criteria {
+            LdCriteria::R2(ld_r2) => self.is_in_ld_r2(snv, ld_r2, gsnv_self, gsnv),
+            LdCriteria::Radius(ld_radius) => self.is_in_ld_radius(snv, ld_radius),
+        }
+    }
+
+    fn is_in_ld_radius(&self, snv: &SnvId, ld_radius: usize) -> bool {
+        if self.chrom() != snv.chrom() {
+            return false;
+        }
+        // usize cannot be minus
+        if self.pos() > snv.pos() {
+            return (self.pos() - snv.pos()) <= ld_radius;
+        } else {
+            return (snv.pos() - self.pos()) <= ld_radius;
+        }
+    }
+
+    /// If not on the same Chrom, do not calculate
+    fn is_in_ld_r2(
+        &self,
+        snv: &SnvId,
+        ld_r2: f64,
+        gsnv_self: &GenotSnvRef,
+        gsnv: &GenotSnvRef,
+    ) -> bool {
+        if self.chrom() != snv.chrom() {
+            return false;
+        }
+
+        let r2 = genot_calc::calc_r2(gsnv_self, gsnv);
+
+        r2 >= ld_r2
+
+        //// usize cannot be minus
+        //if self.pos() > snv.pos() {
+        //    return (self.pos() - snv.pos()) <= ld_radius;
+        //} else {
+        //    return (snv.pos() - self.pos()) <= ld_radius;
+        //}
     }
 }
 
@@ -301,6 +381,7 @@ impl PartialEq for SnvId {
         }
         // same pos
         let a_other = other.alleles();
+
         let (a, a_flip, alleles_rev) = self.flip_or_rev();
 
         if (a == a_other) || (a_flip == a_other) {
@@ -314,6 +395,16 @@ impl PartialEq for SnvId {
             }
         }
         return false;
+
+        //match self.flip_or_rev() {
+        //    None => self.alleles() == a_other,
+        //    Some((a, a_flip, a_rev, a_rev_flip)) => {
+        //        (a == a_other)
+        //            || (a_flip == a_other)
+        //            || (a_rev == a_other)
+        //            || (a_rev_flip == a_other)
+        //    }
+        //}
     }
 }
 
@@ -327,9 +418,7 @@ impl PartialOrd for SnvId {
 }
 
 impl Ord for SnvId {
-    // TODO: introducing self.eq is ok?
-    // result of sorting would not be unique?
-    // but not using eq is also strange
+    // TODO: order and eq do not match; is this all right?
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // if eq, return Order.Equal first
         if self.eq(other) {
@@ -376,162 +465,252 @@ mod tests {
 
     /// test of TryFrom
     #[test]
-    fn test_construct_snv_index_string() {
-        let snv_index = SnvId::construct_snv_index(
-            "rs1".to_owned(),
-            "1",
-            "123",
-            "A".to_owned(),
-            "C".to_owned(),
-        );
-        assert_eq!(snv_index.rs(), "rs1");
-        assert_eq!(snv_index.chrom(), &Chrom::Auto(1));
-        assert_eq!(snv_index.pos(), 123);
-        assert_eq!(snv_index.a1(), "A");
-        assert_eq!(snv_index.a2(), "C");
+    fn test_construct_snv_id_string() {
+        let snv_id = SnvId::new("rs1".to_owned(), "1", "123", "A".to_owned(), "C".to_owned());
+        assert_eq!(snv_id.id(), "rs1");
+        assert_eq!(snv_id.chrom(), &Chrom::Auto(1));
+        assert_eq!(snv_id.pos(), 123);
+        assert_eq!(snv_id.a1(), "A");
+        assert_eq!(snv_id.a2(), "C");
     }
 
     #[test]
     #[should_panic]
-    fn test_construct_snv_index_string_panic() {
-        let _ = SnvId::construct_snv_index(
-            "rs1".to_owned(),
-            "1",
-            "123",
-            "N".to_owned(),
-            "N".to_owned(),
-        );
+    fn test_construct_snv_id_string_panic() {
+        let _ = SnvId::new("rs1".to_owned(), "1", "123", "N".to_owned(), "N".to_owned());
     }
 
     #[test]
     fn test_rev_flip() {
-        let snv_index = SnvId::construct_snv_index(
-            "rs1".to_owned(),
-            "1",
-            "123",
-            "A".to_owned(),
-            "C".to_owned(),
-        );
-        assert_eq!(snv_index.alleles_rev(), ("C", "A"));
-        assert_eq!(snv_index.alleles_flip(), ("T", "G"));
-        assert_eq!(snv_index.alleles_rev_flip(), ("G", "T"));
+        let snv_id = SnvId::new("rs1".to_owned(), "1", "123", "A".to_owned(), "C".to_owned());
+        assert_eq!(snv_id.alleles_rev(), ("C", "A"));
+        assert_eq!(snv_id.alleles_flip(), ("T", "G"));
+        assert_eq!(snv_id.alleles_rev_flip(), ("G", "T"));
     }
 
     #[test]
     fn test_rev_flip_long() {
-        let snv_index = SnvId::construct_snv_index(
+        let snv_id = SnvId::new(
             "rs1".to_owned(),
             "1",
             "123",
             "AAT".to_owned(),
             "C".to_owned(),
         );
-        assert_eq!(snv_index.alleles_rev(), ("C", "AAT"));
-        assert_eq!(snv_index.alleles_flip(), ("", ""));
-        assert_eq!(snv_index.alleles_rev_flip(), ("", ""));
+        assert_eq!(snv_id.alleles_rev(), ("C", "AAT"));
+        assert_eq!(snv_id.alleles_flip(), ("", ""));
+        assert_eq!(snv_id.alleles_rev_flip(), ("", ""));
+    }
+
+    #[test]
+    fn test_flip_or_rev() {
+        let snv_id = SnvId::new("rs1".to_owned(), "1", "123", "A".to_owned(), "C".to_owned());
+        assert_eq!(snv_id.id(), "rs1");
+        assert_eq!(snv_id.chrom(), &Chrom::Auto(1));
+        assert_eq!(snv_id.pos(), 123);
+        assert_eq!(snv_id.a1(), "A");
+        assert_eq!(snv_id.a2(), "C");
+
+        let alleles = snv_id.flip_or_rev();
+        assert_eq!(alleles.0, ("A", "C"));
+        assert_eq!(alleles.1, ("C", "A"));
+        assert_eq!(alleles.2.unwrap().0, ("T", "G"));
+        assert_eq!(alleles.2.unwrap().1, ("G", "T"));
+    }
+
+    #[test]
+    fn test_flip_or_rev_long() {
+        let snv_id = SnvId::new(
+            "rs1".to_owned(),
+            "1",
+            "123",
+            "AAT".to_owned(),
+            "C".to_owned(),
+        );
+
+        let alleles = snv_id.flip_or_rev();
+        assert_eq!(alleles.0, ("AAT", "C"));
+        assert_eq!(alleles.1, ("C", "AAT"));
+        assert_eq!(alleles.2, None);
     }
 
     #[test]
     fn test_is_rev() {
-        let snv_index1 = SnvId::construct_snv_index(
-            "rs1".to_owned(),
-            "1",
-            "123",
-            "A".to_owned(),
-            "C".to_owned(),
-        );
-        let snv_index2 = SnvId::construct_snv_index(
-            "rs1".to_owned(),
-            "1",
-            "123",
-            "A".to_owned(),
-            "C".to_owned(),
-        );
-        assert!(!snv_index1.is_rev(&snv_index2, false));
+        let snv_id_1 = SnvId::new("rs1".to_owned(), "1", "123", "A".to_owned(), "C".to_owned());
+        let snv_id_2 = SnvId::new("rs1".to_owned(), "1", "123", "A".to_owned(), "C".to_owned());
+        assert!(!snv_id_1.is_rev(&snv_id_2, false));
 
-        let snv_index2 = SnvId::construct_snv_index(
-            "rs1".to_owned(),
-            "1",
-            "123",
-            "T".to_owned(),
-            "G".to_owned(),
-        );
-        assert!(!snv_index1.is_rev(&snv_index2, false));
+        let snv_id_2 = SnvId::new("rs1".to_owned(), "1", "123", "T".to_owned(), "G".to_owned());
+        assert!(!snv_id_1.is_rev(&snv_id_2, false));
 
-        let snv_index2 = SnvId::construct_snv_index(
-            "rs1".to_owned(),
-            "1",
-            "123",
-            "C".to_owned(),
-            "A".to_owned(),
-        );
-        assert!(snv_index1.is_rev(&snv_index2, false));
+        let snv_id_2 = SnvId::new("rs1".to_owned(), "1", "123", "C".to_owned(), "A".to_owned());
+        assert!(snv_id_1.is_rev(&snv_id_2, false));
 
-        let snv_index2 = SnvId::construct_snv_index(
-            "rs1".to_owned(),
-            "1",
-            "123",
-            "G".to_owned(),
-            "T".to_owned(),
-        );
-        assert!(snv_index1.is_rev(&snv_index2, false));
+        let snv_id_2 = SnvId::new("rs1".to_owned(), "1", "123", "G".to_owned(), "T".to_owned());
+        assert!(snv_id_1.is_rev(&snv_id_2, false));
 
         // alleles do not match
-        let snv_index2 = SnvId::construct_snv_index(
-            "rs1".to_owned(),
-            "1",
-            "123",
-            "A".to_owned(),
-            "G".to_owned(),
-        );
-        assert!(!snv_index1.is_rev(&snv_index2, false));
+        let snv_id_2 = SnvId::new("rs1".to_owned(), "1", "123", "A".to_owned(), "G".to_owned());
+        assert!(!snv_id_1.is_rev(&snv_id_2, false));
 
         // snv does not match
-        let snv_index2 = SnvId::construct_snv_index(
-            "rs2".to_owned(),
-            "1",
-            "124",
-            "C".to_owned(),
-            "A".to_owned(),
-        );
-        assert!(!snv_index1.is_rev(&snv_index2, false));
+        let snv_id_2 = SnvId::new("rs2".to_owned(), "1", "124", "C".to_owned(), "A".to_owned());
+        assert!(!snv_id_1.is_rev(&snv_id_2, false));
+    }
+
+    #[test]
+    fn test_is_in_region() {
+        let snv_id = SnvId::new("rs1".to_owned(), "1", "100", "A".to_owned(), "C".to_owned());
+
+        let inputs = [
+            ((1, 50, 150), true),   // in
+            ((1, 100, 150), true),  // on the border
+            ((1, 120, 150), false), // out
+            ((1, 50, 80), false),   // out
+            ((2, 100, 150), false), // chrom is different
+        ];
+
+        for ((chrom, pos_start, pos_end), exp) in inputs {
+            let snv_start = SnvId::new(
+                "rs1".to_owned(),
+                &chrom.to_string(),
+                &pos_start.to_string(),
+                "A".to_owned(),
+                "C".to_owned(),
+            );
+            let snv_end = SnvId::new(
+                "rs1".to_owned(),
+                &chrom.to_string(),
+                &pos_end.to_string(),
+                "A".to_owned(),
+                "C".to_owned(),
+            );
+            assert_eq!(snv_id.is_in_region(&snv_start, &snv_end), exp);
+        }
+    }
+
+    //#[test]
+    //fn test_is_in_region() {
+    //    let snv_id = SnvId::new("rs1".to_owned(), "1", "100", "A".to_owned(), "C".to_owned());
+
+    //    let snv_start = SnvId::new("rs1".to_owned(), "1", "50", "A".to_owned(), "C".to_owned());
+    //    let snv_end = SnvId::new("rs1".to_owned(), "1", "150", "A".to_owned(), "C".to_owned());
+
+    //    assert!(snv_id.is_in_region(&snv_start, &snv_end));
+    //}
+
+    //#[test]
+    //fn test_is_in_region_2() {
+    //    // when snv_start == snv_end
+    //    let snv_id = SnvId::new("rs1".to_owned(), "1", "100", "A".to_owned(), "C".to_owned());
+
+    //    let snv_start = SnvId::new("rs1".to_owned(), "1", "100", "A".to_owned(), "C".to_owned());
+    //    let snv_end = SnvId::new("rs1".to_owned(), "1", "150", "A".to_owned(), "C".to_owned());
+
+    //    assert!(snv_id.is_in_region(&snv_start, &snv_end));
+    //}
+
+    //#[test]
+    //fn test_is_in_region_3() {
+    //    // outside
+    //    let snv_id = SnvId::new("rs1".to_owned(), "1", "100", "A".to_owned(), "C".to_owned());
+
+    //    let snv_start = SnvId::new("rs1".to_owned(), "1", "120", "A".to_owned(), "C".to_owned());
+    //    let snv_end = SnvId::new("rs1".to_owned(), "1", "150", "A".to_owned(), "C".to_owned());
+
+    //    assert!(!snv_id.is_in_region(&snv_start, &snv_end));
+    //}
+
+    //#[test]
+    //fn test_is_in_region_4() {
+    //    // outside
+    //    let snv_id = SnvId::new("rs1".to_owned(), "1", "100", "A".to_owned(), "C".to_owned());
+
+    //    let snv_start = SnvId::new("rs1".to_owned(), "1", "50", "A".to_owned(), "C".to_owned());
+    //    let snv_end = SnvId::new("rs1".to_owned(), "1", "80", "A".to_owned(), "C".to_owned());
+
+    //    assert!(!snv_id.is_in_region(&snv_start, &snv_end));
+    //}
+
+    //#[test]
+    //fn test_is_in_region_5() {
+    //    // chrom is different
+    //    let snv_id = SnvId::new("rs1".to_owned(), "1", "100", "A".to_owned(), "C".to_owned());
+
+    //    let snv_start = SnvId::new("rs1".to_owned(), "2", "100", "A".to_owned(), "C".to_owned());
+    //    let snv_end = SnvId::new("rs1".to_owned(), "2", "150", "A".to_owned(), "C".to_owned());
+
+    //    assert!(!snv_id.is_in_region(&snv_start, &snv_end));
+    //}
+
+    #[test]
+    #[should_panic]
+    fn test_is_in_region_panic_1() {
+        // when chrom of snv_start != snv_end
+        let snv_id = SnvId::new("rs1".to_owned(), "1", "100", "A".to_owned(), "C".to_owned());
+
+        let snv_start = SnvId::new("rs1".to_owned(), "1", "50", "A".to_owned(), "C".to_owned());
+        let snv_end = SnvId::new("rs1".to_owned(), "2", "150", "A".to_owned(), "C".to_owned());
+
+        assert!(snv_id.is_in_region(&snv_start, &snv_end));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_is_in_region_panic_2() {
+        // when pos of start < end
+        let snv_id = SnvId::new("rs1".to_owned(), "1", "100", "A".to_owned(), "C".to_owned());
+
+        let snv_start = SnvId::new("rs1".to_owned(), "1", "150", "A".to_owned(), "C".to_owned());
+        let snv_end = SnvId::new("rs1".to_owned(), "1", "50", "A".to_owned(), "C".to_owned());
+
+        assert!(snv_id.is_in_region(&snv_start, &snv_end));
+    }
+
+    #[test]
+    fn test_is_in_ld_radius() {
+        let snv_id = SnvId::new("rs1".to_owned(), "1", "100", "A".to_owned(), "C".to_owned());
+
+        let ldr = 50;
+
+        let inputs = [
+            ((1, 70), true),   // in
+            ((1, 120), true),  // in
+            ((1, 50), true),   // on the border
+            ((1, 20), false),  // out
+            ((1, 180), false), // out
+            ((2, 100), false), // chrom is different
+        ];
+
+        for ((chrom, pos_start), exp) in inputs {
+            let snv_start = SnvId::new(
+                "rs1".to_owned(),
+                &chrom.to_string(),
+                &pos_start.to_string(),
+                "A".to_owned(),
+                "C".to_owned(),
+            );
+            assert_eq!(snv_id.is_in_ld_radius(&snv_start, ldr), exp);
+        }
     }
 
     /// test of Display
     #[test]
-    fn test_snv_index_to_string() {
-        let snv_index = SnvId::construct_snv_index(
-            "rs1".to_owned(),
-            "1",
-            "123",
-            "A".to_owned(),
-            "C".to_owned(),
-        );
-        assert_eq!(snv_index.to_string(), "1:123:A:C".to_owned());
+    fn test_snv_id_to_string() {
+        let snv_id = SnvId::new("rs1".to_owned(), "1", "123", "A".to_owned(), "C".to_owned());
+        assert_eq!(snv_id.to_string(), "1:123:A:C".to_owned());
     }
 
     #[test]
     fn test_check_alleles() {
-        let snv_index = SnvId::construct_snv_index(
-            "rs1".to_owned(),
-            "1",
-            "123",
-            "A".to_owned(),
-            "C".to_owned(),
-        );
-        snv_index.check_alleles()
+        let snv_id = SnvId::new("rs1".to_owned(), "1", "123", "A".to_owned(), "C".to_owned());
+        snv_id.check_alleles()
     }
 
     #[test]
     fn test_eq() {
-        let snv_index1 = SnvId::construct_snv_index(
-            "rs1".to_owned(),
-            "1",
-            "123",
-            "A".to_owned(),
-            "C".to_owned(),
-        );
-        let snv_index2 = SnvId::construct_snv_index(
+        let snv_id_1 = SnvId::new("rs1".to_owned(), "1", "123", "A".to_owned(), "C".to_owned());
+        let snv_id_2 = SnvId::new(
             //"rs1".to_owned(),
             "1:123:G:T".to_owned(),
             "1",
@@ -540,48 +719,55 @@ mod tests {
             "T".to_owned(),
         );
 
-        assert_eq!(snv_index1, snv_index2);
+        assert_eq!(snv_id_1, snv_id_2);
 
-        let snv_index3 = SnvId::construct_snv_index(
+        let snv_id_3 = SnvId::new("rs1".to_owned(), "1", "123", "A".to_owned(), "G".to_owned());
+
+        assert_ne!(snv_id_1, snv_id_3);
+    }
+
+    #[test]
+    fn test_eq_long() {
+        let snv_id_1 = SnvId::new(
             "rs1".to_owned(),
             "1",
             "123",
-            "A".to_owned(),
+            "AT".to_owned(),
+            "C".to_owned(),
+        );
+        let snv_id_2 = SnvId::new(
+            //"rs1".to_owned(),
+            "1:123:G:T".to_owned(),
+            "1",
+            "123",
+            "C".to_owned(),
+            "AT".to_owned(),
+        );
+
+        assert_eq!(snv_id_1, snv_id_2);
+
+        let snv_id_3 = SnvId::new(
+            "rs1".to_owned(),
+            "1",
+            "123",
+            "TA".to_owned(),
             "G".to_owned(),
         );
 
-        assert_ne!(snv_index1, snv_index3);
+        assert_ne!(snv_id_1, snv_id_3);
     }
 
     #[test]
     fn test_ord() {
-        let snv_index1 = SnvId::construct_snv_index(
-            "rs1".to_owned(),
-            "1",
-            "123",
-            "A".to_owned(),
-            "C".to_owned(),
-        );
-        let snv_index2 = SnvId::construct_snv_index(
-            "rs1".to_owned(),
-            "1",
-            "123",
-            "A".to_owned(),
-            "G".to_owned(),
-        );
+        let snv_id_1 = SnvId::new("rs1".to_owned(), "1", "123", "A".to_owned(), "C".to_owned());
+        let snv_id_2 = SnvId::new("rs1".to_owned(), "1", "123", "A".to_owned(), "G".to_owned());
 
-        assert!(snv_index1 < snv_index2);
+        assert!(snv_id_1 < snv_id_2);
 
-        let snv_index3 = SnvId::construct_snv_index(
-            "rs1".to_owned(),
-            "1",
-            "123",
-            "G".to_owned(),
-            "T".to_owned(),
-        );
+        let snv_id_3 = SnvId::new("rs1".to_owned(), "1", "123", "G".to_owned(), "T".to_owned());
         // should be ==
-        assert!(!(snv_index1 < snv_index3));
-        assert!((snv_index1 <= snv_index3));
-        assert!(!(snv_index1 > snv_index3));
+        assert!(!(snv_id_1 < snv_id_3));
+        assert!((snv_id_1 <= snv_id_3));
+        assert!(!(snv_id_1 > snv_id_3));
     }
 }

@@ -35,13 +35,22 @@ fn main() {
 
     // binding
     let bindings = bindgen::Builder::default()
-        .header("src/pgenlib/pgenlibr_wrapc.h")
+        .header("src/pgenlib/pgenlibr_wrapc.hpp")
         .parse_callbacks(Box::new(CargoCallbacks))
         .clang_arg("-xc++")
         .clang_arg("-std=c++11") 
-        .allowlist_file("src/pgenlib/pgenlibr_wrapc.h")
+        .clang_arg("-stdlib=libc++") 
+        .allowlist_file("src/pgenlib/pgenlibr_wrapc.hpp")
         .generate()
         .expect("Unable to generate bindings");
+    //let bindings = bindgen::Builder::default()
+    //    .header("src/pgenlib/pgenlibr_wrapc.h")
+    //    .parse_callbacks(Box::new(CargoCallbacks))
+    //    .clang_arg("-xc++")
+    //    .clang_arg("-std=c++11") 
+    //    .allowlist_file("src/pgenlib/pgenlibr_wrapc.h")
+    //    .generate()
+    //    .expect("Unable to generate bindings");
 
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
     bindings

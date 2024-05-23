@@ -26,37 +26,43 @@
 //!
 //!
 
-//mod alloc;
-pub mod base_cbits;
-pub mod base_cmatrix;
-pub mod base_cvec;
-pub mod cbits;
-pub mod cbits_mut;
-pub mod cbits_ref;
-pub mod cmatrix_struct;
-pub mod cmatrix_mut;
-pub mod cmatrix_ref;
-pub mod cvec;
-pub mod calc;
-pub mod cvec_mut;
-pub mod cvec_ref;
-pub mod iterator;
+////mod alloc;
+//pub mod base_cbits;
+//pub mod base_cmatrix;
+//pub mod base_cvec;
+//pub mod cbits;
+//pub mod cbits_mut;
+//pub mod cbits_ref;
+//pub mod cmatrix_struct;
+//pub mod cmatrix_mut;
+//pub mod cmatrix_ref;
+//pub mod cvec;
+//pub mod calc;
+//pub mod cvec_mut;
+//pub mod cvec_ref;
+//pub mod iterator;
+//pub mod prelude;
+//
+//// used from inner crate
+//pub use base_cbits::{BaseCBits, BaseCBitsMut};
+//pub use base_cmatrix::{BaseCMatrix, BaseCMatrixMut};
+//pub use base_cvec::{BaseCVec, BaseCVecMut};
+//pub use cbits::CBits;
+//pub use cbits_mut::CBitsMut;
+//pub use cbits_ref::CBitsRef;
+//pub use cmatrix_struct::CMatrix;
+//pub use cmatrix_mut::CMatrixMut;
+//pub use cmatrix_ref::CMatrixRef;
+//pub use cvec::CVec;
+//pub use cvec_mut::CVecMut;
+//pub use cvec_ref::CVecRef;
+//pub use iterator::{BoolIter, RowIter, RowIterMut, ScalIter};
+//pub use calc::*;
+//
+//pub type B8 = u8;
+//
+
+pub mod dense;
+//pub mod sparse;
 pub mod prelude;
-
-// used from inner crate
-pub use base_cbits::{BaseCBits, BaseCBitsMut};
-pub use base_cmatrix::{BaseCMatrix, BaseCMatrixMut};
-pub use base_cvec::{BaseCVec, BaseCVecMut};
-pub use cbits::CBits;
-pub use cbits_mut::CBitsMut;
-pub use cbits_ref::CBitsRef;
-pub use cmatrix_struct::CMatrix;
-pub use cmatrix_mut::CMatrixMut;
-pub use cmatrix_ref::CMatrixRef;
-pub use cvec::CVec;
-pub use cvec_mut::CVecMut;
-pub use cvec_ref::CVecRef;
-pub use iterator::{BoolIter, RowIter, RowIterMut, ScalIter};
-pub use calc::*;
-
-pub type B8 = u8;
+pub use crate::dense::calc::*;

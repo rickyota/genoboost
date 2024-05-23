@@ -8,7 +8,6 @@ use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
-use std::time::Instant;
 
 pub fn isin_header<R: std::io::Read>(col: &str, buf: R) -> bool {
     let header = load_first_line(buf);
@@ -168,6 +167,7 @@ pub fn compute_num_column_text(
 //pub fn compute_num_column_buf<T: std::io::Read>(buf: &mut BufReader<T>) -> usize {
 pub fn compute_num_column_buf<R: std::io::Read>(buf: R) -> usize {
     let buf = BufReader::new(buf);
+    // TOFIX: when empty -> return 0?
     // unwrap() twice since lines() returns Option<Result<>>
     let line_first = buf.lines().next().unwrap().unwrap();
     let mut num_cols = 0;
@@ -316,7 +316,7 @@ pub fn load_table_header_buf<R: std::io::Read>(buf: R) -> Vec<String> {
 
 pub fn coli_of_header_buf(buf: &[u8], col: &str) -> Option<usize> {
     let header = load_table_header_buf(buf);
-    log::info!("header: {:?}",header);
+    log::info!("header: {:?}", header);
 
     for (coli, col_header) in header.iter().enumerate() {
         if col == col_header {
@@ -368,12 +368,7 @@ pub fn load_table_cols_by_header(fin: &Path, cols: &[&str]) -> Vec<Vec<String>> 
 
 /// orders are aligned to cols
 pub fn load_table_cols_buf(buf: &[u8], cols: &[usize], header: bool) -> Vec<Vec<String>> {
-    //let buf = read_file_to_end(fin, None).unwrap();
-
     let num_col = compute_num_column_buf(buf);
-    //let num_col = compute_num_column_buf(&buf[..]);
-    //let num_col = compute_num_column_text(fin, None).unwrap();
-    //let num_col = compute_num_column_text(fin, None).unwrap();
     let num_col_use = cols.len();
 
     if *cols.iter().max().unwrap() >= num_col {
@@ -442,66 +437,6 @@ pub fn load_table_cols(fin: &Path, cols: &[usize], header: bool) -> Vec<Vec<Stri
     let buf = read_file_to_end(fin, None).unwrap();
 
     load_table_cols_buf(&buf[..], cols, header)
-
-    /*     let num_col = compute_num_column_buf(&buf[..]);
-    //let num_col = compute_num_column_text(fin, None).unwrap();
-    //let num_col = compute_num_column_text(fin, None).unwrap();
-    let num_col_use = cols.len();
-
-    if *cols.iter().max().unwrap() >= num_col {
-        panic!(
-            "Indicated cols exceed number of columns: {} vs  {}",
-            *cols.iter().max().unwrap(),
-            num_col
-        );
-    }
-
-    // col in file -> col in cols
-    let mut colmap: Vec<Option<usize>> = Vec::with_capacity(num_col);
-    for i in 0..num_col {
-        let mut colv = None;
-        for (coli, col) in cols.iter().enumerate() {
-            if *col == i {
-                colv = Some(coli);
-                break;
-            }
-        }
-        colmap.push(colv);
-    }
-
-    let num_line = compute_num_line_buf(&buf[..]);
-
-    let mut valss: Vec<Vec<String>> = Vec::with_capacity(num_col_use);
-    for _ in 0..num_col_use {
-        valss.push(Vec::with_capacity(num_line));
-    }
-
-    // once one line exceed 512, it would automatically extended.
-    let mut line = String::with_capacity(512);
-    let mut bufr = BufReader::new(&buf[..]);
-    //let mut buf = BufReader::new(File::open(fin).unwrap());
-
-    if header {
-        bufr.read_line(&mut line).unwrap();
-        line.clear();
-    }
-
-    while bufr.read_line(&mut line).unwrap() > 0 {
-        for (i, word) in line.split_whitespace().enumerate() {
-            if let Some(col) = colmap[i] {
-                valss[col].push(word.to_owned());
-            }
-        }
-        line.clear(); // clear to reuse the buffer
-    }
-
-    if header {
-        assert_eq!(valss[0].len(), num_line - 1);
-    } else {
-        assert_eq!(valss[0].len(), num_line);
-    }
-
-    Some(valss) */
 }
 
 /// return Vec<String> (num_lines)
@@ -546,163 +481,10 @@ pub fn load_table_col(fin: &Path, col: usize, header: bool) -> Vec<String> {
     vals
 }
 
-// as fast as load_byte2 but complecated
-#[allow(dead_code)]
-fn load_byte1(fin: &Path, n: usize, m: usize) -> Vec<u8> {
-    //let bed_size = calculate_bed_size(n, m);
-    let v_size = crate::io_genot::calculate_bed_size_genotype(m, n);
-    log::debug!("{}", v_size);
-    let mut v: Vec<u8> = Vec::with_capacity(v_size);
-    unsafe {
-        v.set_len(v_size);
-    }
-    let mut reader = BufReader::new(File::open(fin).unwrap());
-    let n: usize = 100_000_000;
-    //let n: usize = 1_000_000;
-    let mut buf: Vec<u8> = Vec::with_capacity(n);
-
-    // first for 3
-    unsafe {
-        buf.set_len(3);
-    }
-    reader.read_exact(&mut buf).unwrap();
-    log::debug!("{:?}", buf);
-
-    unsafe {
-        buf.set_len(n);
-    }
-    let mut loop_times = 0;
-    // if we know the size is 9, then
-    for i in 0..((v_size - 1) / n) {
-        reader.read_exact(&mut buf).unwrap();
-        // https://stackoverflow.com/questions/28219231/how-to-idiomatically-copy-a-slice
-        v[n * i..n * (i + 1)].copy_from_slice(&buf);
-        loop_times += 1;
-    }
-    log::debug!("loop times{}", loop_times);
-    // for remaining
-    let n_remain: usize = v_size - (v_size - 1) / n * n;
-    unsafe {
-        buf.set_len(n_remain);
-    }
-    reader.read_exact(&mut buf).unwrap();
-    v[(v_size - 1) / n * n..v_size].copy_from_slice(&buf);
-    v
-}
-
-// fast and simple
-/// Use this function to load bytes.
-#[allow(dead_code)]
-fn load_byte2(fin: &Path, n: usize, m: usize) -> Vec<u8> {
-    // you can use "seek"
-    // use this!!
-    //let bed_size = calculate_bed_size(n, m);
-    let v_size = crate::io_genot::calculate_bed_size_genotype(m, n);
-    let mut v: Vec<u8> = Vec::with_capacity(v_size);
-    unsafe {
-        v.set_len(v_size);
-    }
-    log::debug!("v_size: {}", v_size);
-
-    let mut reader = BufReader::new(File::open(fin).unwrap());
-    let n: usize = 100_000_000;
-    //let n: usize = 1_000_000;
-    let mut buf: Vec<u8> = Vec::with_capacity(n);
-
-    // first for 3
-    unsafe {
-        buf.set_len(3);
-    }
-    reader.read_exact(&mut buf).unwrap();
-    log::debug!("{:?}", buf);
-
-    unsafe {
-        buf.set_len(n);
-    }
-
-    let mut loop_times = 0;
-    let mut i_ptr: usize = 0;
-    loop {
-        match reader.read(&mut buf).unwrap() {
-            0 => break,
-            n => {
-                log::debug!("i_ptr,n:{},{}", i_ptr, n);
-                let buf = &buf[..n];
-                v[i_ptr..i_ptr + n].copy_from_slice(&buf);
-                i_ptr = i_ptr + n;
-            }
-        }
-        loop_times += 1;
-    }
-    log::debug!("loop times{}", loop_times);
-    v
-}
-
-#[allow(dead_code)]
-fn load_byte3(fin: &str, n: usize, m: usize) -> Vec<u8> {
-    let mut file = File::open(fin).unwrap();
-    // this is ok but not sure fast or slow
-    let mut buf: Vec<u8> = Vec::new();
-    // meaningless, lastly cap is 32
-    //let n = 9;
-    //let mut buf: Vec<u8> = Vec::with_capacity(n + 2);
-    // this wont work
-    //unsafe {
-    //    buf.set_len(n);
-    //}
-    log::debug!("len: {}", buf.len());
-    log::debug!("cap: {}", buf.capacity());
-    let _ = file.read_to_end(&mut buf).unwrap();
-    log::debug!("len: {}", buf.len());
-    // larger than cap
-    log::debug!("cap: {}", buf.capacity());
-    log::debug!("buf[0]: {}", buf[0]);
-    //log::debug!("{:?}", buf);
-
-    //let v_size = calculate_bed_genotype_size(n, m);
-    //tmp
-    let v_size = crate::io_genot::calculate_bed_size(n, m);
-    let mut v: Vec<u8> = Vec::with_capacity(v_size);
-    unsafe {
-        v.set_len(v_size);
-    }
-
-    (&mut v).copy_from_slice(&buf);
-    v
-}
-
-pub fn run_byte(fin: &Path, n: usize, m: usize) -> Vec<u8> {
-    // fast but complecated
-    log::debug!("way 1");
-    let istart = Instant::now();
-    let v = load_byte1(fin, n, m);
-    log::debug!("load_byte1: {:?}", Instant::now().duration_since(istart));
-    log::debug!("{}", v[0]);
-
-    // as fast as way 1
-    // also easy to write
-    log::debug!("way 2");
-    let istart = Instant::now();
-    let v = load_byte2(fin, n, m);
-    log::debug!("load_byte2: {:?}", Instant::now().duration_since(istart));
-    log::debug!("{}", v[0]);
-
-    /*
-    // seems slow -> could be because file size was larger than mem size?
-    log::debug!("way 3");
-    let istart = Instant::now();
-    let v = load_byte3(fin, n, m);
-    log::debug!("load_byte3: {:?}", Instant::now().duration_since(istart));
-    log::debug!("{}", v[0]);
-    */
-
-    v
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{io_genot, GenotFormat};
+    use crate::GenotFile;
     use std::path::PathBuf;
 
     #[test]
@@ -727,9 +509,11 @@ mod tests {
     #[test]
     fn test_read_file_to_end() {
         let fin = PathBuf::from("../../test/data/toy3/genot");
-        let gfmt = GenotFormat::Plink2Vzs;
+        //let gfmt = GenotFormat::Plink2Vzs;
+        let fin_genot = GenotFile::Plink2Vzs(fin);
 
-        let fin_bim = io_genot::fname_plinks_snv(&fin, gfmt, None);
+        let fin_bim = fin_genot.snv_file(None);
+        //genot_io::fname_plinks_snv(&fin_genot, None);
         let buf = read_file_to_end(&fin_bim, Some("zst")).unwrap();
 
         let buf = BufReader::new(&buf[..]);
@@ -744,20 +528,23 @@ mod tests {
     #[should_panic]
     fn test_read_file_to_end_panic() {
         let fin = PathBuf::from("notexist.txt");
-        let buf = read_file_to_end(&fin, None).unwrap();
+        let _buf = read_file_to_end(&fin, None).unwrap();
     }
 
     #[test]
     fn test_compute_num_line() {
         let fin = PathBuf::from("../../test/data/toy1/genot");
-        let gfmt = GenotFormat::Plink1;
+        //let gfmt = GenotFormat::Plink1;
+        let fin_genot = GenotFile::Plink1(fin);
 
-        let fin_bim = io_genot::fname_plinks_snv(&fin, gfmt, None);
+        let fin_bim = fin_genot.snv_file(None);
+        //genot_io::fname_plinks_snv(&fin, gfmt, None);
         //let fin_bim = fin.clone() + ".bim";
         let m = compute_num_line_text(&fin_bim, None).unwrap();
         assert_eq!(m, 3);
 
-        let fin_fam = io_genot::fname_plinks_sample(&fin, gfmt, None);
+        let fin_fam = fin_genot.sample_file(None);
+        //let fin_fam = genot_io::fname_plinks_sample(&fin, gfmt, None);
         //let fin_fam = fin.clone() + ".fam";
         let n = compute_num_line_text(&fin_fam, None).unwrap();
         assert_eq!(n, 5);
@@ -766,13 +553,16 @@ mod tests {
     #[test]
     fn test_compute_num_line_compress() {
         let fin = PathBuf::from("../../test/data/toy3/genot");
-        let gfmt = GenotFormat::Plink2Vzs;
+        //let gfmt = GenotFormat::Plink2Vzs;
+        let fin_genot = GenotFile::Plink2Vzs(fin);
 
-        let fin_bim = io_genot::fname_plinks_snv(&fin, gfmt, None);
+        let fin_bim = fin_genot.snv_file(None);
+        //let fin_bim = genot_io::fname_plinks_snv(&fin, gfmt, None);
         let m = compute_num_line_text(&fin_bim, Some("zst")).unwrap();
         assert_eq!(m, 4);
 
-        let fin_fam = io_genot::fname_plinks_sample(&fin, gfmt, None);
+        let fin_fam = fin_genot.sample_file(None);
+        //let fin_fam = genot_io::fname_plinks_sample(&fin, gfmt, None);
         let n = compute_num_line_text(&fin_fam, None).unwrap();
         assert_eq!(n, 11);
     }
@@ -780,14 +570,17 @@ mod tests {
     #[test]
     fn test_compute_num_column() {
         let fin = PathBuf::from("../../test/data/toy1/genot");
-        let gfmt = GenotFormat::Plink1;
+        //let gfmt = GenotFormat::Plink1;
+        let fin_genot = GenotFile::Plink1(fin);
 
-        let fin_bim = io_genot::fname_plinks_snv(&fin, gfmt, None);
+        let fin_bim = fin_genot.snv_file(None);
+        //let fin_bim = genot_io::fname_plinks_snv(&fin, gfmt, None);
         //let fin_bim = fin.clone() + ".bim";
         let col: usize = compute_num_column_text(&fin_bim, None).unwrap();
         assert_eq!(col, 6);
 
-        let fin_fam = io_genot::fname_plinks_sample(&fin, gfmt, None);
+        let fin_fam = fin_genot.sample_file(None);
+        //let fin_fam = genot_io::fname_plinks_sample(&fin, gfmt, None);
         //let fin_fam = fin.clone() + ".fam";
         let col = compute_num_column_text(&fin_fam, None).unwrap();
         assert_eq!(col, 6);
@@ -796,13 +589,16 @@ mod tests {
     #[test]
     fn test_compute_num_column_compress() {
         let fin = PathBuf::from("../../test/data/toy3/genot");
-        let gfmt = GenotFormat::Plink2Vzs;
+        //let gfmt = GenotFormat::Plink2Vzs;
+        let fin_genot = GenotFile::Plink2Vzs(fin);
 
-        let fin_bim = io_genot::fname_plinks_snv(&fin, gfmt, None);
+        let fin_bim = fin_genot.snv_file(None);
+        //let fin_bim = genot_io::fname_plinks_snv(&fin, gfmt, None);
         let m = compute_num_column_text(&fin_bim, Some("zst")).unwrap();
         assert_eq!(m, 5);
 
-        let fin_fam = io_genot::fname_plinks_sample(&fin, gfmt, None);
+        let fin_fam = fin_genot.sample_file(None);
+        //let fin_fam = genot_io::fname_plinks_sample(&fin, gfmt, None);
         let n = compute_num_column_text(&fin_fam, None).unwrap();
         assert_eq!(n, 4);
     }
@@ -810,9 +606,11 @@ mod tests {
     #[test]
     fn test_load_tsv() {
         let fin = PathBuf::from("../../test/data/toy1/genot");
-        let gfmt = GenotFormat::Plink1;
+        //let gfmt = GenotFormat::Plink1;
+        let fin_genot = GenotFile::Plink1(fin);
 
-        let fin_bim = io_genot::fname_plinks_snv(&fin, gfmt, None);
+        let fin_bim = fin_genot.snv_file(None);
+        //let fin_bim = genot_io::fname_plinks_snv(&fin, gfmt, None);
         // let fin_bim = fin.clone() + ".bim";
         let vs = load_table(&fin_bim, false);
         assert_eq!(vs.len(), compute_num_column_text(&fin_bim, None).unwrap());
@@ -844,31 +642,15 @@ mod tests {
     #[test]
     fn test_load_tsv_col() {
         let fin = PathBuf::from("../../test/data/toy1/genot");
-        let gfmt = GenotFormat::Plink1;
+        //let gfmt = GenotFormat::Plink1;
+        let fin_genot = GenotFile::Plink1(fin);
 
-        let fin_fam = io_genot::fname_plinks_sample(&fin, gfmt, None);
+        let fin_fam = fin_genot.sample_file(None);
+        //let fin_fam = genot_io::fname_plinks_sample(&fin, gfmt, None);
         //let fin_fam = fin.clone() + ".fam";
         let v = load_table_col(&fin_fam, 4, false);
         assert_eq!(v.len(), compute_num_line_text(&fin_fam, None).unwrap());
         assert_eq!(v[0], "1");
         assert_eq!(v[4], "2");
-    }
-
-    #[test]
-    fn test_load_byte2() {
-        let fin = PathBuf::from("../../test/data/toy1/genot");
-        let gfmt = GenotFormat::Plink1;
-
-        let fin_fam = io_genot::fname_plinks_sample(&fin, gfmt, None);
-        //let fin_fam = fin.clone() + ".fam";
-        let n: usize = compute_num_line_text(&fin_fam, None).unwrap();
-
-        let fin_bim = io_genot::fname_plinks_snv(&fin, gfmt, None);
-        //let fin_bim = fin.clone() + ".bim";
-        let m: usize = compute_num_line_text(&fin_bim, None).unwrap();
-
-        let fin_bed = io_genot::fname_plinks_genot(&fin, gfmt, None);
-        //let fin_bed = fin.clone() + ".bed";
-        load_byte2(&fin_bed, n, m);
     }
 }

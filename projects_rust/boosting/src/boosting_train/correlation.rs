@@ -1,4 +1,5 @@
 // move to genetics_rust
+// half moved to genetics_rust
 
 mod calculate;
 

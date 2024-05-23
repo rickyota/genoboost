@@ -46,12 +46,12 @@ pub fn set_predictions_both_count2(pred_m: &mut [B8], count: u8, ni: usize, len_
 // for benchmark
 // comparable
 pub fn set_predictions_both_count3(pred_m: &mut [B8], count: u8, ni: usize, len_n: usize) {
-    let val0 = if (count == 0) | (count == 3) {
+    let val0 = if (count == 0) || (count == 3) {
         false
     } else {
         true
     };
-    let val1 = if (count == 0) | (count == 1) {
+    let val1 = if (count == 0) || (count == 1) {
         false
     } else {
         true

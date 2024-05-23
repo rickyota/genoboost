@@ -23,6 +23,7 @@ cp ./projects_rust/target/release/genoboost ./genoboost
     --file-genot "$file_plink" \
     --file-phe "$file_cov" \
     --cov age,sex \
+	--learning-rates "0.5 0.2" \
     --cross-validation 5 \
     --major-a2-train
 

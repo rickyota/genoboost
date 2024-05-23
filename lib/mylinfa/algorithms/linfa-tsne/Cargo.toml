@@ -1,0 +1,33 @@
+[package]
+name = "linfa-tsne"
+version = "0.7.0"
+authors = ["Lorenz Schmidt <lorenz.schmidt@mailbox.org>"]
+edition = "2018"
+
+description = "Barnes-Hut t-distributed stochastic neighbor embedding"
+license = "MIT OR Apache-2.0"
+
+repository = "https://github.com/rust-ml/linfa"
+readme = "README.md"
+
+keywords = ["tsne", "visualization", "clustering", "machine-learning", "linfa"]
+categories = ["algorithms", "mathematics", "science"]
+
+[dependencies]
+thiserror = "1.0"
+ndarray = { version = "0.15" }
+ndarray-rand = "0.14"
+bhtsne = "0.4.0"
+pdqselect = "=0.1.0"
+
+linfa = { version = "0.7.0", path = "../.." }
+
+[dev-dependencies]
+rand = "0.8"
+approx = "0.4"
+
+linfa-datasets = { version = "0.7.0", path = "../../datasets", features = ["iris"] }
+linfa-reduction = { version = "0.7.0", path = "../linfa-reduction" }
+
+[target.'cfg(not(target_family = "windows"))'.dev-dependencies]
+mnist = { version = "0.5", features = ["download"] }

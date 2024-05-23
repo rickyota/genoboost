@@ -17,8 +17,6 @@ use criterion::{BenchmarkId, Criterion};
 
 use boosting::{boosting_train::loss::calc, BoostParam};
 
-use std::collections::HashSet;
-
 mod common;
 //mod set_count_criterion;
 
@@ -74,83 +72,93 @@ fn bench_calculate_loss_gt_nosimd(c: &mut Criterion) {
 }
 */
 
+fn bench_calculate_loss_gt_comp(_: &mut Criterion) {}
+
+// Now, cannot access to calculate_loss_gt_constada_simd(),
+// so use calcualte_loss_gt_constada_simd_sm() instead.
 // https://bheisler.github.io/criterion.rs/book/user_guide/comparing_functions.html
 // output plot could be regressed time or scatter plot. If fast, regressed time is output
 // https://bheisler.github.io/criterion.rs/book/user_guide/advanced_configuration.html
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-unsafe fn bench_calculate_loss_gt_comp(c: &mut Criterion) {
-    println!("num_thread set: {}", rayon::current_num_threads());
-
-    // m=100k
-    let (dataset, sample_weight, mut losss) = common::setup_test_n100k();
-    let m = dataset.snvs().snvs_n();
-
-    let mut group = c.benchmark_group("calculate_loss_gt");
-    // no need to call black_box in bench_with_input
-    // simd
-    group.bench_with_input(BenchmarkId::new("Simd", m), &m, |b, _| {
-        b.iter(|| {
-            calc::calculate_loss_gt_constada_simd(
-                &mut losss,
-                &dataset.genot(),
-                &sample_weight,
-                &dataset.samples().phe_unwrap(),
-                BoostParam::new_type1(),
-                &HashSet::new(),
-            )
-        })
-    });
-    // no simd
-    group.bench_with_input(BenchmarkId::new("No Simd", m), &m, |b, _| {
-        b.iter(|| {
-            calc::calculate_loss_gt_constada_nosimd(
-                &mut losss,
-                &dataset.genot(),
-                &sample_weight,
-                &dataset.samples().phe_unwrap(),
-                BoostParam::new_type1(),
-            )
-        })
-    });
-
-    // m=10k
-    let (dataset, sample_weight, mut losss) = common::setup_test_n10k();
-    let m = dataset.snvs().snvs_n();
-    // simd
-    group.bench_with_input(BenchmarkId::new("Simd", m), &m, |b, _| {
-        b.iter(|| {
-            calc::calculate_loss_gt_constada_simd(
-                &mut losss,
-                &dataset.genot(),
-                &sample_weight,
-                &dataset.samples().phe_unwrap(),
-                BoostParam::new_type1(),
-                &HashSet::new(),
-            )
-        })
-    });
-    // no simd
-    group.bench_with_input(BenchmarkId::new("No Simd", m), &m, |b, _| {
-        b.iter(|| {
-            calc::calculate_loss_gt_constada_nosimd(
-                &mut losss,
-                &dataset.genot(),
-                &sample_weight,
-                &dataset.samples().phe_unwrap(),
-                BoostParam::new_type1(),
-            )
-        })
-    });
-
-    group.finish();
-
-    /*
-    c.bench_with_input(BenchmarkId::new("input_example", size), &size, |b, &s| {
-        b.iter(|| do_something(s));
-    });
-    */
-}
+//#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+//#[target_feature(enable = "avx2")]
+//unsafe fn bench_calculate_loss_gt_comp(c: &mut Criterion) {
+//    println!("num_thread set: {}", rayon::current_num_threads());
+//
+//    // m=100k
+//    let (dataset, sample_weight, mut losss) = common::setup_test_n100k();
+//    let m = dataset.snvs().snvs_n();
+//
+//    let mut group = c.benchmark_group("calculate_loss_gt");
+//    // no need to call black_box in bench_with_input
+//    // simd
+//    group.bench_with_input(BenchmarkId::new("Simd", m), &m, |b, _| {
+//        b.iter(|| {
+//            calc::calculate_loss_gt_constada_simd(
+//                &mut losss,
+//                &dataset,
+//                //&dataset.genot(),
+//                &sample_weight,
+//                //&dataset.samples().phe_unwrap(),
+//                &BoostParam::new_type1(),
+//                None,
+//            )
+//        })
+//    });
+//    // no simd
+//    group.bench_with_input(BenchmarkId::new("No Simd", m), &m, |b, _| {
+//        b.iter(|| {
+//            calc::calculate_loss_gt_constada_nosimd(
+//                &mut losss,
+//                &dataset,
+//                //&dataset.genot(),
+//                &sample_weight,
+//                //&dataset.samples().phe_unwrap(),
+//                &BoostParam::new_type1(),
+//                None,
+//            )
+//        })
+//    });
+//
+//    // m=10k
+//    let (dataset, sample_weight, mut losss) = common::setup_test_n10k();
+//    let m = dataset.snvs().snvs_n();
+//    // simd
+//    group.bench_with_input(BenchmarkId::new("Simd", m), &m, |b, _| {
+//        b.iter(|| {
+//            calc::calculate_loss_gt_constada_simd(
+//                &mut losss,
+//                &dataset,
+//                //&dataset.genot(),
+//                &sample_weight,
+//                //&dataset.samples().phe_unwrap(),
+//                &BoostParam::new_type1(),
+//                None,
+//            )
+//        })
+//    });
+//    // no simd
+//    group.bench_with_input(BenchmarkId::new("No Simd", m), &m, |b, _| {
+//        b.iter(|| {
+//            calc::calculate_loss_gt_constada_nosimd(
+//                &mut losss,
+//                &dataset,
+//                //&dataset.genot(),
+//                &sample_weight,
+//                //&dataset.samples().phe_unwrap(),
+//                &BoostParam::new_type1(),
+//                None,
+//            )
+//        })
+//    });
+//
+//    group.finish();
+//
+//    /*
+//    c.bench_with_input(BenchmarkId::new("input_example", size), &size, |b, &s| {
+//        b.iter(|| do_something(s));
+//    });
+//    */
+//}
 
 // dummy
 fn bench_calculate_loss_gt_comp_nosimd(_c: &mut Criterion) {}

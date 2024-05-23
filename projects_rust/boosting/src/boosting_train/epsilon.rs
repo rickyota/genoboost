@@ -91,7 +91,7 @@ pub fn calculate_epsilons(ps: &[f64], phe: &Phe, eps: Option<Eps>) -> (f64, f64)
 
 
 /// BOTH are POSITIVE
-pub fn calculate_epsilons_logit_wzs(wzs: &[f64], phe: &Phe, eps: Option<Eps>) -> (f64, f64) {
+pub fn calc_epsilons_logit_wzs(wzs: &[f64], phe: &Phe, eps: Option<Eps>) -> (f64, f64) {
 
     if eps.is_none(){
         return (0.0, 0.0);
@@ -113,7 +113,7 @@ pub fn calculate_epsilons_logit_wzs(wzs: &[f64], phe: &Phe, eps: Option<Eps>) ->
     }
 }
 
-pub fn calculate_epsilons_logit_wls(wls: &[f64], phe: &Phe, eps: Option<Eps>) -> (f64, f64) {
+pub fn calc_epsilons_logit_wls(wls: &[f64], phe: &Phe, eps: Option<Eps>) -> (f64, f64) {
     if eps.is_none(){
         return (0.0, 0.0);
     } 

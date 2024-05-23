@@ -5,14 +5,79 @@ use super::epsilon;
 use super::sample_weight::SampleWeight;
 use super::table;
 use super::{table::CONTINGENCY_TABLE_FILL, BoostType};
-use crate::{ContingencyTable, EffEps, Eps};
+use crate::{BoostParam, BoostParamCommonTrait, ContingencyTable, EffEps, Eps};
 use genetics::genot::prelude::*;
 use genetics::genot::GenotSnvRef;
+//use genetics::genot_calc::Table3By3Ar;
 use genetics::samples::prelude::*;
+use genetics::score::{self as gscore, Sum3by3Ar};
 use genetics::wgt::Coef;
+use genetics::Dataset;
+use genetics::Sum3by3;
+
+//// For g1, g2
+//// ((x00, x01, x02),(x10,x11,x12),(x20,x21,x22))
+//#[derive(Debug, Clone, Copy)]
+//pub struct Sum3by3(((f64, f64, f64), (f64, f64, f64), (f64, f64, f64)));
+////type Sum3by3 = ((f64, f64, f64), (f64, f64, f64), (f64, f64, f64));
+//
+//impl Sum3by3 {
+//    pub fn new(x: ((f64, f64, f64), (f64, f64, f64), (f64, f64, f64))) -> Self {
+//        Sum3by3(x)
+//    }
+//
+//    pub fn to_tuple(self) -> ((f64, f64, f64), (f64, f64, f64), (f64, f64, f64)) {
+//        let Sum3by3(x) = self;
+//        x
+//    }
+//
+//    pub fn linearconst(self, c: f64, a: f64) -> Sum3by3 {
+//        let Sum3by3((x0, x1, x2)) = self;
+//
+//        fn linearconst_3(x: (f64, f64, f64), c: f64, a: f64) -> (f64, f64, f64) {
+//            let (x0, x1, x2) = x;
+//            (c + a * x0, c + a * x1, c + a * x2)
+//        }
+//
+//        Sum3by3((
+//            linearconst_3(x0, c, a),
+//            linearconst_3(x1, c, a),
+//            linearconst_3(x2, c, a),
+//        ))
+//    }
+//
+//    pub fn sum(x: Self) -> f64 {
+//        let Sum3by3((x0, x1, x2)) = x;
+//        fn sum_3(a: (f64, f64, f64)) -> f64 {
+//            a.0 + a.1 + a.2
+//        }
+//        sum_3(x0) + sum_3(x1) + sum_3(x2)
+//    }
+//
+//    pub fn sum_multi(x: Self, y: Self) -> f64 {
+//        let Sum3by3((x0, x1, x2)) = x;
+//        let Sum3by3((y0, y1, y2)) = y;
+//        fn sum_mult_3(a: (f64, f64, f64), b: (f64, f64, f64)) -> f64 {
+//            a.0 * b.0 + a.1 * b.1 + a.2 * b.2
+//        }
+//        sum_mult_3(x0, y0) + sum_mult_3(x1, y1) + sum_mult_3(x2, y2)
+//    }
+//
+//    /// sum(x*y^2)
+//    pub fn sum_multi_pow(x: Self, y: Self) -> f64 {
+//        let Sum3by3((x0, x1, x2)) = x;
+//        let Sum3by3((y0, y1, y2)) = y;
+//        fn sum_mult_3(a: (f64, f64, f64), b: (f64, f64, f64)) -> f64 {
+//            a.0 * b.0 * b.0 + a.1 * b.1 * b.1 + a.2 * b.2 * b.2
+//        }
+//        sum_mult_3(x0, y0) + sum_mult_3(x1, y1) + sum_mult_3(x2, y2)
+//    }
+//}
 
 // update: on updating PGS not for loss
 // use learning rate
+// TODO: implement without pred_s
+#[allow(dead_code)]
 pub fn calculate_coef_ada_update(
     pred_s: &[u8],
     gsnv: &GenotSnvRef,
@@ -33,6 +98,8 @@ pub fn calculate_coef_ada_update(
 
 // NO LEARNING RATE
 // assume table after eps
+#[allow(unused_variables)]
+#[allow(unreachable_code)]
 pub fn calculate_coef_ada_eps(
     table: ContingencyTable,
     gsnv: &GenotSnvRef,
@@ -60,8 +127,6 @@ pub fn calculate_coef_ada_eps(
             let const_ti = ((d1 * d0) / (n1 * n0)).ln() / 4.0;
             let alpha_ti = ((d1 * n0) / (n1 * d0)).ln() / 4.0;
 
-            //let const_ti = lr * const_ti;
-            //let alpha_ti = lr * alpha_ti;
             unimplemented!("eff_eps");
             //Coef::Binary((const_ti, alpha_ti))
         }
@@ -244,60 +309,300 @@ pub fn calculate_coef_ada_eps(
 //     }
 // }
 
-// DO NOT use predict here: troublesome
-// now common fn can be used for loss and wgt
-// TODO: integrate to calcualte_coef_root_ada
-pub fn calculate_coef_logit_update(
+pub fn create_coef_logit_nonadd(
     gsnv: &GenotSnvRef,
-    sample_weight: &SampleWeight,
     phe: &Phe,
+    sample_weight: &SampleWeight,
     learning_rate: f64,
     eps: Option<Eps>,
     eff_eps: Option<EffEps>,
-    boost_type: BoostType,
+    boost_type: BoostType, // BoostType::Logit or LogitNoMissing
 ) -> (Coef, bool, bool) {
-    unsafe {
-        match boost_type {
-            BoostType::Logit | BoostType::LogitNoMissing => {
-                let epsilons_wzs =
-                    epsilon::calculate_epsilons_logit_wzs(sample_weight.wzs().unwrap(), phe, eps);
-                let epsilons_wls =
-                    epsilon::calculate_epsilons_logit_wls(sample_weight.wls().unwrap(), phe, eps);
+    let epsilons_wzs = epsilon::calc_epsilons_logit_wzs(sample_weight.wzs().unwrap(), phe, eps);
+    let epsilons_wls = epsilon::calc_epsilons_logit_wls(sample_weight.wls().unwrap(), phe, eps);
 
-                let (coef_ti, is_eps, is_eff_eps) = calculate_coef_logit_eps(
+    let (coef_ti, is_eps, is_eff_eps) = calculate_coef_logit_eps(
+        gsnv,
+        sample_weight.wzs_pad().unwrap(),
+        sample_weight.wls_pad().unwrap(),
+        phe,
+        epsilons_wzs,
+        epsilons_wls,
+        eps,
+        eff_eps,
+        boost_type,
+        false,
+        true,
+    );
+    let coef_ti = coef_lr(coef_ti, learning_rate, boost_type);
+
+    (coef_ti, is_eps, is_eff_eps)
+}
+
+pub fn create_coef_logit_add(
+    gsnv: &GenotSnvRef,
+    //phe: &Phe,
+    sample_weight: &SampleWeight,
+    learning_rate: f64,
+    //eps: Option<Eps>,
+    //eff_eps: Option<EffEps>,
+    boost_type: BoostType, // BoostType::LogitAdd
+) -> (Coef, bool, bool) {
+    let coef_ti = calculate_coef_logit_add(
+        gsnv,
+        sample_weight.wzs_pad().unwrap(),
+        sample_weight.wls_pad().unwrap(),
+        //learning_rate,
+    );
+    let coef_ti = coef_lr(coef_ti, learning_rate, boost_type);
+    //let coef_ti = coef_ti.apply_lr(learning_rate);
+    (coef_ti, false, false)
+
+    //let epsilons_wzs =
+    //    epsilon::calculate_epsilons_logit_wzs(sample_weight.wzs().unwrap(), phe, eps);
+    //let epsilons_wls =
+    //    epsilon::calculate_epsilons_logit_wls(sample_weight.wls().unwrap(), phe, eps);
+
+    //let (coef_ti, is_eps, is_eff_eps) = calculate_coef_logit_eps(
+    //    gsnv,
+    //    sample_weight.wzs_pad().unwrap(),
+    //    sample_weight.wls_pad().unwrap(),
+    //    phe,
+    //    epsilons_wzs,
+    //    epsilons_wls,
+    //    eps,
+    //    eff_eps,
+    //    boost_type,
+    //    false,
+    //    true,
+    //);
+    //let coef_ti = coef_lr(coef_ti, learning_rate, boost_type);
+
+    //(coef_ti, is_eps, is_eff_eps)
+}
+
+// DO NOT use predict here: troublesome
+// now common fn can be used for loss and wgt
+// TODO: integrate to calcualte_coef_root_ada
+// Apply learning rate
+pub fn calculate_coef_logit_update(
+    gsnv: &GenotSnvRef,
+    mi: usize,
+    dataset: &Dataset,
+    sample_weight: &SampleWeight,
+    //phe: &Phe,
+    learning_rate: f64,
+    //eps: Option<Eps>,
+    //eff_eps: Option<EffEps>,
+    boost_type: BoostType,
+    boost_param: &BoostParam,
+) -> (Coef, bool, bool) {
+    let phe = dataset.samples().phe_unwrap();
+
+    let eps = boost_param.eps();
+    let eff_eps = boost_param.eff_eps();
+
+    match boost_type {
+        BoostType::Logit | BoostType::LogitNoMissing => {
+            create_coef_logit_nonadd(
+                gsnv,
+                phe,
+                sample_weight,
+                learning_rate,
+                eps,
+                eff_eps,
+                boost_type,
+            )
+            //let epsilons_wzs =
+            //    epsilon::calculate_epsilons_logit_wzs(sample_weight.wzs().unwrap(), phe, eps);
+            //let epsilons_wls =
+            //    epsilon::calculate_epsilons_logit_wls(sample_weight.wls().unwrap(), phe, eps);
+
+            //let (coef_ti, is_eps, is_eff_eps) = calculate_coef_logit_eps(
+            //    gsnv,
+            //    sample_weight.wzs_pad().unwrap(),
+            //    sample_weight.wls_pad().unwrap(),
+            //    phe,
+            //    epsilons_wzs,
+            //    epsilons_wls,
+            //    eps,
+            //    eff_eps,
+            //    boost_type,
+            //    false,
+            //    true,
+            //);
+            //let coef_ti = coef_lr(coef_ti, learning_rate, boost_type);
+
+            //(coef_ti, is_eps, is_eff_eps)
+        }
+        BoostType::LogitAdd => {
+            create_coef_logit_add(gsnv, sample_weight, learning_rate, boost_type)
+            //let coef_ti = calculate_coef_logit_add(
+            //    gsnv,
+            //    sample_weight.wzs_pad().unwrap(),
+            //    sample_weight.wls_pad().unwrap(),
+            //    //learning_rate,
+            //);
+            //let coef_ti = coef_lr(coef_ti, learning_rate, boost_type);
+            ////let coef_ti = coef_ti.apply_lr(learning_rate);
+            //(coef_ti, false, false)
+        }
+        BoostType::LogitMhcNoMissing => {
+            let snvs_index = dataset.snvs().snv_ids();
+            let mhc_region = boost_param.mhc_region().unwrap();
+            //let mhc_region = boost_param.mhc_region().unwrap();
+            //if mhc_region.is_some() &&
+            if snvs_index[mi].is_in_region(&mhc_region.0, &mhc_region.1) {
+                create_coef_logit_nonadd(
                     gsnv,
-                    sample_weight.wzs_pad().unwrap(),
-                    sample_weight.wls_pad().unwrap(),
                     phe,
-                    epsilons_wzs,
-                    epsilons_wls,
+                    sample_weight,
+                    learning_rate,
                     eps,
                     eff_eps,
-                    boost_type,
-                    false,
-                    true,
-                );
-                let coef_ti = coef_lr(coef_ti, learning_rate, boost_type);
+                    BoostType::LogitNoMissing,
+                )
 
-                (coef_ti, is_eps, is_eff_eps)
+                //let epsilons_wzs = epsilon::calculate_epsilons_logit_wzs(
+                //    sample_weight.wzs().unwrap(),
+                //    phe,
+                //    eps,
+                //);
+                //let epsilons_wls = epsilon::calculate_epsilons_logit_wls(
+                //    sample_weight.wls().unwrap(),
+                //    phe,
+                //    eps,
+                //);
+
+                //let (coef_ti, is_eps, is_eff_eps) = calculate_coef_logit_eps(
+                //    gsnv,
+                //    sample_weight.wzs_pad().unwrap(),
+                //    sample_weight.wls_pad().unwrap(),
+                //    phe,
+                //    epsilons_wzs,
+                //    epsilons_wls,
+                //    eps,
+                //    eff_eps,
+                //    // TOFIX: should create new class
+                //    // use Coef::Add?
+                //    BoostType::LogitNoMissing,
+                //    //boost_type,
+                //    false,
+                //    true,
+                //);
+                //let coef_ti = coef_lr(
+                //    coef_ti,
+                //    learning_rate,
+                //    BoostType::LogitNoMissing,
+                //    //boost_type
+                //);
+                //(coef_ti, is_eps, is_eff_eps)
+            } else {
+                create_coef_logit_add(gsnv, sample_weight, learning_rate, BoostType::LogitAdd)
+
+                //let coef_ti = calculate_coef_logit_add(
+                //    gsnv,
+                //    sample_weight.wzs_pad().unwrap(),
+                //    sample_weight.wls_pad().unwrap(),
+                //    //learning_rate,
+                //);
+                //let coef_ti = coef_lr(
+                //    coef_ti,
+                //    learning_rate,
+                //    BoostType::LogitAdd,
+                //    //boost_type
+                //);
+                ////let coef_ti = coef_ti.apply_lr(learning_rate);
+                //(coef_ti, false, false)
             }
-            BoostType::LogitAdd => {
-                let coef_ti = calculate_coef_logit_add(
-                    gsnv,
-                    sample_weight.wzs_pad().unwrap(),
-                    sample_weight.wls_pad().unwrap(),
-                    //learning_rate,
-                );
-                let coef_ti = coef_lr(coef_ti, learning_rate, boost_type);
-                //let coef_ti = coef_ti.apply_lr(learning_rate);
-                (coef_ti, false, false)
-            }
-            _ => panic!(),
         }
+
+        BoostType::LogitCommon => {
+            let maf_thre = boost_param.maf_threshold_logit_common().unwrap();
+            let maf = dataset.snvs().mafs().unwrap()[mi];
+
+            if maf > maf_thre {
+                create_coef_logit_nonadd(
+                    gsnv,
+                    phe,
+                    sample_weight,
+                    learning_rate,
+                    eps,
+                    eff_eps,
+                    BoostType::LogitNoMissing,
+                )
+            } else {
+                create_coef_logit_add(gsnv, sample_weight, learning_rate, BoostType::LogitAdd)
+            }
+        }
+
+        BoostType::LogitAddInteraction => {
+            // additive
+            create_coef_logit_add(gsnv, sample_weight, learning_rate, boost_type)
+        }
+
+        _ => panic!(),
     }
 }
 
-pub unsafe fn calculate_coef_logit_eps(
+pub fn create_coef_logit_interaction(
+    gsnv_1: &GenotSnvRef,
+    gsnv_2: &GenotSnvRef,
+    sample_weight: &SampleWeight,
+    learning_rate: f64,
+    boost_type: BoostType, // BoostType::LogitAdd
+    maf_1: f64,
+    maf_2: f64,
+) -> (Coef, bool, bool) {
+    let coef_ti = calculate_coef_logit_interaction(
+        gsnv_1,
+        gsnv_2,
+        sample_weight.wzs_pad().unwrap(),
+        sample_weight.wls_pad().unwrap(),
+        //learning_rate,
+        maf_1,
+        maf_2,
+    );
+    let coef_ti = coef_lr(coef_ti, learning_rate, boost_type);
+    //let coef_ti = coef_ti.apply_lr(learning_rate);
+    (coef_ti, false, false)
+}
+
+// Apply learning rate
+pub fn calculate_coef_logit_interaction_update(
+    gsnv_1: &GenotSnvRef,
+    gsnv_2: &GenotSnvRef,
+    _mi_1: usize,
+    _mi_2: usize,
+    _dataset: &Dataset,
+    sample_weight: &SampleWeight,
+    learning_rate: f64,
+    boost_type: BoostType,
+    _boost_param: &BoostParam,
+    maf_1: f64,
+    maf_2: f64,
+) -> (Coef, bool, bool) {
+    //let phe = dataset.samples().phe_unwrap();
+    //let eps = boost_param.eps();
+    //let eff_eps = boost_param.eff_eps();
+
+    match boost_type {
+        BoostType::LogitAddInteraction => create_coef_logit_interaction(
+            gsnv_1,
+            gsnv_2,
+            sample_weight,
+            learning_rate,
+            boost_type,
+            maf_1,
+            maf_2,
+        ),
+
+        _ => panic!(),
+    }
+}
+
+// should be fast since called when calculating loss
+pub fn calculate_coef_logit_eps(
     gsnv: &GenotSnvRef,
     wzs_pad: &[f64],
     wls_pad: &[f64],
@@ -314,7 +619,7 @@ pub unsafe fn calculate_coef_logit_eps(
     //use std::time::Instant;
     //let start_time = Instant::now();
 
-    let (wzs_sum, wls_sum) = calc::calculate_coef_gt_logit_sm(gsnv, wzs_pad, wls_pad);
+    let (wzs_sum, wls_sum) = calc::calc_ws_sum_logit_mi(gsnv, wzs_pad, wls_pad);
     //let (wzs_sum, wls_sum);
     //#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     //{
@@ -369,6 +674,7 @@ pub unsafe fn calculate_coef_logit_eps(
             //    coefficient::calculate_coef_logit_no_missing(wzs_sum, wls_sum, eff_eps, table8_count,verbose)
             //}
         }
+        //TOFIX
         _ => panic!("wrong"),
     };
 
@@ -454,7 +760,9 @@ pub unsafe fn calculate_coef_logit_eps(
 }
  */
 
-pub unsafe fn calculate_coef_logit_add(
+// should be fast since called when calculating loss
+//pub unsafe fn calculate_coef_logit_add(
+pub fn calculate_coef_logit_add(
     gsnv: &GenotSnvRef,
     wzs_pad: &[f64],
     wls_pad: &[f64],
@@ -464,12 +772,18 @@ pub unsafe fn calculate_coef_logit_add(
     //eps: Eps,
     //lr: f64,
 ) -> Coef {
+    //log::debug!("wzs_pad {:?}", wzs_pad.iter().take(10));
+    //log::debug!("wls_pad {:?}", wls_pad.iter().take(10));
+
     //use std::time::Instant;
     //let start_time = Instant::now();
 
-    let (wzs_sum, wls_sum) = calc::calculate_coef_gt_logit_sm(gsnv, wzs_pad, wls_pad);
+    let (wzs_sum, wls_sum) = calc::calc_ws_sum_logit_mi(gsnv, wzs_pad, wls_pad);
     //let (wzs_sum, wls_sum) = calc::calculate_coef_gt_logit_simd_sm(gsnv, wzs_pad, wls_pad);
     //calculate_coef_gt_logit_simd_sm(&genot.to_genot_snv(mi), wzs, wls, phe);
+
+    //log::debug!("wzs_sum {:?}", wzs_sum);
+    //log::debug!("wls_sum {:?}", wls_sum);
 
     let coef: Coef = calc_coef_logit_add(wzs_sum, wls_sum);
 
@@ -515,6 +829,41 @@ pub unsafe fn calculate_coef_logit_add(
 
 //     coef
 // }
+
+// should be fast since called when calculating loss
+pub fn calculate_coef_logit_interaction(
+    gsnv_1: &GenotSnvRef,
+    gsnv_2: &GenotSnvRef,
+    wzs_pad: &[f64],
+    wls_pad: &[f64],
+    maf_1: f64,
+    maf_2: f64,
+    //lr: f64,
+) -> Coef {
+    //log::debug!("wzs_pad {:?}", wzs_pad.iter().take(10));
+    //log::debug!("wls_pad {:?}", wls_pad.iter().take(10));
+
+    //use std::time::Instant;
+    //let start_time = Instant::now();
+
+    let (wzs_sum_3by3, wls_sum_3by3) =
+        calc::calc_ws_sum_logit_interaction_mi(gsnv_1, gsnv_2, wzs_pad, wls_pad);
+    //let (wzs_sum4, wls_sum4) =
+    //calc::calc_ws_sum_logit_interaction_mi(gsnv_1, gsnv_2, wzs_pad, wls_pad);
+
+    //log::debug!("wzs_sum {:?}", wzs_sum);
+    //log::debug!("wls_sum {:?}", wls_sum);
+
+    let coef: Coef = calc_coef_logit_interaction(wzs_sum_3by3, wls_sum_3by3, maf_1, maf_2);
+
+    //println!("afr coef: {} sec",  start_time.elapsed().as_micros());
+
+    coef
+
+    //let coef = calculate_coef_logit_add(gsnv, wzs_pad, wls_pad);
+
+    //coef.apply_lr(lr)
+}
 
 pub fn calculate_coef_logit(
     wzs_sum: (f64, f64, f64),
@@ -630,11 +979,9 @@ pub fn calc_coef_logit_add(wzs_sum: (f64, f64, f64), wls_sum: (f64, f64, f64)) -
     let c = ((w1 + 4.0 * w2) * u0 + 2.0 * w2 * u1 - w1 * u2) / denom;
     let a = ((-w1 - 2.0 * w2) * u0 + (-w2 + w0) * u1 + (2.0 * w0 + w1) * u2) / denom;
 
-    //when w0=w2=0, denom=0.0
+    //when w1=w2=0, denom=0.0
     //if denom==0.0{
     //    log::debug!("denom=0.0");
-    //    log::debug!("a {}",a);
-    //    log::debug!("c {}",c);
     //    log::debug!("w0 {}",w0);
     //    log::debug!("w1 {}",w1);
     //    log::debug!("w2 {}",w2);
@@ -654,6 +1001,96 @@ pub fn calc_coef_logit_add(wzs_sum: (f64, f64, f64), wls_sum: (f64, f64, f64)) -
     Coef::LinearConst((c, a))
 }
 
+// TODO: test check
+pub fn calculate_coef_logit_interaction_cont_table(
+    sums: Sum3by3Ar, //both case and cont
+    sums_case: Sum3by3Ar,
+    sums_cont: Sum3by3Ar,
+    maf_1: f64,
+    maf_2: f64,
+    n: usize,
+) -> (Coef, Sum3by3Ar) {
+    let x_inter = Sum3by3Ar::interaction_genotype(maf_1, maf_2);
+
+    let sums_diff = sums_case.substract(&sums_cont);
+
+    let v0 = 0.25 * sums.multiply_pow(&x_inter).sum();
+    let v1 = 0.25 * sums.multiply(&x_inter).sum();
+    let v2 = 0.25 * (n as f64);
+    let v3 = -0.5 * sums_diff.multiply(&x_inter).sum();
+    let v4 = -0.5 * sums_diff.sum();
+
+    let denom = v0 * v2 - v1 * v1;
+    let c_numer = v1 * v3 - v0 * v4;
+    let a_numer = v1 * v4 - v2 * v3;
+
+    let c = c_numer / denom;
+    let a = a_numer / denom;
+
+    (Coef::LinearConstInteraction((c, a)), x_inter)
+}
+
+// TODO: test
+pub fn calc_coef_logit_interaction(
+    wzs_sum: Sum3by3,
+    wls_sum: Sum3by3,
+    maf_1: f64,
+    maf_2: f64,
+) -> Coef {
+    // create interaction genotype matrix
+    //let x_inter = interaction_genotype(maf_1, maf_2);
+    let x_inter = gscore::interaction_genotype(maf_1, maf_2);
+
+    let v0 = Sum3by3::sum_multi_pow(wls_sum, x_inter);
+    let v1 = Sum3by3::sum_multi(wls_sum, x_inter);
+    let v2 = Sum3by3::sum(wls_sum);
+    let v3 = -Sum3by3::sum_multi(wzs_sum, x_inter);
+    let v4 = -Sum3by3::sum(wzs_sum);
+
+    let denom = v0 * v2 - v1 * v1;
+    let c_numer = v1 * v3 - v0 * v4;
+    let a_numer = v1 * v4 - v2 * v3;
+
+    let c = c_numer / denom;
+    let a = a_numer / denom;
+
+    Coef::LinearConstInteraction((c, a))
+}
+
+//pub fn calc_coef_logit_interaction(
+//    wzs_sum: (f64, f64, f64, f64),
+//    wls_sum: (f64, f64, f64, f64),
+//) -> Coef {
+//    let (u4, u2, u1, u0) = wzs_sum;
+//    let (w4, w2, w1, w0) = wls_sum;
+//
+//    let denom = 4.0 * w4 * w2 + 9.0 * w4 * w1 + 16.0 * w4 * w0 + w2 * w1 + 4.0 * w2 * w0 + w1 * w0;
+//
+//    let c_numer = u4 * (-3.0 * w1 - 4.0 * w2)
+//        + u2 * (8.0 * w4 - w1)
+//        + u1 * (12.0 * w4 + 2.0 * w2)
+//        + u0 * (16.0 * w4 + 4.0 * w2 + w1);
+//
+//    let a_numer = u4 * (2.0 * w2 + 4.0 * w1 + 4.0 * w0)
+//        + u2 * (-2.0 * w4 + w1 + 2.0 * w0)
+//        + u1 * (-3.0 * w4 - w2 + w0)
+//        + u0 * (-4.0 * w4 - 2.0 * w2 - w1);
+//
+//    let c = c_numer / denom;
+//    let a = a_numer / denom;
+//
+//    //when w0=w2=0, denom=0.0
+//    //if denom==0.0{
+//    //    log::debug!("denom=0.0");
+//    //    log::debug!("w0 {}",w0);
+//    //    log::debug!("w1 {}",w1);
+//    //    log::debug!("w2 {}",w2);
+//    //}
+//
+//    Coef::LinearConstInteraction((c, a))
+//    //Coef::LinearConst((c, a))
+//}
+
 // boost_type is necessary since how to deal with sm could be different
 // TODO: common for not only Logit
 pub fn coef_lr(coef: Coef, lr: f64, boost_type: BoostType) -> Coef {
@@ -661,16 +1098,19 @@ pub fn coef_lr(coef: Coef, lr: f64, boost_type: BoostType) -> Coef {
 
     match boost_type {
         BoostType::FreeModelMissing | BoostType::Logit => {
-            let (s0, s1, s2, _sm) = coef.score4_f64();
-            Coef::Score4((lr * s0, lr * s1, lr * s2, 0.0))
+            //let (s0, s1, s2, _sm) = coef.score4_f64();
+            unimplemented!()
+            // 0.0??
+            //Coef::Score4((lr * s0, lr * s1, lr * s2, 0.0))
         }
-        BoostType::LogitNoMissing => {
-            coef.apply_lr(lr)
-            //let (s0, s1, s2) = coef.score3_f64();
-            //Coef::Score3((lr * s0, lr * s1, lr * s2))
-        }
-        BoostType::LogitAdd => coef.apply_lr(lr),
-        _ => panic!("wrong: {:?}", boost_type),
+        _=>coef.apply_lr(lr)
+        //BoostType::LogitNoMissing => {
+        //    coef.apply_lr(lr)
+        //    //let (s0, s1, s2) = coef.score3_f64();
+        //    //Coef::Score3((lr * s0, lr * s1, lr * s2))
+        //}
+        //BoostType::LogitAdd => coef.apply_lr(lr),
+        //_ => panic!("wrong: {:?}", boost_type),
     }
 }
 
@@ -740,9 +1180,9 @@ mod tests {
         let y = vec![true; n];
         let phe = Phe::new(&y);
 
-        let mut wzs: Vec<f64> = alloc::with_capacity_align_f64(n + 32);
+        let mut wzs: Vec<f64> = alloc::with_capacity_align::<f64>(n + 32);
         wzs.resize(n + 32, 0.0f64);
-        let mut wls: Vec<f64> = alloc::with_capacity_align_f64(n + 32);
+        let mut wls: Vec<f64> = alloc::with_capacity_align::<f64>(n + 32);
         wls.resize(n + 32, 0.0f64);
 
         (genot, phe, wzs, wls)

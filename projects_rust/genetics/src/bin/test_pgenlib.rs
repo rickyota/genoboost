@@ -4,12 +4,12 @@
 //!
 //!
 
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 //#[macro_use]
 //extern crate clap;
 //use clap::{AppSettings, Arg,  ArgMatches, SubCommand};
 //use rayon;
-use genetics::GenotFormat;
+use genetics::GenotFile;
 use std::{path::PathBuf, time::Instant};
 //use clap::app_from_crate; //error
 
@@ -36,31 +36,14 @@ use std::{path::PathBuf, time::Instant};
 struct Args {
     #[arg(long)]
     file_genot: String,
-    #[arg(long, value_enum)]
-    genot_format: GenotFormatArg,
+    //#[arg(long, value_enum)]
+    //genot_format: GenotFormatArg,
     #[arg(long)]
     file_sample: Option<String>,
     #[arg(long, help = "Number of threads")]
     threads: Option<usize>,
     #[arg(long, help = "Verbose")]
     verbose: bool,
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, Debug, ValueEnum)]
-enum GenotFormatArg {
-    Plink,
-    Plink2,
-    Plink2Vzs,
-}
-
-impl GenotFormatArg {
-    pub fn to_naive(self) -> GenotFormat {
-        match self {
-            GenotFormatArg::Plink => GenotFormat::Plink1,
-            GenotFormatArg::Plink2 => GenotFormat::Plink2,
-            GenotFormatArg::Plink2Vzs => GenotFormat::Plink2Vzs,
-        }
-    }
 }
 
 fn main() {
@@ -105,7 +88,7 @@ fn main() {
 
     //let dout_score = PathBuf::from(args.dir_score);
     let fin = PathBuf::from(args.file_genot);
-    let _genot_format = args.genot_format.to_naive();
+    //let _genot_format = args.genot_format.to_naive();
     //let fin_phe = args.file_phe.map(|x| PathBuf::from(x));
     //let phe_name = args.phe;
     //let cov_name = args.cov;
@@ -121,8 +104,9 @@ fn main() {
     println!("start test_pgenlib");
     //let g=genetics::test_pgenlib(&fin, genot_format, fin_sample.as_deref());
 
-    let g_plink2 = genetics::test_pgenlib(&fin, GenotFormat::Plink2Vzs, fin_sample.as_deref());
-    let g_plink1 = genetics::test_pgenlib(&fin, GenotFormat::Plink1, fin_sample.as_deref());
+    let g_plink2 =
+        genetics::test_pgenlib(&GenotFile::Plink2Vzs(fin.clone()), fin_sample.as_deref());
+    let g_plink1 = genetics::test_pgenlib(&GenotFile::Plink1(fin.clone()), fin_sample.as_deref());
 
     //assert_eq!(g_plink2, g_plink1);
     if g_plink2 == g_plink1 {

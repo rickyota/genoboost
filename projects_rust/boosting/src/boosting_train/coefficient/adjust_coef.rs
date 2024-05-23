@@ -25,7 +25,7 @@ pub fn adjust_eff_logit_no_missing(
                     adjust_eff_score_lims2(s1, d1, n1, (s2, s0), clim, sratio);
                 let (s0_new, is_eff_eps_0) =
                     adjust_eff_score_lims2(s0, d0, n0, (s2, s1), clim, sratio);
-                let is_eff_eps = is_eff_eps_2 | is_eff_eps_1 | is_eff_eps_0;
+                let is_eff_eps = is_eff_eps_2 || is_eff_eps_1 || is_eff_eps_0;
                 ((s0_new, s1_new, s2_new), is_eff_eps)
                 //(Coef::Score3((s0_new, s1_new, s2_new)), is_eff_eps)
             }
@@ -52,7 +52,7 @@ pub fn adjust_eff_logit_no_missing(
                     plim,
                     sratio,
                 );
-                let is_eff_eps = is_eff_eps_2 | is_eff_eps_1 | is_eff_eps_0;
+                let is_eff_eps = is_eff_eps_2 || is_eff_eps_1 || is_eff_eps_0;
                 ((s0_new, s1_new, s2_new), is_eff_eps)
                 //(Coef::Score3((s0_new, s1_new, s2_new)), is_eff_eps)
             }
@@ -251,7 +251,7 @@ fn adjust_eff_score_lims2(
     clim: usize,
     sratio: f64,
 ) -> (f64, bool) {
-    if (d < clim) | (n < clim) {
+    if (d < clim) || (n < clim) {
         lim_score(s, s_others, sratio)
     } else {
         (s, false)

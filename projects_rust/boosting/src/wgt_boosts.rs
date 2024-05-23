@@ -5,6 +5,7 @@ use std::path::Path;
 use crate::wgt_boost;
 use crate::wgt_boost::io;
 use crate::BoostType;
+use crate::DoutParaFile;
 use crate::WgtBoost;
 use genetics::textfile;
 
@@ -55,7 +56,7 @@ impl WgtBoosts {
 
         // TODO: check colums match io::wgt_columns()
 
-        WgtBoosts {
+        Self {
             wgts,
             boost_type: None,
             //columns: io::wgt_columns(boost_type),
@@ -67,14 +68,16 @@ impl WgtBoosts {
     // TODO: estimate boost_type from column
     /// call on training
     /// boost_type is required
-    pub fn new_from_file_dir(dout: &Path, boost_type: BoostType) -> Self {
+    //pub fn new_from_file_dir(dout: &Path, boost_type: BoostType) -> Self {
+    pub fn new_from_file_dir(dout: &DoutParaFile, boost_type: BoostType) -> Self {
         let wgts: Vec<WgtBoost> = wgt_boost::io::load_wgts(dout);
         //let wgts: Vec<WgtBoost> = wgt_boost::io::load_wgts(dout, boost_type);
         let wgts_len = wgts.len();
 
         // TODO: check colums match io::wgt_columns()
 
-        let fwgt = wgt_boost::io::get_fname_wgt(dout);
+        let fwgt = dout.get_file_wgt();
+        //let fwgt = wgt_boost::io::get_fname_wgt(dout);
         if io::wgt_columns(boost_type) != textfile::load_table_header(&fwgt) {
             panic!(
                 "Existing wgtboost does not match boost_type: {:?}",
@@ -127,12 +130,32 @@ impl WgtBoosts {
     // TODO: test
     pub fn count_unique_snv(&self) -> usize {
         // https://www.reddit.com/r/rust/comments/b4cxrj/how_to_count_number_of_unique_items_in_an_array/
-        self.wgts()
+        // single snv
+        let mut single_snvs = self
+            .wgts()
             .iter()
-            .filter(|x| x.wgt().kind().is_snv())
-            .map(|x| x.wgt().kind().snv_index().rs().to_string())
-            .collect::<HashSet<String>>()
-            .len()
+            .filter(|x| x.wgt().kind().is_snv_single())
+            .map(|x| x.wgt().kind().snv_id().id().to_string())
+            .collect::<HashSet<String>>();
+
+        let interaction_snvs = self
+            .wgts()
+            .iter()
+            .filter(|x| x.wgt().kind().is_snv_interaction())
+            .map(|x| x.wgt().kind().snv_id_interaction())
+            .flat_map(|(x1, x2)| [x1.id().to_string(), x2.id().to_string()])
+            .collect::<HashSet<String>>();
+
+        single_snvs.extend(interaction_snvs.into_iter());
+
+        single_snvs.len()
+
+        //self.wgts()
+        //    .iter()
+        //    .filter(|x| x.wgt().kind().is_snv())
+        //    .map(|x| x.wgt().kind().snv_index().id().to_string())
+        //    .collect::<HashSet<String>>()
+        //    .len()
     }
 
     pub fn last_wgt(&self) -> Option<&WgtBoost> {
@@ -155,7 +178,7 @@ impl WgtBoosts {
                 .iter()
                 .rev()
                 .take(n)
-                .filter(|x| x.wgt().kind().is_snv())
+                .filter(|x| x.wgt().kind().is_snv_single_or_interaction())
                 .count()
                 == n,
         )

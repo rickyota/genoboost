@@ -1,4 +1,5 @@
 use super::{Coef, Model, Wgt, WgtKind};
+use crate::wgt::SnvWgt;
 use crate::{textfile, SnvId};
 use std::collections::HashMap;
 use std::fs;
@@ -77,6 +78,8 @@ pub fn load_wgts_file(fwgt: &Path, is_nonadd: bool) -> Vec<Wgt> {
             "score1" => Some("score1".to_string()),
             "score2" => Some("score2".to_string()),
             "alpha" | "wgt" => Some("alpha".to_string()),
+            "a1_frq" => Some("a1_frq".to_string()),
+            "a2_frq" => Some("a2_frq".to_string()),
             _ => None,
             //z => z, // unuse col
             //_ => panic!("unknown column.")
@@ -93,14 +96,14 @@ pub fn load_wgts_file(fwgt: &Path, is_nonadd: bool) -> Vec<Wgt> {
     log::debug!("col_to_i {:?}", col_to_i);
 
     // check all variant cols are in wgt
-    let cols_wgt = if is_nonadd {
+    let cols_wgt_required = if is_nonadd {
         vec![
             "var", "chrom", "pos", "a1", "a2", "score0", "score1", "score2",
         ]
     } else {
         vec!["var", "chrom", "pos", "a1", "a2", "alpha"]
     };
-    for col_wgt in cols_wgt.iter() {
+    for col_wgt in cols_wgt_required.iter() {
         if !col_to_i.contains_key(*col_wgt) {
             panic!("Required column not in wgt: {}", col_wgt);
         }
@@ -108,7 +111,7 @@ pub fn load_wgts_file(fwgt: &Path, is_nonadd: bool) -> Vec<Wgt> {
 
     for wgt_i in 1..vss[0].len() {
         // for snv
-        let snv = SnvId::construct_snv_index(
+        let snv = SnvId::new(
             vss[col_to_i["var"]][wgt_i].clone(),
             &vss[col_to_i["chrom"]][wgt_i],
             &vss[col_to_i["pos"]][wgt_i],
@@ -128,7 +131,32 @@ pub fn load_wgts_file(fwgt: &Path, is_nonadd: bool) -> Vec<Wgt> {
         };
         let model = Model::new_coef(coef);
 
-        let wgt = Wgt::construct_wgt(WgtKind::Snv(snv, None, None), model);
+        // TODO: cleaner
+        // freq might not exist
+        let maf = if !col_to_i.contains_key("a1_frq") {
+            None
+        } else if let Some(a1_frq) = vss[col_to_i["a1_frq"]][wgt_i].parse::<f64>().ok() {
+            Some(a1_frq)
+        } else if !col_to_i.contains_key("a2_frq") {
+            None
+        } else if let Some(a2_frq) = vss[col_to_i["a2_frq"]][wgt_i].parse::<f64>().ok() {
+            Some(1.0 - a2_frq)
+        } else {
+            None
+        };
+        //let maf = if let Some(a1_frq) = vss[col_to_i["a1_frq"]][wgt_i].parse::<f64>().ok() {
+        //    Some(a1_frq)
+        //} else if let Some(a2_frq) = vss[col_to_i["a2_frq"]][wgt_i].parse::<f64>().ok() {
+        //    Some(1.0 - a2_frq)
+        //} else {
+        //    None
+        //};
+        //let a2_frq = vss[col_to_i["a2_frq"]][wgt_i].parse::<f64>().ok();
+        //let maf = a2_frq.map(|x| 1.0 - x);
+
+        let snv_wgt = SnvWgt::new_score(snv, maf);
+        let wgt = Wgt::new(WgtKind::new_snv(snv_wgt), model);
+        //let wgt = Wgt::new(WgtKind::Snv(snv, None, None), model);
 
         wgts.push(wgt);
     }

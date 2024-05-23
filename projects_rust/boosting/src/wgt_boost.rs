@@ -7,9 +7,9 @@
 pub mod io;
 
 use std::collections::HashMap;
-use std::fs::OpenOptions;
+//use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
-use std::path::Path;
+//use std::path::Path;
 
 use crate::ContingencyTable;
 use genetics::wgt::{Coef, Model, Wgt, WgtKind, WgtTrait};
@@ -33,13 +33,14 @@ impl WgtTrait for WgtBoost {
         self.wgt_mut()
     }
 
-    fn set_snv_index(&mut self, mi: Option<usize>) {
-        let kind = self.wgt_mut().kind_mut();
-        // TODO: move to WgtKind::
-        if let WgtKind::Snv(_, _, ref mut index) = kind {
-            *index = mi;
-        }
-    }
+    //fn set_snv_index(&mut self, mi: Option<usize>) {
+    //    let kind = self.wgt_mut().kind_mut();
+    //    kind.set_snv_index(mi);
+    //    ////  moved to WgtKind::
+    //    //if let WgtKind::Snv(_, _, ref mut index) = kind {
+    //    //    *index = mi;
+    //    //}
+    //}
 }
 
 impl WgtBoost {
@@ -50,8 +51,8 @@ impl WgtBoost {
         contingency_table: Option<ContingencyTable>,
         is_eps: Option<bool>,
         is_eff_eps: Option<bool>,
-    ) -> WgtBoost {
-        let wgt_boost = WgtBoost {
+    ) -> Self {
+        let wgt_boost = Self {
             wgt,
             iteration,
             loss,
@@ -63,49 +64,62 @@ impl WgtBoost {
         wgt_boost
     }
 
-    pub fn construct_wgt(
+    pub fn new_wgt(
         wgt: Wgt,
         iteration: usize,
         loss: f64,
         contingency_table: ContingencyTable,
         is_eps: bool,
         is_eff_eps: Option<bool>,
-    ) -> WgtBoost {
-        let wgt_boost = WgtBoost {
+    ) -> Self {
+        Self::new(
             wgt,
             iteration,
-            loss: Some(loss),
-            contingency_table: Some(contingency_table),
-            is_eps: Some(is_eps),
+            Some(loss),
+            Some(contingency_table),
+            Some(is_eps),
             is_eff_eps,
-        };
-        //wgt_boost.check_sum_abcd();
-        wgt_boost
+        )
+
+        //let wgt_boost = Self {
+        //    wgt,
+        //    iteration,
+        //    loss: Some(loss),
+        //    contingency_table: Some(contingency_table),
+        //    is_eps: Some(is_eps),
+        //    is_eff_eps,
+        //};
+        ////wgt_boost.check_sum_abcd();
+        //wgt_boost
     }
-    pub fn construct_wgt_loss(wgt: Wgt, iteration: usize, loss: Option<f64>) -> WgtBoost {
-        let wgt_boost = WgtBoost {
-            wgt,
-            iteration,
-            loss,
-            contingency_table: None,
-            //contingency_table: Some(ContingencyTable::new_four(contingency_table.unwrap())), //abcd_sum,
-            is_eps: None,
-            is_eff_eps: None,
-        };
-        //wgt_boost.check_sum_abcd();
-        wgt_boost
+    pub fn new_wgt_loss(wgt: Wgt, iteration: usize, loss: Option<f64>) -> Self {
+        Self::new(wgt, iteration, loss, None, None, None)
+
+        //let wgt_boost = Self {
+        //    wgt,
+        //    iteration,
+        //    loss,
+        //    contingency_table: None,
+        //    //contingency_table: Some(ContingencyTable::new_four(contingency_table.unwrap())), //abcd_sum,
+        //    is_eps: None,
+        //    is_eff_eps: None,
+        //};
+        ////wgt_boost.check_sum_abcd();
+        //wgt_boost
     }
 
-    pub fn construct_wgt_iteration(wgt: Wgt, iteration: usize) -> WgtBoost {
-        let wgt_boost = WgtBoost {
-            wgt,
-            iteration,
-            loss: None,
-            contingency_table: None,
-            is_eps: None,
-            is_eff_eps: None,
-        };
-        wgt_boost
+    pub fn new_wgt_iteration(wgt: Wgt, iteration: usize) -> Self {
+        Self::new(wgt, iteration, None, None, None, None)
+
+        //let wgt_boost = Self {
+        //    wgt,
+        //    iteration,
+        //    loss: None,
+        //    contingency_table: None,
+        //    is_eps: None,
+        //    is_eff_eps: None,
+        //};
+        //wgt_boost
     }
 
     /*
@@ -131,12 +145,13 @@ impl WgtBoost {
         &mut self.wgt
     }
 
-    // FIXME: Opion<f64>
-    pub fn loss(&self) -> f64 {
-        self.loss.unwrap()
-    }
+    //pub fn loss(&self) -> f64 {
+    //pub fn loss_unwrap(&self) -> f64 {
+    //    self.loss.unwrap()
+    //}
 
-    pub fn loss_option(&self) -> Option<f64> {
+    //pub fn loss_option(&self) -> Option<f64> {
+    pub fn loss(&self) -> Option<f64> {
         self.loss
     }
 
@@ -221,25 +236,66 @@ impl WgtBoost {
     fn content_hash(&self) -> HashMap<String, String> {
         //let content_hash: HashMap<String, String> = match self.wgt().kind() {
         match self.wgt().kind() {
-            WgtKind::Snv(snv, _, _) => {
-                //let snv = snv_wgt.snv_index();
+            //WgtKind::Snv(snv, _, _) => {
+            WgtKind::Snv(snv_wgt) => {
+                let snv = snv_wgt.snv_id();
+                let maf = snv_wgt.maf().unwrap();
+                let a2_frq = 1.0 - maf;
                 let model = self.wgt().model();
 
                 let mut hash = HashMap::from([
                     ("iteration".to_owned(), self.iteration_string()),
                     ("kind".to_owned(), "SNV".into()),
-                    ("var".to_owned(), snv.rs().into()),
-                    ("model".to_owned(), model.model_name().into()),
-                    ("threshold".to_owned(), model.threshold_string().into()),
+                    ("var".to_owned(), snv.id().into()),
+                    ("model".to_owned(), model.model_string_for_wgt()),
+                    ("threshold".to_owned(), model.threshold_string()),
                     ("eps".to_owned(), self.is_eps_string()),
                     ("eff_eps".to_owned(), self.is_eff_eps_string()),
                     //("alpha".to_owned(), model.alpha_string().into()),
                     //("const".to_owned(), model.const_string().into()),
-                    ("chrom".to_owned(), snv.chrom().to_string().into()),
-                    ("pos".to_owned(), snv.pos().to_string().into()),
+                    ("chrom".to_owned(), snv.chrom().to_string()),
+                    ("pos".to_owned(), snv.pos().to_string()),
                     ("a1".to_owned(), snv.a1().into()),
                     ("a2".to_owned(), snv.a2().into()),
+                    // TOFIX: use "{:.5}"
+                    ("a2_frq".to_owned(), a2_frq.to_string()),
                     //("nan".to_owned(), "NaN".into()),
+                ]);
+
+                let hash_snv = model.to_string_hash();
+                log::debug!("hash_snv {:?}", hash_snv);
+                hash.extend(hash_snv);
+
+                hash
+            }
+
+            //WgtKind::SnvInteraction(snv_1, _, snv_2, _) => {
+            WgtKind::SnvInteraction(snv_inter_wgt) => {
+                let (snv_1, snv_2) = snv_inter_wgt.snv_ids();
+                let model = self.wgt().model();
+                let (maf_1, maf_2) = snv_inter_wgt.mafs();
+                let a2_1_frq = 1.0 - maf_1.unwrap();
+                let a2_2_frq = 1.0 - maf_2.unwrap();
+
+                let mut hash = HashMap::from([
+                    ("iteration".to_owned(), self.iteration_string()),
+                    ("kind".to_owned(), "SNV".into()),
+                    ("var".to_owned(), snv_1.id().into()),
+                    ("var_2".to_owned(), snv_2.id().into()),
+                    ("model".to_owned(), model.model_string_for_wgt().into()),
+                    ("threshold".to_owned(), model.threshold_string().into()),
+                    ("eps".to_owned(), self.is_eps_string()),
+                    ("eff_eps".to_owned(), self.is_eff_eps_string()),
+                    ("chrom".to_owned(), snv_1.chrom().to_string().into()),
+                    ("pos".to_owned(), snv_1.pos().to_string().into()),
+                    ("a1".to_owned(), snv_1.a1().into()),
+                    ("a2".to_owned(), snv_1.a2().into()),
+                    ("a2_frq".to_owned(), a2_1_frq.to_string()),
+                    ("chrom_2".to_owned(), snv_2.chrom().to_string().into()),
+                    ("pos_2".to_owned(), snv_2.pos().to_string().into()),
+                    ("a1_2".to_owned(), snv_2.a1().into()),
+                    ("a2_2".to_owned(), snv_2.a2().into()),
+                    ("a2_2_frq".to_owned(), a2_2_frq.to_string()),
                 ]);
 
                 let hash_snv = model.to_string_hash();
@@ -252,8 +308,8 @@ impl WgtBoost {
             WgtKind::Cov(cov_id) => {
                 let kind_name = match cov_id.kind() {
                     CovKind::Const => "CONST",
-                    //VarKind::Var => "VAR",
                     CovKind::Cov => "COV",
+                    //VarKind::Var => "VAR",
                 };
                 let model = self.wgt().model();
 
@@ -262,7 +318,7 @@ impl WgtBoost {
                     ("iteration".to_owned(), self.iteration_string()),
                     ("kind".to_owned(), kind_name.into()),
                     ("var".to_owned(), cov_id.name().into()),
-                    ("model".to_owned(), model.model_name().into()),
+                    ("model".to_owned(), model.model_string_for_wgt().into()),
                     ("threshold".to_owned(), model.threshold_string().into()),
                     //("alpha".to_owned(), model.alpha_string().into()),
                     //("const".to_owned(), model.const_string().into()),
@@ -278,73 +334,6 @@ impl WgtBoost {
                 let hash_snv = model.to_string_hash();
                 hash.extend(hash_snv);
                 hash
-
-                /*
-                //let cov_id = cov_wgt.var();
-                match self.wgt().model().coef().model_type() {
-                    ModelType::Linear => {
-                        let kind_name = match cov_id.kind() {
-                            CovKind::Const => "CONST",
-                            //VarKind::Var => "VAR",
-                            CovKind::Cov => "COV",
-                        };
-                        let model = self.wgt().model();
-
-                        // make "NaN" as const string
-                        let mut hash = HashMap::from([
-                            ("iteration".to_owned(), self.iteration_string()),
-                            ("kind".to_owned(), kind_name.into()),
-                            ("var".to_owned(), cov_id.name().into()),
-                            ("model".to_owned(), model.model_name().into()),
-                            ("threshold".to_owned(), model.threshold_string().into()),
-                            //("alpha".to_owned(), model.alpha_string().into()),
-                            //("const".to_owned(), model.const_string().into()),
-                            ("eps".to_owned(), "NaN".into()),
-                            // eff_eps?
-                            ("eps_eps".to_owned(), "NaN".into()),
-                            ("chrom".to_owned(), "NaN".into()),
-                            ("pos".to_owned(), "NaN".into()),
-                            ("a1".to_owned(), "N".into()),
-                            ("a2".to_owned(), "N".into()),
-                            //("nan".to_owned(), "NaN".into()),
-                        ]);
-
-                        let hash_snv = model.to_string_hash();
-                        hash.extend(hash_snv);
-                        hash
-                    }
-                    ModelType::Binary => {
-                        let kind_name = match cov_id.kind() {
-                            CovKind::Const => "CONST",
-                            //VarKind::Var => "VAR",
-                            CovKind::Cov => "COV",
-                        };
-                        let model = self.wgt().model();
-
-                        // make "NaN" as const string
-                        let mut hash = HashMap::from([
-                            ("iteration".to_owned(), self.iteration_string()),
-                            ("kind".to_owned(), kind_name.into()),
-                            ("var".to_owned(), cov_id.name().into()),
-                            ("model".to_owned(), model.model_name().into()),
-                            ("threshold".to_owned(), model.threshold_string().into()),
-                            //("alpha".to_owned(), model.alpha_string().into()),
-                            //("const".to_owned(), model.const_string().into()),
-                            ("eps".to_owned(), "NaN".into()),
-                            ("eps_eps".to_owned(), "NaN".into()),
-                            ("chrom".to_owned(), "NaN".into()),
-                            ("pos".to_owned(), "NaN".into()),
-                            ("a1".to_owned(), "N".into()),
-                            ("a2".to_owned(), "N".into()),
-                            //("nan".to_owned(), "NaN".into()),
-                        ]);
-
-                        let hash_snv = model.to_string_hash();
-                        hash.extend(hash_snv);
-                        hash
-                    }
-                    _ => unimplemented!(),
-                    */
             }
         }
     }
@@ -509,15 +498,15 @@ impl WgtBoost {
     */
 
     /// should write CONST not const
-    pub fn write_wgt(&self, dout: &Path, columns: &[String]) {
-        let fwgt = io::get_fname_wgt(dout);
-        let file = OpenOptions::new().append(true).open(fwgt).unwrap();
-        //let mut writer = BufWriter::new(File::create(fout).unwrap());
-        let mut writer = BufWriter::new(file);
-        let string = self.string_write(columns);
-        //let str = "a\tb\n".to_owned();
-        writer.write(string.as_bytes()).unwrap();
-    }
+    //pub fn write_wgt(&self, dout: &Path, columns: &[String]) {
+    //    let fwgt = io::get_fname_wgt(dout);
+    //    let file = OpenOptions::new().append(true).open(fwgt).unwrap();
+    //    //let mut writer = BufWriter::new(File::create(fout).unwrap());
+    //    let mut writer = BufWriter::new(file);
+    //    let string = self.string_write(columns);
+    //    //let str = "a\tb\n".to_owned();
+    //    writer.write(string.as_bytes()).unwrap();
+    //}
 
     pub fn write_wgt_writer<W: std::io::Write>(
         &self,

@@ -1,249 +1,27 @@
-// TODO: DO NOT USE wgti as iter!!! -> these two should be separated!! should refer to wgt.iter()
-
 use std::collections::HashSet;
 use std::path::Path;
 
+use crate::dout_file::DoutScoreParaFile;
 use crate::wgt_boosts::WgtBoosts;
-use crate::WgtBoost;
 use genetics::genot::prelude::*;
-use genetics::samples::CovsTrait;
-use genetics::wgt::{Coef, WgtKind};
-use genetics::{vec, Covs, Dataset};
-
-//use rayon::iter::ParallelBridge;
-//use rayon::prelude::*;
-//use rayon::iter::ParallelBridge;
-
-// TODO: use SIMD
-//
-// DO NOT use rayon here
-// since very slow when n is small
-// though nested rayon does not raise error
-//
-// should implement sth in Wgt, Model to make this simple
-// split for cov?
-// TODO: integrate to genetics::score::add_score()
-pub fn add_score(scores: &mut [f64], wgt: &WgtBoost, genot: &Genot, covs: Option<&Covs>) {
-    //log::debug!("wgt {:?}", wgt);
-    match wgt.wgt().kind() {
-        WgtKind::Snv(_, _, mi) => {
-            //log::debug!("mi {}", mi.unwrap());
-            // This should never panic. => ?
-            let genot_mi = genot.to_genot_snv(mi.unwrap());
-            match wgt.wgt().model().coef() {
-                Coef::Binary((const_ti, alpha_ti)) => {
-                    let threshold = wgt.wgt().model().threshold().unwrap();
-                    let score_add_high = const_ti + alpha_ti;
-                    let score_add_low = const_ti - alpha_ti;
-
-                    scores
-                        .iter_mut()
-                        .zip(genot_mi.iter())
-                        .for_each(|(score, val)| {
-                            let score_add = if val == 3 {
-                                // for Binary, missing is not allowed.
-                                // (should be `const_ti`??)
-                                panic!("Cannot use mising on Binary coef.");
-                            } else {
-                                match (val as f64) > threshold {
-                                    true => score_add_high,
-                                    false => score_add_low,
-                                }
-                            };
-                            *score += score_add;
-                        });
-
-                    // use par_bridge(): very slow
-                    //scores
-                    //    .iter_mut()
-                    //    .zip(genot_mi.iter())
-                    //    .par_bridge()
-                    //    .for_each(|(score, val)| {
-                    //        let score_add = if val == 3 {
-                    //            // FIXME: is this correct???
-                    //            // should be `const_ti`??
-                    //            // or NEVER HAPPEN?
-                    //            panic!("This should never happen??.");
-                    //            0.0
-                    //        } else {
-                    //            match (val as f64) > threshold {
-                    //                true => score_add_high,
-                    //                false => score_add_low,
-                    //            }
-                    //        };
-                    //        *score += score_add;
-                    //    });
-
-                    //for (score, val) in scores.iter_mut().zip(genot_mi.iter()) {
-                    //    let score_add = if val == 3 {
-                    //        0.0
-                    //    } else {
-                    //        match (val as f64) > threshold {
-                    //            true => score_add_high,
-                    //            false => score_add_low,
-                    //        }
-                    //    };
-                    //    *score += score_add;
-                    //}
-                }
-                Coef::LinearConst((const_ti, alpha_ti)) => {
-                    let s2 = const_ti + 2.0 * alpha_ti;
-                    let s1 = const_ti + alpha_ti;
-                    let s0 = const_ti;
-
-                    scores
-                        .iter_mut()
-                        .zip(genot_mi.iter())
-                        .for_each(|(score, val)| {
-                            let score_add = match val {
-                                2 => s2,
-                                1 => s1,
-                                0 => s0,
-                                //3 => sm,
-                                _ => panic!(""),
-                            };
-                            *score += score_add;
-                        });
-                }
-
-                Coef::Score3((s0, s1, s2)) => {
-                    scores
-                        .iter_mut()
-                        .zip(genot_mi.iter())
-                        .for_each(|(score, val)| {
-                            let score_add = match val {
-                                2 => s2,
-                                1 => s1,
-                                0 => s0,
-                                //3 => sm,
-                                _ => panic!(""),
-                            };
-                            *score += score_add;
-                        });
-                }
-
-                Coef::Score4((s0, s1, s2, sm)) => {
-                    scores
-                        .iter_mut()
-                        .zip(genot_mi.iter())
-                        .for_each(|(score, val)| {
-                            let score_add = match val {
-                                2 => s2,
-                                1 => s1,
-                                0 => s0,
-                                3 => sm,
-                                _ => panic!(""),
-                            };
-                            *score += score_add;
-                        });
-
-                    //scores
-                    //    .iter_mut()
-                    //    .zip(genot_mi.iter())
-                    //    .par_bridge()
-                    //    .for_each(|(score, val)| {
-                    //        let score_add = match val {
-                    //            2 => s2,
-                    //            1 => s1,
-                    //            0 => s0,
-                    //            3 => sm,
-                    //            _ => panic!(""),
-                    //        };
-                    //        *score += score_add;
-                    //    });
-
-                    //for (score, val) in scores.iter_mut().zip(genot_mi.iter()) {
-                    //    let score_add = match val {
-                    //        2 => s2,
-                    //        1 => s1,
-                    //        0 => s0,
-                    //        3 => sm,
-                    //        _ => panic!(""),
-                    //    };
-                    //    *score += score_add;
-                    //}
-                }
-                _ => unimplemented!(),
-            }
-        }
-        WgtKind::Cov(_) => {
-            let cov_name = wgt.wgt().kind().cov().name();
-
-            // TODO: clean const
-            if cov_name == "const" {
-                match wgt.wgt().model().coef() {
-                    Coef::Linear(alpha) => {
-                        scores.iter_mut().for_each(|score| {
-                            *score += alpha;
-                        });
-                        //scores.par_iter_mut().for_each(|score| {
-                        //    *score += alpha;
-                        //});
-
-                        //for score in scores.iter_mut() {
-                        //    *score += alpha;
-                        //}
-                    }
-                    Coef::Binary((const_t, alpha)) => {
-                        let score_add = alpha + const_t;
-                        scores.iter_mut().for_each(|score| {
-                            *score += score_add;
-                        });
-
-                        //scores.par_iter_mut().for_each(|score| {
-                        //    *score += score_add;
-                        //});
-
-                        //for score in scores.iter_mut() {
-                        //    *score += alpha + const_t;
-                        //}
-                    }
-                    _ => unimplemented!(),
-                }
-            } else {
-                // cov_name=const will fail
-                let cov_vals = covs.unwrap().vals_id(cov_name);
-                //let cov_vals = covs.vals_id(cov_name);
-                //let cov_vals = cov_wgt.var().vals();
-                match wgt.wgt().model().coef() {
-                    Coef::Linear(alpha) => {
-                        scores
-                            .iter_mut()
-                            .zip(cov_vals.iter())
-                            .for_each(|(score, val)| {
-                                *score += alpha * val;
-                            });
-                        //scores
-                        //    .iter_mut()
-                        //    .zip(cov_vals.iter())
-                        //    .par_bridge()
-                        //    .for_each(|(score, val)| {
-                        //        *score += alpha * val;
-                        //    });
-
-                        //for (score, val) in scores.iter_mut().zip(cov_vals.iter()) {
-                        //    *score += alpha * val;
-                        //}
-                    }
-                    _ => unimplemented!(),
-                }
-            }
-        }
-    }
-}
+use genetics::score as gscore;
+use genetics::SampleScore;
+use genetics::{vec, Dataset};
+use genetics::{CovsTrait, WgtKind};
 
 /// a item refer to a wgt, which is different from iter
 fn calculate_write_score(
-    dout: &Path,
+    dout: &DoutScoreParaFile,
     item_last_indexs_write: &[usize], // this should indicate the last index, not number of items
     wgts: &WgtBoosts,
     dataset: &Dataset,
-    //samples_id: &[String],
-    //samples_id: &[(String, String)],
     nocov: bool,
     is_nsnv: bool,                   // for fout name
     item_ns_fname: Option<&[usize]>, // when fname = items_write
     integrate: bool,
+    allow_nonexist_snv: bool,
+    missing_to_mode: bool,
+    missing_to_mean: bool,
 ) {
     let item_ns_fname = match item_ns_fname {
         Some(v) => v,
@@ -252,38 +30,39 @@ fn calculate_write_score(
 
     let n = dataset.genot().n();
     let genot = dataset.genot();
-    //let phe = dataset.samples().phe_unwrap();
     let covs = dataset.samples().covs();
-    //let covs = dataset.samples().covs().unwrap();
     let samples_id = dataset.samples().names();
 
-    let mut score_paras: Vec<Vec<f64>> = vec![];
+    let mut score_paras: Vec<SampleScore> = vec![];
     let mut paras: Vec<String> = vec![];
 
-    let mut scores = vec![0.0f64; n];
+    let mut scores = SampleScore::new(n);
 
     let mut items_write_pair = item_last_indexs_write.iter().zip(item_ns_fname.iter());
-    //let mut iters_write = iters_write.clone().iter();
     let (mut item_next, mut item_fname) = items_write_pair.next().unwrap();
-    //let (mut iter_i, mut iter_next) = iters_write.enumerate().next().unwrap();
-    //let mut iter_next = *iters_write.next().unwrap();
 
     for (item_i, wgt) in wgts.wgts().iter().enumerate() {
         //log::debug!("wgt {:?}", wgt);
 
         if !(nocov && wgt.wgt().is_cov()) {
-            add_score(&mut scores, wgt, genot, covs);
+            // missing_to_mode=true in boosting
+            gscore::add_score(
+                &mut scores,
+                wgt,
+                Some(genot),
+                covs,
+                allow_nonexist_snv,
+                missing_to_mode, //true,
+                missing_to_mean, //false,
+            );
+
+            scores.check_no_nan();
         }
-        //log::debug!("iter_next,use{},{}", iter_next, iter_use);
         if item_i == *item_next {
-            //write
-            //let fout_iteration =
-            //super::io::fname_score_createdir(dout, *item_fname, nocov, is_nsnv, integrate);
             log::debug!("Save iteration: {}", item_fname);
             paras.push(item_fname.to_string());
 
-            score_paras.push(scores.clone());
-            //super::io::write_scores(&fout_iteration, &scores, samples_id);
+            score_paras.push(scores.clone_align());
 
             // raise error...
             //(iter_next, iter_fname) = match iters_write_pair.next() {
@@ -299,9 +78,9 @@ fn calculate_write_score(
     }
 
     // write
-    let fout_concat = super::io::fname_score_concat_createdir(dout, nocov, is_nsnv, integrate);
+    let fout_concat = dout.fname_score_concat_createdir(nocov, is_nsnv, integrate);
     log::debug!("Write score: {:?}", fout_concat);
-    super::io::write_scores_concat(
+    write_scores_concat(
         &fout_concat,
         &score_paras,
         &paras,
@@ -311,72 +90,25 @@ fn calculate_write_score(
     );
 }
 
-// /// a item refer to a wgt, which is different from iter
-// fn calculate_write_score(
-//     dout: &Path,
-//     item_last_indexs_write: &[usize], // this should indicate the last index, not number of items
-//     wgts: &WgtBoosts,
-//     dataset: &Dataset,
-//     //samples_id: &[String],
-//     //samples_id: &[(String, String)],
-//     nocov: bool,
-//     is_nsnv: bool,                   // for fout name
-//     item_ns_fname: Option<&[usize]>, // when fname = items_write
-//     integrate: bool,
-// ) {
-//     let item_ns_fname = match item_ns_fname {
-//         Some(v) => v,
-//         None => item_last_indexs_write,
-//     };
-
-//     let n = dataset.genot().n();
-//     let genot = dataset.genot();
-//     //let phe = dataset.samples().phe_unwrap();
-//     let covs = dataset.samples().covs();
-//     //let covs = dataset.samples().covs().unwrap();
-//     let samples_id = dataset.samples().names();
-
-//     let mut scores = vec![0.0f64; n];
-
-//     let mut items_write_pair = item_last_indexs_write.iter().zip(item_ns_fname.iter());
-//     //let mut iters_write = iters_write.clone().iter();
-//     let (mut item_next, mut item_fname) = items_write_pair.next().unwrap();
-//     //let (mut iter_i, mut iter_next) = iters_write.enumerate().next().unwrap();
-//     //let mut iter_next = *iters_write.next().unwrap();
-
-//     for (item_i, wgt) in wgts.wgts().iter().enumerate() {
-//         //log::debug!("wgt {:?}", wgt);
-
-//         if !(nocov && wgt.wgt().is_cov()) {
-//             add_score(&mut scores, wgt, genot, covs);
-//             //add_score(&mut scores, wgt, genot, Some(covs));
-//         }
-//         //log::debug!("iter_next,use{},{}", iter_next, iter_use);
-//         if item_i == *item_next {
-//             //log::debug!("Write iter {}", iter_next);
-//             //write
-//             let fout_iteration =
-//                 super::io::fname_score_createdir(dout, *item_fname, nocov, is_nsnv, integrate);
-//             log::debug!("Write iteration {}: {:?}", item_fname, fout_iteration);
-
-//             super::io::write_scores(&fout_iteration, &scores, samples_id);
-//             //super::io::write_scores(&fout_iteration, &scores, phe, samples_id);
-
-//             //log::debug!("Done write iteration {}: {:?}", item_fname, fout_iteration);
-
-//             // raise error...
-//             //(iter_next, iter_fname) = match iters_write_pair.next() {
-//             let v = match items_write_pair.next() {
-//                 Some(v) => v,
-//                 None => break,
-//             };
-//             // raise error...
-//             //(iter_next, iter_fname) = v;
-//             item_next = v.0;
-//             item_fname = v.1;
-//         }
-//     }
-// }
+pub fn write_scores_concat(
+    fout: &Path,
+    score_paras: &[SampleScore],
+    paras: &[String],
+    samples_id: &[String],
+    is_nsnv: bool,
+    integrate: bool,
+) {
+    if integrate {
+        assert_eq!(score_paras.len(), 1);
+        gscore::write_scores(fout, &score_paras[0], samples_id)
+    } else {
+        if is_nsnv {
+            gscore::write_scores_paras(fout, score_paras, "n", paras, samples_id)
+        } else {
+            gscore::write_scores_paras(fout, score_paras, "iter", paras, samples_id)
+        }
+    }
+}
 
 /// Iteration and item number are different.
 /// return corresponding items index to given iterations.
@@ -415,13 +147,14 @@ fn create_item_last_indexs_write(iters_write: &[usize], iter_until_item: &[usize
 }
 
 pub fn calculate_write_score_iterations(
-    dout: &Path,
+    dout: &DoutScoreParaFile,
     iterations_write: &[usize],
     wgts: &WgtBoosts,
     dataset: &Dataset,
-    //samples_id: &[String],
-    //samples_id: &[(String, String)],
     nocov: bool,
+    allow_nonexist_snv: bool,
+    missing_to_mode: bool,
+    missing_to_mean: bool,
 ) {
     // iteration index -> number of iterations
     // so iteration+1
@@ -452,22 +185,25 @@ pub fn calculate_write_score_iterations(
         &item_last_indexs_write,
         wgts,
         dataset,
-        //samples_id,
         nocov,
         false,
         Some(iterations_write),
         false,
+        allow_nonexist_snv,
+        missing_to_mode, //true,
+        missing_to_mean, //false,
     );
 }
 
 pub fn calculate_write_score_nsnvs(
-    dout: &Path,
+    dout: &DoutScoreParaFile,
     nsnvs_write: &[usize], // or snv_ns_write
     wgts: &WgtBoosts,
     dataset: &Dataset,
-    //samples_id: &[(String, String)],
-    //samples_id: &[String],
     nocov: bool,
+    allow_nonexist_snv: bool,
+    missing_to_mode: bool,
+    missing_to_mean: bool,
 ) {
     // first, count when (at which iteration) to write score
     let mut nsnvs_until_item: Vec<usize> = Vec::with_capacity(wgts.wgts().len());
@@ -475,14 +211,43 @@ pub fn calculate_write_score_nsnvs(
     let mut snv_used: HashSet<String> = HashSet::with_capacity(*nsnvs_write.last().unwrap());
     let mut count_unique_snv = 0;
     for wgt in wgts.wgts().iter() {
-        if wgt.wgt().is_snv() {
-            // use rs or sida?? -> sida should be fine since assured to be unique
-            let snv_name = wgt.wgt().kind().snv_index().sida();
-            if !snv_used.contains(snv_name) {
-                count_unique_snv += 1;
-                snv_used.insert(snv_name.to_owned());
+        match wgt.wgt().kind() {
+            WgtKind::Snv(snv_wgt) => {
+                let snv_id = snv_wgt.snv_id();
+                // here, snv name can be anything but it should be unique.
+                // use rs or sida?? -> sida should be fine since assured to be unique
+                let snv_name = snv_id.sida();
+                if !snv_used.contains(snv_name) {
+                    count_unique_snv += 1;
+                    snv_used.insert(snv_name.to_owned());
+                }
             }
+            WgtKind::SnvInteraction(snv_inter_wgt) => {
+                let (snv_id_1, snv_id_2) = snv_inter_wgt.snv_ids();
+                let snv_name_1 = snv_id_1.sida();
+                if !snv_used.contains(snv_name_1) {
+                    count_unique_snv += 1;
+                    snv_used.insert(snv_name_1.to_owned());
+                }
+
+                let snv_name_2 = snv_id_2.sida();
+                if !snv_used.contains(snv_name_2) {
+                    count_unique_snv += 1;
+                    snv_used.insert(snv_name_2.to_owned());
+                }
+            }
+            WgtKind::Cov(..) => {}
         }
+        //if wgt.wgt().is_snv() {
+        //    // use rs or sida?? -> sida should be fine since assured to be unique
+        //    let snv_name = wgt.wgt().kind().snv_index().sida();
+        //    if !snv_used.contains(snv_name) {
+        //        count_unique_snv += 1;
+        //        snv_used.insert(snv_name.to_owned());
+        //    }
+        //}
+
+        // TOFIX: it snv interation has two newly appeared snvs, some monitoring snv number could be skipped.
         nsnvs_until_item.push(count_unique_snv);
     }
 
@@ -507,20 +272,24 @@ pub fn calculate_write_score_nsnvs(
         &item_last_indexs_write,
         wgts,
         dataset,
-        //samples_id,
         nocov,
         true,
         Some(nsnvs_write),
         false,
+        allow_nonexist_snv,
+        missing_to_mode, //true,
+        missing_to_mean, //false,
     );
 }
 
 pub fn calculate_write_score_para_best(
-    dout: &Path,
+    dout: &DoutScoreParaFile,
     wgts: &WgtBoosts,
     dataset: &Dataset,
-    //samples_id: &[String],
     nocov: bool,
+    allow_nonexist_snv: bool,
+    missing_to_mode: bool,
+    missing_to_mean: bool,
 ) {
     let iterations_write = [wgts.wgts().len()];
 
@@ -553,11 +322,13 @@ pub fn calculate_write_score_para_best(
         &item_last_indexs_write,
         wgts,
         dataset,
-        //samples_id,
         nocov,
         false,
         Some(&iterations_write),
         true,
+        allow_nonexist_snv,
+        missing_to_mode, //true,
+        missing_to_mean, //false,
     );
 }
 

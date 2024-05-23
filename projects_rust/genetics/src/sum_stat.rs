@@ -4,14 +4,14 @@ use super::{Chrom, SnvId};
 
 #[derive(Clone, Debug, Default)]
 pub struct SumStat {
-    snv_index: SnvId,
+    snv_id: SnvId,
     loss: Option<f64>,
     alpha: Option<f64>,
 }
 
 impl SumStat {
     pub fn construct_sum_stat_string(
-        rs: String,
+        id: String,
         chrom: &str,
         pos: &str,
         a1: String,
@@ -20,7 +20,7 @@ impl SumStat {
         alpha: &str,
     ) -> SumStat {
         let snv = SumStat {
-            snv_index: SnvId::construct_snv_index(rs, chrom, pos, a1, a2),
+            snv_id: SnvId::new(id, chrom, pos, a1, a2),
             loss: Some(loss.parse::<f64>().unwrap()),
             alpha: Some(alpha.parse::<f64>().unwrap()),
         };
@@ -28,12 +28,12 @@ impl SumStat {
     }
 
     pub fn construct_sum_stat_from_snv_string(
-        snv_index: SnvId,
+        snv_id: SnvId,
         loss: Option<f64>,
         alpha: Option<f64>,
     ) -> SumStat {
         let snv = SumStat {
-            snv_index,
+            snv_id,
             loss,
             alpha,
         };
@@ -55,8 +55,8 @@ impl SumStat {
     }
      */
 
-    pub fn snv_index(&self) -> &SnvId {
-        &self.snv_index
+    pub fn snv_id(&self) -> &SnvId {
+        &self.snv_id
     }
 
     /*
@@ -65,27 +65,27 @@ impl SumStat {
     }
     */
     pub fn rs(&self) -> &str {
-        self.snv_index().rs()
+        self.snv_id().id()
     }
 
     pub fn chrom(&self) -> &Chrom {
-        self.snv_index().chrom()
+        self.snv_id().chrom()
     }
 
     pub fn pos(&self) -> usize {
-        self.snv_index().pos()
+        self.snv_id().pos()
     }
 
     pub fn a1(&self) -> &str {
-        self.snv_index().a1()
+        self.snv_id().a1()
     }
 
     pub fn a2(&self) -> &str {
-        self.snv_index().a2()
+        self.snv_id().a2()
     }
 
     pub fn sida(&self) -> &str {
-        self.snv_index().sida()
+        self.snv_id().sida()
     }
 
     pub fn loss(&self) -> Option<f64> {
@@ -104,7 +104,7 @@ impl std::fmt::Display for SumStat {
 
 impl PartialEq for SumStat {
     fn eq(&self, other: &Self) -> bool {
-        self.snv_index().eq(other.snv_index())
+        self.snv_id().eq(other.snv_id())
     }
 }
 
@@ -112,13 +112,13 @@ impl Eq for SumStat {}
 
 impl PartialEq<SnvId> for SumStat {
     fn eq(&self, other: &SnvId) -> bool {
-        self.snv_index().eq(other)
+        self.snv_id().eq(other)
     }
 }
 
 impl PartialEq<SumStat> for SnvId {
     fn eq(&self, other: &SumStat) -> bool {
-        self.eq(other.snv_index())
+        self.eq(other.snv_id())
     }
 }
 
@@ -144,14 +144,14 @@ impl PartialOrd for SumStat {
 
 impl Ord for SumStat {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.snv_index().cmp(other.snv_index())
+        self.snv_id().cmp(other.snv_id())
     }
 }
 
 impl AsRef<SnvId> for SumStat {
     #[inline]
     fn as_ref(&self) -> &SnvId {
-        self.snv_index()
+        self.snv_id()
     }
 }
 

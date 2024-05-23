@@ -1,5 +1,6 @@
 
-#include "pgenlibr_wrapc.h"
+//#include "pgenlibr_wrapc.h"
+#include "pgenlibr_wrapc.hpp"
 #include "pgenlibr.h"
 // how to avoid include .cpp
 #include "pgenlibr.cpp"
