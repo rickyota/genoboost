@@ -25,7 +25,8 @@ cp ./projects_rust/target/release/genoboost ./genoboost
     --cov age,sex \
 	--learning-rates "0.5 0.2" \
     --cross-validation 5 \
-    --major-a2-train
+    --major-a2-train \
+    --seed 55
 
 # score
 ./genoboost score \

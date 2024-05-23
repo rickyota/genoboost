@@ -29,7 +29,7 @@ cp ./projects_rust/target/release/genoboost ./genoboost
 	--learning-rates "0.5 0.2" \
     --cov age,sex \
     --major-a2-train \
-    --seed 51
+    --seed 55
 
 
 	#--verbose \

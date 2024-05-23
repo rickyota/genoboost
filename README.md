@@ -1,9 +1,9 @@
-# GenoBoost v1.1.0
+# GenoBoost v1.0.8
 
 [![GenoBoost](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml)
 [![Release](https://github.com/rickyota/genoboost/actions/workflows/publish.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/publish.yml)
 [![Build](https://github.com/rickyota/genoboost/actions/workflows/build.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/build.yml)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10205397.svg)](https://doi.org/10.5281/zenodo.10205397)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10205707.svg)](https://doi.org/10.5281/zenodo.10205707)
 
 ## <a name="started"></a>Getting Started
 
@@ -21,7 +21,7 @@ $ genoboost train \
 
 ## Table of Contents
 
-- [GenoBoost v1.0.7](#genoboost-v107)
+- [GenoBoost v1.0.8](#genoboost-v108)
   - [Getting Started](#getting-started)
   - [Table of Contents](#table-of-contents)
   - [News](#news)
@@ -53,8 +53,9 @@ $ genoboost train \
 
 - [v1.1.0](https://github.com/rickyota/genoboost/releases/tag/v1.1.0) (May 23, 2024)
     - Clean code.
-- [v1.0.7](https://github.com/rickyota/genoboost/releases/tag/v1.0.7) (Nov 25, 2023)
+- [v1.0.8](https://github.com/rickyota/genoboost/releases/tag/v1.0.8) (Nov 25, 2023)
     - Initial version.
+    - Tested on Rocky Linux 8.9 and MacOS 14.3.1.
 
 
 ## <a name="introduction"></a>Introduction
@@ -78,12 +79,12 @@ For now, the input genotype format is allowed for plink1 or plink2 only.
 
 ### <a name="install"></a>Installation
 
-Using arm architecture including Macbook M1, M2 chip will slow down due to unavailability of SIMD.
+Using arm architecture, including Macbook M1 and M2 chips, will stop or slow down the software due to the unavailability of SIMD.
 I plan to deal with it in the future.
 
 #### <a name="install-plink1"></a>Plink1 Input
 
-If you want to input plink1, download a program for your computer from [here][release].
+If you want to input plink1, download a compiled program for Linux (tested on Rocky Linux<=8.9), macOS (tested on <=14.3.1), and Windows (not tested) from [here][release]. This should take less than 1 minute.
 
 #### <a name="install-plink2"></a>Plink2 Input
 
@@ -130,8 +131,10 @@ $ ./genoboost train \
     --file-phe ./example/genot.cov \
     --cov age,sex \
     --major-a2-train \
-    --seed 51
+    --seed 55
 ```
+
+This test code should take less than 2 minutes.
 
 #### <a name="train-train-only"></a>Without Validation
 
@@ -165,7 +168,7 @@ $ ./genoboost train \
     --phe PHENO1 \
     --cov age,sex \
     --major-a2-train \
-    --seed 51
+    --seed 55
 ```
 
 #### <a name="train-cv"></a>Cross-validation
@@ -180,7 +183,7 @@ $ ./genoboost train \
     --cov age,sex \
     --major-a2-train \
     --cross-validation 5 \
-    --seed 51
+    --seed 55
 ```
 
 #### <a name="train-option"></a>Options for Training

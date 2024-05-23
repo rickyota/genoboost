@@ -24,7 +24,7 @@ genoboost-docker train \
     --file-phe "$file_cov" \
     --cov age,sex \
     --major-a2-train \
-    --seed 51
+    --seed 55
 
 # score
 genoboost-docker score \
