@@ -285,11 +285,11 @@ $ ./genoboost score \
 
 `--dir <DIR>` : Directory to output score files.
 
-`--dir-wgt [DIR]` : Same directory specified on training.
+`--dir-wgt [DIR]` : The same directory specified for training.
 
 `--file-wgt [FILE]` : Use this specific SNV weight file.
 
-`--file-genot <FILE>`: Prefix of a plink1 or plink2 file (.bed, .fam, .bim or .pgen, .psam, .pvar/.pvar.zst should exist).
+`--file-genot <FILE>`: Prefix of a plink1 or plink2 file (`.bed`, `.fam`, `.bim` or `.pgen`, `.psam`, `.pvar/.pvar.zst` should exist).
 
 `--genot-format [FORMAT]`: {`plink`, `plink2`, `plink2-vzs`}. Genotype format. Default is `plink`.
 
@@ -349,7 +349,7 @@ $ singularity run --no-home --pwd /opt/ --bind "$(pwd)":/opt/ genoboost.sif \
 
 ### <a name="computational-time"></a>Computational Time
 
-For ~216 thousands training samples and ~1.1 million SNVs for 10,000 unique SNVs, GenoBoost would take 10 hours.
+For ~216 thousand training samples and ~1.1 million SNVs, GenoBoost would take 10 hours to output weights for 10,000 unique SNVs.
 
 [release]: https://github.com/rickyota/genoboost/releases
 [rust-install]: https://www.rust-lang.org/tools/install
