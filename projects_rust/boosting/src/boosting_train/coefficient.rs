@@ -1037,24 +1037,7 @@ pub fn calc_coef_logit_interaction(
     maf_1: f64,
     maf_2: f64,
 ) -> Coef {
-    // create interaction genotype matrix
-    //let x_inter = interaction_genotype(maf_1, maf_2);
-    let x_inter = gscore::interaction_genotype(maf_1, maf_2);
-
-    let v0 = Sum3by3::sum_multi_pow(wls_sum, x_inter);
-    let v1 = Sum3by3::sum_multi(wls_sum, x_inter);
-    let v2 = Sum3by3::sum(wls_sum);
-    let v3 = -Sum3by3::sum_multi(wzs_sum, x_inter);
-    let v4 = -Sum3by3::sum(wzs_sum);
-
-    let denom = v0 * v2 - v1 * v1;
-    let c_numer = v1 * v3 - v0 * v4;
-    let a_numer = v1 * v4 - v2 * v3;
-
-    let c = c_numer / denom;
-    let a = a_numer / denom;
-
-    Coef::LinearConstInteraction((c, a))
+    unimplemented!()
 }
 
 //pub fn calc_coef_logit_interaction(
