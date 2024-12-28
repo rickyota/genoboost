@@ -5,7 +5,7 @@ FROM --platform=linux/amd64 rust:1.74 AS builder
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    clang cmake libgomp1
+     libgomp1
 
 WORKDIR /opt/genoboost
 COPY ../ .
