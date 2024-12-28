@@ -80,9 +80,6 @@ For now, the input genotype format is allowed for plink1 or plink2 only.
 
 ### <a name="install"></a>Installation
 
-Using arm architecture, including Macbook M1 and M2 chips, will stop or slow down the software due to the unavailability of SIMD.
-I plan to deal with it in the future.
-
 #### <a name="install-plink1"></a>Plink1 Input
 
 If you want to input plink1, download a compiled program for Linux (tested on Rocky Linux<=8.9), macOS (tested on <=14.3.1), and Windows (not tested) from [here][release]. This should take less than 1 minute.
@@ -106,6 +103,9 @@ and you can use `genoboost` program. This should take less than 5 minutes.
 
 See [Advanced Guide](#advanced-guide) for docker or singularity users.
 
+Using arm architecture, including Macbook M1 and M2 chips, will stop or slow down the software due to the unavailability of SIMD.
+I plan to deal with it in the future.
+
 ### <a name="train"></a>Train GenoBoost Model
 
 GenoBoost returns the SNV weights file with $s_0, s_1, s_2$ for each SNV in one line.
@@ -123,7 +123,7 @@ See `./example/` for reference of file format. For example, the covariates file 
 With the minimum options, GenoBoost produces SNV weights list with the best parameter.
 SNV weights list is computed from randomly extracted 80% training samples, and the best parameter is determined in the remaining 20% validation samples. You can control how to split the samples with a random seed.
 Write the column name to be used in covariates file after `--cov`.
-It is important that major allele is set to a2 (alternative allele) by `--major-a2-train`since $s_2$ is winsorized. This option is unnecessary if major allele is already set as reference allele in genotype file.
+It is important that the major allele is set to a2 (alternative allele) by `--major-a2-train`since $s_2$ is winsorized. This option is unnecessary if the major allele is already set as the reference allele in genotype file.
 
 ```bash
 $ ./genoboost train \
@@ -209,7 +209,7 @@ $ ./genoboost train \
 
 `--major-a2-train`: Set major allele as a2 (alternative allele) in training dataset.
 
-`--iter-snv [NUMBER]`, `--iter [NUMBER]` : Maximum number of SNVs or iterations for training.
+`--iter-snv [NUMBER]`, `--iter [NUMBER]`: Maximum number of SNVs or iterations for training.
 
 `--learning-rates [NUMBERS]`: Learning rates in space-delimited format. Default value is `"0.5 0.2 0.1 0.05"`.
 
@@ -283,11 +283,11 @@ $ ./genoboost score \
 
 #### <a name="score-option"></a>Options for Score
 
-`--dir <DIR>` : Directory to output score files.
+`--dir <DIR>`: Directory to output score files.
 
-`--dir-wgt [DIR]` : The same directory specified for training.
+`--dir-wgt [DIR]`: The same directory specified for training.
 
-`--file-wgt [FILE]` : Use this specific SNV weight file.
+`--file-wgt [FILE]`: Use this specific SNV weight file.
 
 `--file-genot <FILE>`: Prefix of a plink1 or plink2 file (`.bed`, `.fam`, `.bim` or `.pgen`, `.psam`, `.pvar/.pvar.zst` should exist).
 
@@ -299,7 +299,7 @@ $ ./genoboost score \
 
 `--file-sample [FILE]`: Sample file for calculating scores. One line for one sample id.
 
-`--iters [NUMBERS]` : Number of SNVs used as a parameter.
+`--iters [NUMBERS]`: Number of SNVs used as a parameter.
 
 `--use-iter`: Also output sample score with the number of iterations as a parameter in addition to the number of SNVs.
 
