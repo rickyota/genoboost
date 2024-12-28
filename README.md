@@ -32,7 +32,6 @@ $ genoboost train \
       - [Plink1 Input](#plink1-input)
       - [Plink2 Input (compile)](#plink2-input-compile)
       - [Plink2 Input (docker)](#plink2-input-docker)
-      - [Advanced Install](#advanced-install)
     - [Train GenoBoost Model](#train-genoboost-model)
       - [Simplest Usage](#simplest-usage)
       - [Without Validation](#without-validation)
