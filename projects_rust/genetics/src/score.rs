@@ -67,20 +67,19 @@ fn mode_to_score(mode: u8, scores: (f64, f64, f64)) -> f64 {
 // DO NOT use rayon here
 // since very slow when n is small
 // though nested rayon does not raise error
-// TODO: add Option<Snvs> for maf
+// TODO: add Option<Snvs> for maf -> now put maf in wgt
 //
 // should implement sth in Wgt, Model to make this simple
 /// Missing values
-/// - If no missing values in genot, none of maf, missing_to_mode, missing_to_mean is used
+/// - If no missing values is in genot, none of maf, missing_to_mode, and missing_to_mean is used
 /// - If missing values exists but all Score4, the same.
 ///
 /// For Score3, missing_to_mode is used.
-/// For Linear, LinearConst, eigher missing_to_mode or missing_to_mean is used.
+/// For Linear, LinearConst, either missing_to_mode or missing_to_mean is used.
 ///
 /// Does not check if missing_to_mode and missing_to_mean are both true.
 pub fn add_score<W: WgtTrait>(
     scores: &mut SampleScore,
-    //scores_pad: &mut [f64],
     wgt: &W,
     genot: Option<&Genot>,
     covs: Option<&Covs>,
@@ -94,6 +93,13 @@ pub fn add_score<W: WgtTrait>(
             //log::debug!("mi {}", mi.unwrap());
 
             let maf = snv_wgt.maf();
+            //log::debug!(
+            //    "id, a1, a2, a1_freq: {}, {}, {}, {:?}",
+            //    snv_wgt.snv_id().id(),
+            //    snv_wgt.snv_id().a1(),
+            //    snv_wgt.snv_id().a2(),
+            //    maf
+            //);
 
             let mi = match mi {
                 None => {
@@ -756,14 +762,8 @@ pub fn calc_score_wgts(
             |mut a, b| {
                 a.add_scores(&b);
                 a
-                //a.iter_mut().zip(b.iter()).for_each(|(x, y)| {
-                //    *x += y;
-                //});
-                //a
             },
         );
-
-    //.map(|wgt| calc_score_wgt(n, wgt, Some(genot), None, true))
 
     scores_sum
 }

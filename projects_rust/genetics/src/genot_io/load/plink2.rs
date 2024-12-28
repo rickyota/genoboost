@@ -1,8 +1,8 @@
 use crate::genot::prelude::*;
 use crate::genotype;
+use pgenlib::pgenlib_ffi as pgenlib;
 use crate::{alloc, GenotFile};
 use crate::{genot_io, vec, Chrom};
-use pgenlib;
 use rayon::prelude::*;
 use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
@@ -138,23 +138,7 @@ const BUF_SIZE_PGENLIB_MAX: usize = 64 * 1024 * 1024 * 1024;
 // 1 GB
 const BUF_SIZE_PGENLIB_MIN: usize = 1 * 1024 * 1024 * 1024;
 
-// load whole is fastest
-// TODO: untest for split_chrom
-pub fn generate_genot_plink2(
-    fin_genot: &GenotFile,
-    //fin: &Path,
-    //gfmt: GenotFormat,
-    m: usize,
-    n: usize,
-    use_snvs: Option<&[bool]>,
-    use_samples: Option<&[bool]>,
-    //use_missing: bool,
-    fill_missing: bool,
-    mem: Option<usize>,
-) -> Genot {
-    log::debug!("to prepare Genot plink2 m, n: {}, {}", m, n);
-    let start = Instant::now();
-
+fn mem_buf(m: usize, n: usize, mem: Option<usize>) -> usize {
     //let mem_avail = alloc::get_available_memory();
     let mem_avail = match mem {
         Some(x) => Some(x),
@@ -191,23 +175,25 @@ pub fn generate_genot_plink2(
         }
     };
 
-    //match mem_avail {
-    //    Some(x) => {
-    //        log::debug!(
-    //            "genot + min pgenlib vs available mem, {:.3} GB + {:.3} GB vs {:.3} GB",
-    //            alloc::mem_gb(genot_byte),
-    //            alloc::mem_gb(BUF_SIZE_PGENLIB_MIN),
-    //            //alloc::mem_gb(mem_pgenlib_min_check),
-    //            alloc::mem_gb(x),
-    //        );
-    //        if genot_byte + BUF_SIZE_PGENLIB_MIN > x {
-    //            panic!("Memory insufficient on preparing Genot.")
-    //        }
-    //    }
-    //    None => {
-    //        log::debug!("Could not get available memory.");
-    //    }
-    //};
+    mem_buf
+}
+
+// load whole is fastest
+// TODO: untest for split_chrom
+pub fn generate_genot_plink2(
+    fin_genot: &GenotFile,
+    m: usize,
+    n: usize,
+    use_snvs: Option<&[bool]>,
+    use_samples: Option<&[bool]>,
+    //use_missing: bool,
+    fill_missing: bool,
+    mem: Option<usize>,
+) -> Genot {
+    log::debug!("to prepare Genot plink2 m, n: {}, {}", m, n);
+    let start = Instant::now();
+
+    let mem_buf = mem_buf(m, n, mem);
 
     // TODO: better way
     let use_snvs_v = vec![true; m];
@@ -232,6 +218,7 @@ pub fn generate_genot_plink2(
     if is_split_chrom {
         let mut m_begin = 0;
         let mut m_in_begin = 0;
+
         for chrom_i in Chrom::variants().iter() {
             log::debug!("Loading chromosome {}", chrom_i);
             let m_in_chrom = genot_io::compute_num_snv_file_chrom(fin_genot, Some(chrom_i));
@@ -239,6 +226,7 @@ pub fn generate_genot_plink2(
             if m_in_chrom.is_none() {
                 continue;
             }
+
             let m_in_chrom = m_in_chrom.unwrap();
             let m_in_end = m_in_begin + m_in_chrom;
             // count non-zero
@@ -248,6 +236,7 @@ pub fn generate_genot_plink2(
                 m_in_begin = m_in_end;
                 continue;
             }
+
             let fin_genotype = fgenotype_pgenlib(fin_genot, Some(chrom_i));
             //let fin_genotype = fgenotype_pgenlib(fin, gfmt, Some(chrom_i));
 
@@ -257,7 +246,6 @@ pub fn generate_genot_plink2(
                 m_in,
                 n_in,
                 &use_samples_idx,
-                //use_samples_idx.clone(),
                 n,
                 &use_snvs[m_in_begin..m_in_end],
                 Some(mem_buf),
@@ -275,7 +263,7 @@ pub fn generate_genot_plink2(
         assert_eq!(m_in_begin, use_snvs.len(), "Sth wrong.");
     } else {
         let fin_genotype = fgenotype_pgenlib(fin_genot, None);
-        //let fin_genotype = fgenotype_pgenlib(fin, gfmt, None);
+
         assign_genot(
             &mut g.as_genot_mut(),
             fin_genotype,
@@ -294,13 +282,28 @@ pub fn generate_genot_plink2(
         g.iter_snv_mut()
             .par_bridge()
             .for_each(|mut g_snv| g_snv.fill_missing_mode());
-        //.for_each(|mut g_snv| super::fill_missing_snv(&mut g_snv));
     }
 
     let end = start.elapsed();
     log::info!("It took {} seconds to generate genot.", end.as_secs());
 
     g
+}
+
+fn buf_size_limit(mem: Option<usize>) -> usize {
+    let buf_size_limit: usize = match mem {
+        Some(x) => x.min(BUF_SIZE_PGENLIB_MAX),
+        None => {
+            log::debug!(
+                "Could not get available memory; assume there is {:.3} GB available memory.",
+                alloc::mem_gb(BUF_SIZE_PGENLIB_MAX)
+            );
+            BUF_SIZE_PGENLIB_MAX
+        }
+    };
+    log::debug!("buf_size_limit: {:.3} GB", alloc::mem_gb(buf_size_limit));
+
+    buf_size_limit
 }
 
 fn assign_genot(
@@ -314,29 +317,7 @@ fn assign_genot(
     // TODO: buf: Option<Vec<i32>> // for chrom
     mem: Option<usize>,
 ) {
-    let buf_size_limit: usize = match mem {
-        Some(x) => x.min(BUF_SIZE_PGENLIB_MAX),
-        None => {
-            log::debug!(
-                "Could not get available memory; assume there is {:.3} GB available memory.",
-                alloc::mem_gb(BUF_SIZE_PGENLIB_MAX)
-            );
-            BUF_SIZE_PGENLIB_MAX
-        }
-    };
-    log::debug!("buf_size_limit: {:.3} GB", alloc::mem_gb(buf_size_limit));
-
-    //let buf_size_limit: usize = match alloc::get_available_memory() {
-    //    Some(x) => x.min(BUF_SIZE_PGENLIB_MAX),
-    //    None => {
-    //        log::debug!(
-    //            "Could not get available memory; assume there is {} GB available memory.",
-    //            alloc::mem_gb(BUF_SIZE_PGENLIB_MAX)
-    //        );
-    //        BUF_SIZE_PGENLIB_MAX
-    //    }
-    //};
-    //log::debug!("buf_size_limit: {} GB", alloc::mem_gb(buf_size_limit));
+    let buf_size_limit = buf_size_limit(mem);
 
     // 1 byte (i8) per count in pgenlib
     let byte_per_snv = n * 1;

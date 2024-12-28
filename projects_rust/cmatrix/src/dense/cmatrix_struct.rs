@@ -34,6 +34,8 @@ use super::{BaseCMatrix, BaseCMatrixMut};
 ///
 /// ref: https://athemathmo.github.io/rulinalg/doc/rulinalg/matrix/struct.Matrix.html
 ///
+/// Padding bits could be any values, not necessarily 0.
+///
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct CMatrix {
     inner: Vec<B8>,
@@ -83,6 +85,7 @@ impl BaseCMatrix for CMatrix {
 }
 
 impl<'a> BaseCMatrixMut for CMatrix {
+    #[inline]
     fn inner_mut(&mut self) -> &mut [B8] {
         &mut self.inner
     }
@@ -99,6 +102,11 @@ impl<'a> AsRef<CMatrixRef<'a>> for CMatrix {
 */
 
 impl CMatrix {
+    #[inline]
+    pub fn inner_mut_vector(&mut self) -> &mut Vec<B8> {
+        &mut self.inner
+    }
+
     /// padding=32
     /// TODO: -> 64
     #[inline]

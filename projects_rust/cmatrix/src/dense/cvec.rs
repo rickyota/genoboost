@@ -50,6 +50,10 @@ impl CVec {
         CVec(CMatrix::new_zeros(1, col_n, digit))
     }
 
+    pub fn inner_mut_vector(&mut self) -> &mut Vec<B8> {
+        self.0.inner_mut_vector()
+    }
+
     /*
     pub fn new_vec_bool(vec: Vec<bool>) -> CVec {
         let col_n = vec.len();

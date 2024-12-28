@@ -2,6 +2,7 @@ use super::load;
 use crate::genot::prelude::*;
 use crate::Genot;
 use crate::GenotFile;
+use crate::Snvs;
 use crate::WgtKind;
 //use crate::GenotFormat;
 use crate::SnvId;
@@ -37,6 +38,7 @@ pub fn load_genotypes_for_score<W: WgtTrait>(
     // length is m_in
     // ?? -> m
     let snvs_use: Vec<SnvId> = vec::extract_if_into_iter(snvs_in, &use_snvs);
+    let snvs_use = Snvs::new_from_snv_ids(snvs_use);
 
     //let allow_nonexist_snv = false;
     // To check unconsistent alleles
@@ -48,7 +50,8 @@ pub fn load_genotypes_for_score<W: WgtTrait>(
     }
 
     // length is m
-    let is_reversed = is_reversed_to_vec_bool(&is_reversed_hashmap, &snvs_use, use_snv_pos);
+    let is_reversed =
+        is_reversed_to_vec_bool(&is_reversed_hashmap, snvs_use.snv_ids(), use_snv_pos);
     log::debug!("Reversed snvs: {}", vec::count_true(&is_reversed));
 
     //let (is_reversed, _) = set_wgts_index_reversed(wgts, &snvs_use, allow_nonexist_snv, use_snv_pos);
@@ -64,6 +67,7 @@ pub fn load_genotypes_for_score<W: WgtTrait>(
         //false,
         fill_missing_in_dataset,
         mem,
+        None,
     );
 
     reverse_genotypes_rayon(&mut g.as_genot_mut(), &is_reversed);
@@ -144,10 +148,52 @@ fn is_reversed_to_vec_bool(
     is_reversed
 }
 
+pub fn merge_freq(snvs_in: &mut Snvs, freq: Snvs, use_snv_pos: bool) {
+    // map: sid_in in freq -> index in snvs_in
+    let mut vid_to_m = HashMap::with_capacity(snvs_in.snvs_n());
+
+    for (si, s) in snvs_in.snv_ids().iter().enumerate() {
+        vid_to_m.insert(s.vid(use_snv_pos), si);
+    }
+
+    // flip
+    let mut freq_in_snvs: Vec<f64> = vec![f64::NAN; snvs_in.snvs_n()];
+
+    for (s, f) in freq.snv_ids().iter().zip(freq.mafs().unwrap().iter()) {
+        if !vid_to_m.contains_key(s.vid(use_snv_pos)) {
+            // vid in freq not in Snvs
+            continue;
+        }
+
+        let m = vid_to_m[s.vid(use_snv_pos)];
+        let s_in = snvs_in.snv_ids()[m].clone();
+
+        if s == &s_in {
+            if s.is_rev(&s_in, use_snv_pos) {
+                // if rev
+                // ref: wgts_index_reversed_hashmap_snv()
+                freq_in_snvs[m] = 1.0 - *f;
+            } else {
+                // if match
+                // This considers use_snv_pos since use_snv_pos is in vid_to_m
+                freq_in_snvs[m] = *f;
+            }
+        }
+        // else ignore
+    }
+
+    if freq_in_snvs.iter().all(|x| x.is_nan()) {
+        panic!("Some variants in fin_genot has not registered in fin_freq")
+    }
+
+    snvs_in.set_maf(freq_in_snvs)
+}
+
 pub fn load_genotypes_for_score_multiwgts(
     fin_genot: &GenotFile,
     wgts_multi: &mut [Wgts],
     //wgts: &mut [Wgt],
+    freq_buf: Option<&[u8]>,
     n: usize,
     use_samples: Option<&[bool]>,
     fill_missing_in_test: bool, // for backward compatibility
@@ -156,10 +202,20 @@ pub fn load_genotypes_for_score_multiwgts(
     mem: Option<usize>,
 ) -> Genot {
     let snvs_in = genot_io::load_snvs(fin_genot);
+    let mut snvs_in = Snvs::new_from_snv_ids(snvs_in);
+
+    match freq_buf {
+        Some(x) => {
+            let freqs = genot_io::load_freq(x);
+            merge_freq(&mut snvs_in, freqs, use_snv_pos)
+        }
+        None => {}
+    };
+
     let mut uses_snvs = Vec::new();
     for wgts in wgts_multi.iter_mut() {
         // length is m_in
-        let use_snvs = create_wgt_to_genotype_index(&snvs_in, wgts.wgts(), use_snv_pos);
+        let use_snvs = create_wgt_to_genotype_index(snvs_in.snv_ids(), wgts.wgts(), use_snv_pos);
         uses_snvs.push(use_snvs);
     }
     let use_snvs = integrate_use_snvs(&uses_snvs);
@@ -169,13 +225,8 @@ pub fn load_genotypes_for_score_multiwgts(
         panic!("Using snvs are zero. Please check weight and genotype file.")
     }
 
-    let snvs_use: Vec<SnvId> = vec::extract_if_into_iter(snvs_in, &use_snvs);
-    //let snvs_use: Vec<SnvId> = snvs_in
-    //    .into_iter()
-    //    .zip(use_snvs.iter())
-    //    .filter(|(_, &b)| b)
-    //    .map(|(snvid, _)| snvid)
-    //    .collect();
+    let snvs_use = snvs_in.extract_snvs(&use_snvs);
+    // let snvs_use: Vec<SnvId> = vec::extract_if_into_iter(snvs_in, &use_snvs);
 
     let mut iss_reversed_hashmap = Vec::new();
     for wgts in wgts_multi.iter_mut() {
@@ -194,7 +245,8 @@ pub fn load_genotypes_for_score_multiwgts(
         panic!("No variants to be loaded after matching alelles.")
     }
 
-    let is_reversed = is_reversed_to_vec_bool(&is_reversed_hashmap_integ, &snvs_use, use_snv_pos);
+    let is_reversed =
+        is_reversed_to_vec_bool(&is_reversed_hashmap_integ, &snvs_use.snv_ids(), use_snv_pos);
     log::debug!("Reversed snvs: {}", vec::count_true(&is_reversed));
 
     // use HashMap would be much easier
@@ -214,14 +266,13 @@ pub fn load_genotypes_for_score_multiwgts(
     // TOFIX: should not fill_missing_mode in score
     let mut g = load::generate_genot(
         fin_genot,
-        //fin,
-        //gfmt,
         m,
         n,
         Some(&use_snvs),
         use_samples,
         fill_missing_in_test,
         mem,
+        None,
     );
 
     // TMP
@@ -751,14 +802,15 @@ fn set_wgts_index_reversed_hashmap_snv<W: WgtTrait>(
     wgt: &mut W,
     is_reversed: &mut HashMap<String, bool>,
     wgt_snv_id: &SnvId,
-    snvs: &[SnvId],
+    snvs: &Snvs,
+    //snvs: &[SnvId],
     vid_to_m: &HashMap<String, usize>,
     allow_nonexist_snv: bool,
     use_snv_pos: bool,
 ) {
     let index_reverse = wgts_index_reversed_hashmap_snv(
         wgt_snv_id,
-        snvs,
+        snvs.snv_ids(),
         vid_to_m,
         allow_nonexist_snv,
         use_snv_pos,
@@ -768,19 +820,16 @@ fn set_wgts_index_reversed_hashmap_snv<W: WgtTrait>(
     if let Some((mi, is_rev)) = index_reverse {
         wgt.set_snv_index_check(Some(mi));
 
+        match snvs.mafs() {
+            Some(x) => {
+                let f = snvs.mafs().unwrap()[mi];
+                let f = if is_rev { 1.0 - f } else { f };
+                wgt.set_freq(Some(f));
+            }
+            None => {}
+        }
+
         update_is_reversed_hashmap(is_reversed, wgt_snv_id, is_rev, use_snv_pos);
-        //let vid = wgt_snv_id.vid(use_snv_pos).to_string();
-        //match is_reversed.get(&vid) {
-        //    None => {
-        //        is_reversed.insert(vid, is_rev);
-        //    }
-        //    Some(v) => {
-        //        if *v != is_rev {
-        //            panic!("Alleles are reversed within fwgt.");
-        //        }
-        //    }
-        //}
-        //is_reversed.insert(wgt_snv_id.vid(use_snv_pos).to_string(), is_rev);
     }
     // TODO: is this necessary?; yes if overwrite
     // else{
@@ -812,14 +861,15 @@ fn set_wgts_index_reversed_hashmap_snv_interaction<W: WgtTrait>(
     is_reversed: &mut HashMap<String, bool>,
     wgt_snv_id_1: &SnvId,
     wgt_snv_id_2: &SnvId,
-    snvs: &[SnvId],
+    snvs: &Snvs,
+    //snvs: &[SnvId],
     vid_to_m: &HashMap<String, usize>,
     allow_nonexist_snv: bool,
     use_snv_pos: bool,
 ) {
     let index_reverse_1 = wgts_index_reversed_hashmap_snv(
         wgt_snv_id_1,
-        snvs,
+        snvs.snv_ids(),
         vid_to_m,
         allow_nonexist_snv,
         use_snv_pos,
@@ -827,7 +877,7 @@ fn set_wgts_index_reversed_hashmap_snv_interaction<W: WgtTrait>(
 
     let index_reverse_2 = wgts_index_reversed_hashmap_snv(
         wgt_snv_id_2,
-        snvs,
+        snvs.snv_ids(),
         vid_to_m,
         allow_nonexist_snv,
         use_snv_pos,
@@ -914,7 +964,8 @@ fn set_wgts_index_reversed_hashmap_snv_interaction<W: WgtTrait>(
 
 fn set_wgts_index_reversed_hashmap_both<W: WgtTrait>(
     wgts: &mut [W],
-    snvs: &[SnvId],
+    snvs: &Snvs,
+    //snvs: &[SnvId],
     allow_nonexist_snv: bool,
     use_snv_pos: bool,
     vid_to_m: &HashMap<String, usize>,
@@ -951,24 +1002,6 @@ fn set_wgts_index_reversed_hashmap_both<W: WgtTrait>(
                     allow_nonexist_snv,
                     use_snv_pos,
                 );
-                //set_wgts_index_reversed_hashmap_snv(
-                //    wgt,
-                //    &mut is_reversed,
-                //    &snv_id_1,
-                //    snvs,
-                //    vid_to_m,
-                //    allow_nonexist_snv,
-                //    use_snv_pos,
-                //);
-                //set_wgts_index_reversed_hashmap_snv(
-                //    wgt,
-                //    &mut is_reversed,
-                //    &snv_id_2,
-                //    snvs,
-                //    vid_to_m,
-                //    allow_nonexist_snv,
-                //    use_snv_pos,
-                //);
             }
             // cov
             _ => {}
@@ -980,16 +1013,18 @@ fn set_wgts_index_reversed_hashmap_both<W: WgtTrait>(
 // TODO: split into two parts
 fn set_wgts_index_reversed_hashmap<W: WgtTrait>(
     wgts: &mut [W],
-    snvs: &[SnvId],
+    snvs: &Snvs,
+    //snvs: &[SnvId],
     allow_nonexist_snv: bool,
     use_snv_pos: bool,
 ) -> HashMap<String, bool> {
-    let m = snvs.len();
+    let m = snvs.snvs_n();
+    //let m = snvs.len();
 
     // map: sid_in -> genotype index (m)
     let mut vid_to_m = HashMap::with_capacity(m);
 
-    for (si, s) in snvs.iter().enumerate() {
+    for (si, s) in snvs.snv_ids().iter().enumerate() {
         if vid_to_m.contains_key(s.vid(use_snv_pos)) {
             panic!(
                 "Variant ID in genot is duplicated. If this is intentional, supress --use-snv-pos: {}",
@@ -1042,6 +1077,8 @@ fn reverse_genotypes_snv(gsnv: &mut GenotSnvMut) {
 
 #[cfg(test)]
 mod tests {
+    use crate::snv::snv_index;
+
     use super::*;
 
     #[test]
@@ -1087,6 +1124,34 @@ mod tests {
             .collect::<Vec<_>>();
 
         let _ = integrate_is_reversed_hashmap_check(is_reversed);
+    }
+
+    #[test]
+    fn test_merge_freq() {
+        let snv_id_1 = SnvId::new("rs1".to_owned(), "1", "1", "A".to_owned(), "G".to_owned());
+        let snv_id_2 = SnvId::new("rs2".to_owned(), "1", "2", "A".to_owned(), "G".to_owned());
+        let snv_id_3 = SnvId::new("rs3".to_owned(), "1", "3", "A".to_owned(), "G".to_owned());
+
+        let mut snvs_in = Snvs::new_from_snv_ids(vec![snv_id_1, snv_id_2, snv_id_3]);
+
+        // rev
+        let snv_id_1 = SnvId::new("rs2".to_owned(), "1", "2", "G".to_owned(), "A".to_owned());
+        // rev & flipped
+        let snv_id_2 = SnvId::new("rs3".to_owned(), "1", "3", "C".to_owned(), "T".to_owned());
+        // same
+        let snv_id_3 = SnvId::new("rs1".to_owned(), "1", "1", "A".to_owned(), "G".to_owned());
+        // not match
+        let snv_id_4 = SnvId::new("rs1".to_owned(), "1", "1", "A".to_owned(), "C".to_owned());
+
+        let freqs = vec![0.1f64, 0.2, 0.3, 0.4];
+        let freqs_in = Snvs::new(vec![snv_id_1, snv_id_2, snv_id_3, snv_id_4], Some(freqs));
+
+        merge_freq(&mut snvs_in, freqs_in, true);
+
+        let freqs = snvs_in.mafs().unwrap();
+        let freqs_ans = vec![0.3, 0.9, 0.8];
+
+        assert_eq!(freqs, &freqs_ans);
     }
 
     //#[test]

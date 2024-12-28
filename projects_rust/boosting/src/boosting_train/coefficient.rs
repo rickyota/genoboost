@@ -760,7 +760,7 @@ pub fn calculate_coef_logit_eps(
 }
  */
 
-// should be fast since called when calculating loss
+// this fn should be fast since called when calculating loss
 //pub unsafe fn calculate_coef_logit_add(
 pub fn calculate_coef_logit_add(
     gsnv: &GenotSnvRef,
@@ -798,6 +798,22 @@ pub fn calculate_coef_logit_add(
     //let coef = calculate_coef_logit_add(gsnv, wzs_pad, wls_pad);
 
     //coef.apply_lr(lr)
+}
+
+pub fn calculate_coef_logit_add_prior_alpha(
+    gsnv: &GenotSnvRef,
+    wzs_pad: &[f64],
+    wls_pad: &[f64],
+    alpha_prev: f64,
+    r: f64,
+    maf: f64,
+    h2_snv: f64,
+) -> Coef {
+    let (wzs_sum, wls_sum) = calc::calc_ws_sum_logit_mi(gsnv, wzs_pad, wls_pad);
+
+    let coef: Coef = calc_coef_logit_add_prior_alpha(wzs_sum, wls_sum, alpha_prev, r, maf, h2_snv);
+
+    coef
 }
 
 // // for coef on calculating loss
@@ -1001,6 +1017,37 @@ pub fn calc_coef_logit_add(wzs_sum: (f64, f64, f64), wls_sum: (f64, f64, f64)) -
     Coef::LinearConst((c, a))
 }
 
+pub fn calc_coef_logit_add_prior_alpha(
+    wzs_sum: (f64, f64, f64),
+    wls_sum: (f64, f64, f64),
+    alpha_prev: f64,
+    r: f64,
+    maf: f64,
+    h2_snv: f64,
+) -> Coef {
+    let (u2, u1, u0) = wzs_sum;
+    let (w2, w1, w0) = wls_sum;
+
+    let sigma2 = h2_snv * (2.0 * maf * (1.0 - maf)).powf(r);
+
+    let wall = w0 + w1 + w2;
+    let denom = w0 * w1 + w1 * w2 + 4.0 * w2 * w0 + wall / (2.0 * sigma2);
+    //let denom = w0 * w1 + w1 * w2 + 4.0 * w2 * w0;
+
+    let uall = u0 + u1 + u2;
+    let c = ((w1 + 4.0 * w2) * u0 + 2.0 * w2 * u1 - w1 * u2
+        + (uall + alpha_prev * (w1 + 2.0 * w2)) / (2.0 * sigma2))
+        / denom;
+    //let c = ((w1 + 4.0 * w2) * u0 + 2.0 * w2 * u1 - w1 * u2) / denom;
+
+    let a = ((-w1 - 2.0 * w2) * u0 + (-w2 + w0) * u1 + (2.0 * w0 + w1) * u2
+        - alpha_prev * wall / (2.0 * sigma2))
+        / denom;
+    //let a = ((-w1 - 2.0 * w2) * u0 + (-w2 + w0) * u1 + (2.0 * w0 + w1) * u2) / denom;
+
+    Coef::LinearConst((c, a))
+}
+
 // TODO: test check
 pub fn calculate_coef_logit_interaction_cont_table(
     sums: Sum3by3Ar, //both case and cont
@@ -1040,36 +1087,6 @@ pub fn calc_coef_logit_interaction(
     unimplemented!()
 }
 
-//pub fn calc_coef_logit_interaction(
-//    wzs_sum: (f64, f64, f64, f64),
-//    wls_sum: (f64, f64, f64, f64),
-//) -> Coef {
-//    let (u4, u2, u1, u0) = wzs_sum;
-//    let (w4, w2, w1, w0) = wls_sum;
-//
-//    let denom = 4.0 * w4 * w2 + 9.0 * w4 * w1 + 16.0 * w4 * w0 + w2 * w1 + 4.0 * w2 * w0 + w1 * w0;
-//
-//    let c_numer = u4 * (-3.0 * w1 - 4.0 * w2)
-//        + u2 * (8.0 * w4 - w1)
-//        + u1 * (12.0 * w4 + 2.0 * w2)
-//        + u0 * (16.0 * w4 + 4.0 * w2 + w1);
-//
-//    let a_numer = u4 * (2.0 * w2 + 4.0 * w1 + 4.0 * w0)
-//        + u2 * (-2.0 * w4 + w1 + 2.0 * w0)
-//        + u1 * (-3.0 * w4 - w2 + w0)
-//        + u0 * (-4.0 * w4 - 2.0 * w2 - w1);
-//
-//    let c = c_numer / denom;
-//    let a = a_numer / denom;
-//
-//    //when w0=w2=0, denom=0.0
-//    //if denom==0.0{
-//    //    log::debug!("denom=0.0");
-//    //    log::debug!("w0 {}",w0);
-//    //    log::debug!("w1 {}",w1);
-//    //    log::debug!("w2 {}",w2);
-//    //}
-//
 //    Coef::LinearConstInteraction((c, a))
 //    //Coef::LinearConst((c, a))
 //}

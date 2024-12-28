@@ -54,9 +54,59 @@ impl SampleScore {
         samples_name: &[String],
         samples_name_val: Option<&[String]>,
     ) -> (Self, Self) {
-        let score_buf = textfile::read_file_to_end(file, None).unwrap_or_else(|_| {
-            panic!("Cannot read file: {:?}", file);
-        });
+        let score_buf = if file.extension().unwrap() == "zst" {
+            log::debug!("zst: {:?}", file);
+            textfile::read_file_to_end(file, Some("zst")).unwrap_or_else(|_| {
+                panic!("Cannot read file: {:?}", file);
+            })
+        } else {
+            textfile::read_file_to_end(file, None).unwrap_or_else(|_| {
+                panic!("Cannot read file: {:?}", file);
+            })
+        };
+
+        Self::new_from_vec(&score_buf, samples_name, samples_name_val)
+
+        //let cols = [0usize, 1];
+        //let vss: Vec<Vec<String>> = textfile::load_table_cols_buf(&score_buf, &cols, true);
+
+        //let mut name_score = HashMap::with_capacity(vss[0].len());
+        //for vi in 0..vss[0].len() {
+        //    name_score.insert(vss[0][vi].clone(), vss[1][vi].parse::<f64>().unwrap());
+        //}
+
+        //// for training samples
+        //let scores = samples_name
+        //    .iter()
+        //    .map(|x| name_score.get(x).unwrap().clone())
+        //    .collect::<Vec<f64>>();
+
+        //let scores = Self::new_vec(scores);
+
+        //// for validation samples
+        //let scores_val = if let Some(samples_name_val) = samples_name_val {
+        //    let scores_val = samples_name_val
+        //        .iter()
+        //        .map(|x| name_score.get(x).unwrap().clone())
+        //        .collect::<Vec<f64>>();
+
+        //    Self::new_vec(scores_val)
+        //} else {
+        //    Self::new(0)
+        //};
+
+        //(scores, scores_val)
+    }
+
+    pub fn new_from_vec(
+        //file: &Path,
+        score_buf: &[u8],
+        samples_name: &[String],
+        samples_name_val: Option<&[String]>,
+    ) -> (Self, Self) {
+        //let score_buf = textfile::read_file_to_end(file, None).unwrap_or_else(|_| {
+        //    panic!("Cannot read file: {:?}", file);
+        //});
 
         let cols = [0usize, 1];
         let vss: Vec<Vec<String>> = textfile::load_table_cols_buf(&score_buf, &cols, true);

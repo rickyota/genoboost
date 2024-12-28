@@ -6,7 +6,7 @@
 pub mod load;
 pub mod load_score;
 
-use crate::sample;
+use crate::{sample, Snvs};
 use crate::{textfile, vec, Chrom, SnvId};
 
 use serde::Deserialize;
@@ -623,6 +623,7 @@ pub fn load_ys_buf(
     let valss = if let Some(phe_name) = phe_name {
         let phe_buf = match phe_buf {
             None => {
+                log::debug!("load_ys_buf(); phe_name exists and fphe does not exist.");
                 // phe is in .psam
                 phe_buf_v = load_fam(fin_genot);
                 &phe_buf_v[..]
@@ -631,8 +632,12 @@ pub fn load_ys_buf(
                 // if phe_name is in phe_buf, use the col
                 // elif phe in .psam, use the col
                 if textfile::coli_of_header_buf(x, phe_name).is_some() {
+                    log::debug!(
+                        "load_ys_buf(); phe_name exists and fphe exists and phe_name is in column."
+                    );
                     x
                 } else {
+                    log::debug!("load_ys_buf(); phe_name exists and fphe exists but phe_name is not in column.");
                     phe_buf_v = load_fam(fin_genot);
                     //phe_buf_v = load_fam(fin, gfmt);
                     if textfile::coli_of_header_buf(&phe_buf_v[..], phe_name).is_some() {
@@ -711,6 +716,7 @@ fn load_ys_buf_vals(
     log::debug!("vals[0]: {}", vals[0]);
 
     let uniq = vec::uniq_clone(&vals);
+    // let code_type = if uniq == HashSet::from_iter([String::from("0"), String::from("1"), String::from("-9")]) {
     let code_type = if uniq == HashSet::from_iter([String::from("0"), String::from("1")]) {
         "01"
     } else if uniq == HashSet::from_iter([String::from("1"), String::from("2")]) {
@@ -810,8 +816,25 @@ impl SnvPlink2In {
     }
 }
 
+#[derive(Clone, Debug, Deserialize)]
+struct FreqPlinkIn {
+    #[serde(alias = "ID", alias = "#ID")]
+    id: String,
+    #[serde(alias = "CHROM", alias = "#CHROM")]
+    chrom: String,
+    #[serde(alias = "POS", alias = "#POS")]
+    pos: String,
+    #[serde(alias = "REF")]
+    refa: String,
+    #[serde(alias = "ALT")]
+    alta: String,
+    #[serde(alias = "ALT_FREQS")]
+    alt_freq: f64,
+}
+
 // this will fail for a file without header but contain string "ID" as name, but should be fine
 // reading to end for comment lines at the top of file
+// TOFIX: use if starts with '#'
 pub fn has_bim_header_plink2(fin_bim: &Path, compress: Option<&str>) -> bool {
     let buf = textfile::read_file_to_end(fin_bim, compress).unwrap();
     textfile::isin_header("ID", &buf[..])
@@ -924,6 +947,112 @@ pub fn load_snvs(fin_genot: &GenotFile) -> Vec<SnvId> {
         }
         snvs
     }
+}
+
+fn load_freq_tsv(
+    freq_buf: &[u8],
+    //freq_buf: Option<&[u8]>,
+    //compress: Option<&str>,
+) -> Snvs {
+    let buf = freq_buf;
+    //let fin_bim = fin_genot.snv_file(chrom);
+    ////let fin_bim = fname_plinks_snv(fin, gfmt, chrom);
+    ////println!("fin_bim {:?}", fin_bim);
+
+    let mut snvs_in: Vec<FreqPlinkIn> = vec![];
+    //let buf = textfile::read_file_to_end(&fin_bim, compress);
+    //if buf.is_err() {
+    //    return None;
+    //}
+    //let buf = buf.unwrap();
+
+    //if has_bim_header_plink2(&fin_bim, compress) {
+    let mut rdr = csv::ReaderBuilder::new()
+        .delimiter(b'\t')
+        .from_reader(&buf[..]);
+
+    for result in rdr.deserialize() {
+        let record: FreqPlinkIn = result.unwrap_or_else(|_| panic!("Error while reading freq"));
+        snvs_in.push(record)
+    }
+    //} else {
+    //    //.has_headers(false)
+    //    // then should have exactly same cols as SnvIn, so avoid using Struct
+    //    let mut rdr = csv::ReaderBuilder::new()
+    //        .has_headers(false)
+    //        .delimiter(b'\t')
+    //        .from_reader(&buf[..]);
+
+    //    // original order is chrom, rs, None, pos, A1, A2
+    //    // rs, chrom, pos, A1, A2
+    //    let cols = [1usize, 0, 3, 4, 5];
+
+    //    for result in rdr.records() {
+    //        let record = result.unwrap_or_else(|_| panic!("Error while reading: {:?}", fin_bim));
+    //        println!("{:?}", record);
+    //        snvs_in.push(SnvPlink2In::new(
+    //            record[cols[0]].to_string(),
+    //            record[cols[1]].to_string(),
+    //            record[cols[2]].to_string(),
+    //            record[cols[3]].to_string(),
+    //            record[cols[4]].to_string(),
+    //        ))
+    //    }
+    //}
+
+    let mut snvs: Vec<SnvId> = vec![];
+    let mut freqs: Vec<f64> = vec![];
+
+    for record in snvs_in {
+        let snv = SnvId::new(
+            record.id.clone(),
+            &record.chrom,
+            &record.pos,
+            record.alta.clone(),
+            record.refa.clone(),
+        );
+        snvs.push(snv);
+        freqs.push(record.alt_freq);
+    }
+    Snvs::new(snvs, Some(freqs))
+    //Some(snvs)
+}
+
+//pub fn load_freq(freq_buf: Option<&[u8]>) -> Option<Snvs> {
+pub fn load_freq(freq_buf: &[u8]) -> Snvs {
+    // TODO: compressed ver.
+
+    //match freq_buf {
+    //    Some(x)=>load_freq(x),
+    //    None=>None,
+    //}
+    load_freq_tsv(freq_buf)
+
+    //let freq: Option<Snvs> = match freq_buf {
+    //    Some(x) => x,
+    //    None => None,
+    //};
+
+    // cov_name.map(|x| Covs::new_buf(phe_buf, fin_genot, x, &sample_id_to_n));
+
+    //if !fin_genot.judge_split_chrom() {
+    //    load_snvs_chrom(fin_genot, None)
+    //        .unwrap_or_else(|| panic!("Could not load snvs from fin: {:?}", fin_genot.file()))
+    //} else {
+    //    let mut snvs: Vec<SnvId> = vec![];
+    //    for chrom_i in Chrom::variants().iter() {
+    //        let v = load_snvs_chrom(fin_genot, Some(chrom_i));
+    //        if let Some(mut snvs_i) = v {
+    //            snvs.append(&mut snvs_i);
+    //        }
+    //        // else continue
+    //    }
+    //    // all chrom returned None
+    //    if snvs.len() == 0 {
+    //        panic!("No snvs were loaded from {:?}", fin_genot.file());
+    //    }
+    //    snvs
+    //}
 }
 
 //// TODO: why not use_snvs here?

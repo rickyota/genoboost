@@ -31,6 +31,7 @@ impl<'a> BaseCMatrix for CBitsMut<'a> {
 }
 
 impl<'a> BaseCMatrixMut for CBitsMut<'a> {
+    #[inline]
     fn inner_mut(&mut self) -> &mut [B8] {
         self.0.inner_mut()
     }

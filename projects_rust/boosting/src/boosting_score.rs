@@ -42,8 +42,12 @@ pub fn run_boosting_score_para_best(
         mem,
     );
 
-    boosting_score_para_best(dout_score, &wgts, &dataset, has_cov, allow_nonexist_snv,
-    
+    boosting_score_para_best(
+        dout_score,
+        &wgts,
+        &dataset,
+        has_cov,
+        allow_nonexist_snv,
         missing_to_mode,
         missing_to_mean,
     );

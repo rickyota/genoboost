@@ -33,9 +33,15 @@ impl BaseCMatrix for CBits {
 }
 
 impl BaseCMatrixMut for CBits {
+    #[inline]
     fn inner_mut(&mut self) -> &mut [B8] {
         self.0.inner_mut()
     }
+
+    //#[inline]
+    //fn inner_mut_vector(&mut self) -> &mut Vec<B8> {
+    //    self.0.inner_mut_vector()
+    //}
 }
 
 impl BaseCVec for CBits {}

@@ -131,10 +131,11 @@ impl BoostParamLrs {
         //    //panic!("Cannot assign SampleWeightClip::None in Logit")
         //}
 
-        if self.boost_type().is_type_logit() && !self.cov_way().unwrap().is_first() {
-            // since now ps is not renewed for iteration
-            panic!("Cannot assign except CovWay::First in Logit")
-        }
+        // allow for rare prior
+        //if self.boost_type().is_type_logit() && !self.cov_way().unwrap().is_first() {
+        //    // since now ps is not renewed for iteration
+        //    panic!("Cannot assign except CovWay::First in Logit")
+        //}
 
         //if self.eff_eps().is_some() {
         //    if (self.eff_eps().unwrap().is_lim_s2())
@@ -364,6 +365,7 @@ pub struct BoostParamCommon {
     batch_way: Option<BatchWay>,
     batch_interaction_way: Option<BatchInteractionWay>,
     eff_eps: Option<EffEps>,
+    prior: Option<Prior>,
     is_monitor: bool,
     monitor_nsnvs: Option<Vec<usize>>,
     mhc_region: Option<(SnvId, SnvId)>,
@@ -408,6 +410,9 @@ pub trait BoostParamCommonTrait {
     }
     fn eff_eps(&self) -> Option<EffEps> {
         self.boost_param_common().eff_eps()
+    }
+    fn prior(&self) -> Option<Prior> {
+        self.boost_param_common().prior()
     }
     fn is_monitor(&self) -> bool {
         self.boost_param_common().is_monitor()
@@ -482,6 +487,9 @@ impl BoostParamCommon {
     pub fn eff_eps(&self) -> Option<EffEps> {
         self.eff_eps
     }
+    fn prior(&self) -> Option<Prior> {
+        self.prior
+    }
     pub fn is_monitor(&self) -> bool {
         self.is_monitor
     }
@@ -552,6 +560,15 @@ impl BoostParamCommon {
             eff_eps: match eff_eps {
                 Some("None") => None,
                 _ => eff_eps.map(|x| EffEps::from_str(x).unwrap()),
+            },
+            ..self
+        }
+    }
+    pub fn set_prior(self, prior: Option<&str>, h2_snv: Option<f64>) -> Self {
+        Self {
+            prior: match prior {
+                Some("None") => None,
+                _ => prior.map(|x| Prior::from_string(x, h2_snv.unwrap()).unwrap()),
             },
             ..self
         }
@@ -1303,6 +1320,69 @@ impl FromStr for SampleWeightWlsClip {
         Err(format!("Unknown SampleWeightClip: {}", str))
     }
 }
+
+#[derive(PartialEq, Copy, Clone, Debug)]
+pub enum Prior {
+    // Per-snv heritability, r (power)
+    // Alpha{h2_snv: f64},
+    //Alpha(f64, ),
+    Alpha { h2_snv: f64, prior_r: f64 },
+}
+
+impl Prior {
+    fn from_string(str: &str, h2_snv: f64) -> Result<Self, String> {
+        if str.starts_with("alpha-") {
+            
+            // prior_r could be negative
+            //let mut str_iter = str.split("-");
+
+            //let str0 = str_iter.next().unwrap();
+            //assert_eq!(str0, "alpha");
+
+            let x = str[6..].parse::<f64>().unwrap();
+
+            if h2_snv <= 0.0 || h2_snv > 1.0 {
+                panic!("Per-SNV heritability should be 0.0<x<=1.0.")
+            };
+
+            if x<0.0{
+                log::debug!("prior_r is negative: {}", x);
+            }
+
+
+            //let y = str_iter.next().unwrap().parse::<f64>().unwrap();
+
+            return Ok(Prior::Alpha { h2_snv, prior_r: x });
+        } else {
+            Err(format!("Unknown Prior: {}", str))
+        }
+    }
+}
+
+// cannot have two args
+//impl FromStr for Prior {
+//    type Err = String;
+//    fn from_str(str: &str, h2_snv: f64) -> Result<Self, Self::Err> {
+//        if str.starts_with("alpha_") {
+//            let mut str_iter = str.split("_");
+//
+//            let str0 = str_iter.next().unwrap();
+//            assert_eq!(str0, "alpha");
+//
+//            let x = str_iter.next().unwrap().parse::<f64>().unwrap();
+//
+//            if h2_snv <= 0.0 || h2_snv > 1.0 {
+//                panic!("Per-SNV heritability should be 0.0<x<=1.0.")
+//            };
+//
+//            //let y = str_iter.next().unwrap().parse::<f64>().unwrap();
+//
+//            return Ok(Prior::Alpha { h2_snv, prior_r: y });
+//        } else {
+//            Err(format!("Unknown Prior: {}", str))
+//        }
+//    }
+//}
 
 //// deprecated, use BoostType instead
 //#[derive(Debug, Copy, Clone)]

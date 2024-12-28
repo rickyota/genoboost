@@ -33,6 +33,11 @@ pub trait WgtTrait {
         //}
     }
 
+    fn set_freq(&mut self, freq: Option<f64>) {
+        let kind = self.wgt_mut().kind_mut();
+        kind.set_a1_freq(freq);
+    }
+
     //fn set_snv_index(&mut self, mi: Option<usize>) {
     //    let kind = self.wgt_mut().kind_mut();
     //    kind.set_snv_index(mi);

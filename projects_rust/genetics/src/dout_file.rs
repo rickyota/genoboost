@@ -20,9 +20,22 @@ impl DoutScoreFile {
         &self.dout_score
     }
 
-    // TODO: better
     pub fn fscore_from_fwgt(&self, fwgt: &Path) -> PathBuf {
-        let fname_score = fwgt.file_stem().unwrap().to_str().unwrap().to_owned() + ".score";
+        let fname_score = stem_fwgt(fwgt) + ".score";
+        //let fname_score = if fwgt.to_str().unwrap().ends_with(".wgt") {
+        //    fwgt.file_stem().unwrap().to_str().unwrap().to_owned() + ".score"
+        //} else if fwgt.to_str().unwrap().ends_with(".wgt.zst") {
+        //    // .file_stem() twice
+        //    Path::new(fwgt.file_stem().unwrap())
+        //        .file_stem()
+        //        .unwrap()
+        //        .to_str()
+        //        .unwrap()
+        //        .to_owned()
+        //        + ".score"
+        //} else {
+        //    panic!("wrong prefix for wgt {:?}", fwgt);
+        //};
         let fout_score = self.dout_score().join(fname_score);
         fout_score
     }
@@ -193,33 +206,63 @@ impl WgtDoutOrFile {
     //}
 }
 
-pub fn para_from_fwgt(fwgt: &Path, para: &str) -> String {
-    let para = fwgt
-        .file_stem() // exclude .wgt here
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .split(&("_".to_string() + para + "-"))
-        .collect::<Vec<&str>>()[1]
-        .to_string();
-    para
-}
-
-pub fn is_fwgt_concat(fwgt: &Path, concat_para: &str) -> bool {
-    let is_concat = fwgt
-        .file_stem()
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .contains(&("_".to_string() + concat_para + "-"));
-
-    if is_concat {
-        // check if file stem name end with _(para)-*
-        if fwgt
+pub fn stem_fwgt(fwgt: &Path) -> String {
+    if fwgt.to_str().unwrap().ends_with(".wgt") {
+        fwgt.file_stem().unwrap().to_str().unwrap().to_owned()
+    } else if fwgt.to_str().unwrap().ends_with(".wgt.zst") {
+        // .file_stem() twice
+        Path::new(fwgt.file_stem().unwrap())
             .file_stem()
             .unwrap()
             .to_str()
             .unwrap()
+            .to_owned()
+    } else {
+        panic!("wrong prefix for wgt {:?}", fwgt);
+    }
+}
+
+pub fn para_from_fwgt(fwgt: &Path, para: &str) -> String {
+    let para = stem_fwgt(fwgt)
+        .split(&("_".to_string() + para + "-"))
+        .collect::<Vec<&str>>()[1]
+        .to_string();
+
+    //let para = fwgt
+    //    .file_stem() // exclude .wgt here
+    //    .unwrap()
+    //    .to_str()
+    //    .unwrap()
+    //    .split(&("_".to_string() + para + "-"))
+    //    .collect::<Vec<&str>>()[1]
+    //    .to_string();
+    para
+}
+
+pub fn is_fwgt_concat(fwgt: &Path, concat_para: &str) -> bool {
+    let is_concat = stem_fwgt(fwgt).contains(&("_".to_string() + concat_para + "-"));
+
+    //let is_concat = fwgt
+    //    .file_stem()
+    //    .unwrap()
+    //    .to_str()
+    //    .unwrap()
+    //    .contains(&("_".to_string() + concat_para + "-"));
+
+    if is_concat {
+        // check if file stem name end with _(para)-*
+        //if fwgt
+        //    .file_stem()
+        //    .unwrap()
+        //    .to_str()
+        //    .unwrap()
+        //    .split(&("_".to_string() + concat_para + "-"))
+        //    .collect::<Vec<&str>>()
+        //    .last()
+        //    .unwrap()
+        //    .contains("_")
+
+        if stem_fwgt(fwgt)
             .split(&("_".to_string() + concat_para + "-"))
             .collect::<Vec<&str>>()
             .last()
@@ -236,29 +279,51 @@ pub fn is_fwgt_concat(fwgt: &Path, concat_para: &str) -> bool {
 //    fs::create_dir_all(&dout).unwrap();
 //}
 
-//#[cfg(test)]
-//mod tests {
-//    use super::*;
-//
-//    #[test]
-//    fn test_get_dname_para() {
-//        let dout = DoutFile::new(PathBuf::from("./abc"));
-//        let lr = 0.1;
-//        let dout_para = dout.dout_para_lr(lr);
-//        assert_eq!(dout_para.dout_para(), &PathBuf::from("./abc/para_lr-0.1/"));
-//    }
-//
-//    #[test]
-//    fn test_get_dname_para_lrnone() {
-//        let dout = DoutFile::new(PathBuf::from("./abc"));
-//        let lr = 1.0;
-//        let dout_para = dout.dout_para_lr(lr);
-//        assert_eq!(dout_para.dout_para(), &PathBuf::from("./abc/para_lr-1/"));
-//
-//        //let dout = PathBuf::from("./abc");
-//        //let lr = 1.0;
-//        //let dout_para = get_dname_para(&dout, lr);
-//        //assert_eq!(dout_para, PathBuf::from("./abc/para_lr-1/"));
-//        //assert_eq!(dout_para, PathBuf::from("./abc/para/"));
-//    }
-//}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fscore_from_fwgt() {
+        let dout = DoutScoreFile::new(PathBuf::from("./abc"));
+        let fwgt = PathBuf::from("./cde/clump.wgt");
+
+        assert_eq!(
+            dout.fscore_from_fwgt(&fwgt),
+            PathBuf::from("./abc/clump.score")
+        );
+    }
+
+    #[test]
+    fn test_fscore_from_fwgt_2() {
+        let dout = DoutScoreFile::new(PathBuf::from("./abc"));
+        let fwgt = PathBuf::from("./cde/clump.wgt.zst");
+
+        assert_eq!(
+            dout.fscore_from_fwgt(&fwgt),
+            PathBuf::from("./abc/clump.score")
+        );
+    }
+
+    //#[test]
+    //fn test_get_dname_para() {
+    //    let dout = DoutFile::new(PathBuf::from("./abc"));
+    //    let lr = 0.1;
+    //    let dout_para = dout.dout_para_lr(lr);
+    //    assert_eq!(dout_para.dout_para(), &PathBuf::from("./abc/para_lr-0.1/"));
+    //}
+
+    //#[test]
+    //fn test_get_dname_para_lrnone() {
+    //    let dout = DoutFile::new(PathBuf::from("./abc"));
+    //    let lr = 1.0;
+    //    let dout_para = dout.dout_para_lr(lr);
+    //    assert_eq!(dout_para.dout_para(), &PathBuf::from("./abc/para_lr-1/"));
+
+    //    //let dout = PathBuf::from("./abc");
+    //    //let lr = 1.0;
+    //    //let dout_para = get_dname_para(&dout, lr);
+    //    //assert_eq!(dout_para, PathBuf::from("./abc/para_lr-1/"));
+    //    //assert_eq!(dout_para, PathBuf::from("./abc/para/"));
+    //}
+}

@@ -60,6 +60,13 @@ pub fn or_bool_vec_mut(v1: &mut [bool], v2: &[bool]) {
         .for_each(|(b1, b2)| *b1 = *b1 || *b2);
 }
 
+pub fn or_bool_vec(v1: &[bool], v2: &[bool]) -> Vec<bool> {
+    v1.iter()
+        .zip(v2.iter())
+        .map(|(&b1, &b2)| b1 || b2)
+        .collect()
+}
+
 pub fn and_bool_vec_mut(v1: &mut [bool], v2: &[bool]) {
     v1.iter_mut()
         .zip(v2.iter())
@@ -162,6 +169,32 @@ where
 {
     let mut uniq = HashSet::new();
     iter.into_iter().all(move |x| uniq.insert(x))
+}
+
+pub fn histogram(v: &[usize], bin_n: usize) -> (Vec<usize>, Vec<usize>) {
+    // create rough histogram
+
+    let mut hist = vec![0; bin_n];
+    // ex. max=103, n=5
+    // bin_width = 20
+    let bin_width = v.iter().max().unwrap() / bin_n;
+    // (20,40,60,80); len=bin_n-1
+    let bins = (1..bin_n).map(|i| i * bin_width).collect::<Vec<usize>>();
+    for &x in v.iter() {
+        if x < bins[0] {
+            hist[0] += 1;
+        } else if x >= bins[bin_n - 2] {
+            hist[bin_n - 1] += 1;
+        } else {
+            for i in 0..(bin_n - 1) {
+                if (x >= bins[i]) && (x < bins[i + 1]) {
+                    hist[i + 1] += 1;
+                    break;
+                }
+            }
+        }
+    }
+    (hist, bins)
 }
 
 #[cfg(test)]
@@ -268,5 +301,15 @@ mod tests {
         let v_ans = ["1".to_string(), "3".to_string(), "5".to_string()];
         let v = extract_if_iter(v1.iter(), &v2);
         assert_eq!(v, v_ans);
+    }
+
+    #[test]
+    fn test_historam() {
+        let v = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let bin_n = 5;
+        let (hist, bins) = histogram(&v, bin_n);
+        assert_eq!(bins, [2, 4, 6, 8]);
+        let hist_exp = [2, 2, 2, 2, 3];
+        assert_eq!(hist, hist_exp);
     }
 }

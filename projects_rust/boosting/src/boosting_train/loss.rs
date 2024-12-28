@@ -645,7 +645,7 @@ impl LossStruct {
         }
     }
 
-    // TODO: commo with search_topprop_modelfree_n()
+    // TODO: common with search_topprop_modelfree_n()
     /// also return next loss
     fn search_topprop_n_interaction(
         &self,
@@ -1089,6 +1089,7 @@ pub fn calculate_loss_gt(
     //skip_snv: &HashSet<usize>,
     //use_adjloss: bool,
     alphas_save: Option<&mut Vec<f64>>,
+    alphas_prev: Option<&Vec<f64>>,
 ) {
     // should be done in score but rerun for safety
     sample_weight.clear_pad();
@@ -1114,6 +1115,7 @@ pub fn calculate_loss_gt(
         boost_param,
         extract_snvs,
         alphas_save,
+        alphas_prev,
     );
 
     //#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]

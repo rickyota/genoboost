@@ -19,8 +19,8 @@ pub fn add_score_training(
 
     //  no check for speed
     //scores.check_no_nan();
-
 }
+
 //pub fn add_score(scores_pad: &mut [f64], wgt: &WgtBoost, genot: Option<&Genot>, covs: Option<&Covs>) {
 //    gscore::add_score(scores_pad, wgt, genot, covs, false);
 //}

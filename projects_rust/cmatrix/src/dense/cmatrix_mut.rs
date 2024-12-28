@@ -128,4 +128,17 @@ mod tests {
         mref2.set_unchecked(3, 0, 0);
         assert_ne!(m, m_ans);
     }
+
+    #[test]
+    fn test_split_genot() {
+        let vec = vec![0, 1, 2, 1, 2, 3, 1, 1, 1];
+        let mut m0_ans = CMatrix::new(2, 3, 2, &[0, 1, 2, 1, 2, 3]);
+        let mut m1_ans = CMatrix::new(1, 3, 2, &[1, 1, 1]);
+
+        let mut m = CMatrix::new(3, 3, 2, &vec);
+        let mut mref = m.as_cmatrix_mut();
+        let (mref0, mref1) = mref.split_rows(1);
+        assert_ne!(mref0, m0_ans.as_cmatrix_mut());
+        assert_ne!(mref1, m1_ans.as_cmatrix_mut());
+    }
 }

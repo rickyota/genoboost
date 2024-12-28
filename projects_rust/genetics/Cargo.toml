@@ -8,13 +8,13 @@ edition = "2021"
 [features]
 #default = ["plink2","pyo3"]
 default = ["plink2"]
-plink2 = ["dep:pgenlib", "dep:bindgen", "dep:zstd"]
+plink2 = ["dep:pgenlib"]
 pyo3 = ["dep:pyo3", "dep:numpy"]
 
 [dependencies]
 pgenlib = { package = "pgenlib_rust", path = "../../lib/pgenlib_rust", optional = true }
-bindgen = { version = "0.65.1", optional = true }
-zstd = { version = "0.12", optional = true }
+zstd = { version = "0.12"}
+#zstd = { version = "0.12", optional = true }
 cmatrix = { path = "../cmatrix" }
 # TODO: now for pgs.rs only
 mysmartcore = { path = "../../lib/mysmartcore" }
@@ -45,6 +45,8 @@ indoc = "2"
 #rand="0.8"
 #argmin="0.4"
 #nalgebra="0.31.4"
+
+
 
 
 [dependencies.pyo3]

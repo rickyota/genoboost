@@ -15,14 +15,19 @@ type Alleles = (String, String);
 #[derive(Clone, Hash, Debug, Default)]
 pub struct SnvId {
     id: String,
+    // TODO: Option<Chrom> or create SetSnvId
     chrom: Chrom,
     pos: usize,
+    // (a1, a2)
     alleles: Alleles,
     // only for one letter
     alleles_flip: Alleles,
     // assume (chrom, pos, a1, a2) does not include ":" and sida is unique
     sida: String,
     sid: String,
+    group_ids: Option<Vec<String>>,
+    // ok?
+    //set_id: Option<Vec<SnvId>>,
 }
 
 // how to implement?
@@ -60,6 +65,7 @@ impl SnvId {
             sida: "".to_string(),
             sid: "".to_string(),
             //vid: "".to_string(),
+            group_ids: None,
         };
         // TODO: use
         //snv.check_alleles();
@@ -80,6 +86,25 @@ impl SnvId {
             alleles_flip: ("".to_owned(), "".to_owned()),
             sida: "".to_string(),
             sid: "".to_string(),
+            group_ids: None,
+        };
+        //snv.check_alleles();
+        //snv.set_alleles_revcomp();
+        //snv.set_sida();
+        snv
+    }
+
+    pub fn new_set_ids(id: String, set_ids: Vec<String>) -> SnvId {
+        let snv = SnvId {
+            id,
+            // dummy for chrom1
+            chrom: Chrom::try_from(1).unwrap(),
+            pos: 0,
+            alleles: ("".to_owned(), "".to_owned()),
+            alleles_flip: ("".to_owned(), "".to_owned()),
+            sida: "".to_string(),
+            sid: "".to_string(),
+            group_ids: Some(set_ids),
         };
         //snv.check_alleles();
         //snv.set_alleles_revcomp();
@@ -193,6 +218,10 @@ impl SnvId {
         &self.alleles_flip.1
     }
 
+    pub fn group_ids(&self) -> Option<&Vec<String>> {
+        self.group_ids.as_ref()
+    }
+
     //pub fn to_sid(&self) -> String {
     //    self.chrom.to_string() + ":" + &self.pos.to_string()
     //}
@@ -259,6 +288,9 @@ impl SnvId {
         (a, a_rev, Some((a_flip, a_rev_flip)))
         //Some((a, a_rev, a_flip, a_rev_flip))
     }
+
+    // use PartialEq trait
+    // pub fn is_match()
 
     // to reverse genotype
     pub fn is_rev(&self, snv: &SnvId, use_snv_pos: bool) -> bool {

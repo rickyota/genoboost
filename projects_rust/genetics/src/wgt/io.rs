@@ -38,6 +38,8 @@ pub fn get_files_wgt(dout: &Path) -> Vec<PathBuf> {
         d.push(f);
         if d.extension().unwrap() == "wgt" {
             files.push(d);
+        } else if f.ends_with(".wgt.zst") {
+            files.push(d);
         }
     }
     files
@@ -127,7 +129,12 @@ pub fn load_wgts_file(fwgt: &Path, is_nonadd: bool) -> Vec<Wgt> {
             );
             Coef::Score3(scores)
         } else {
-            Coef::Linear(vss[col_to_i["alpha"]][wgt_i].parse::<f64>().unwrap())
+            match vss[col_to_i["alpha"]][wgt_i].as_str() {
+                // For LDpred2
+                "NA" => Coef::Linear(f64::NAN),
+                z => Coef::Linear(z.parse::<f64>().unwrap()),
+            }
+            //Coef::Linear(vss[col_to_i["alpha"]][wgt_i].parse::<f64>().unwrap())
         };
         let model = Model::new_coef(coef);
 

@@ -1,4 +1,4 @@
-# GenoBoost v1.1.0
+# GenoBoost
 
 [![GenoBoost](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/genoboost.yml)
 [![Release](https://github.com/rickyota/genoboost/actions/workflows/publish.yml/badge.svg)](https://github.com/rickyota/genoboost/actions/workflows/publish.yml)
@@ -22,7 +22,7 @@ $ genoboost train \
 
 ## Table of Contents
 
-- [GenoBoost v1.1.0](#genoboost-v110)
+- [GenoBoost](#genoboost)
   - [Getting Started](#getting-started)
   - [Table of Contents](#table-of-contents)
   - [News](#news)
@@ -30,7 +30,8 @@ $ genoboost train \
   - [Users' Guide](#users-guide)
     - [Installation](#installation)
       - [Plink1 Input](#plink1-input)
-      - [Plink2 Input](#plink2-input)
+      - [Plink2 Input (compile)](#plink2-input-compile)
+      - [Plink2 Input (docker)](#plink2-input-docker)
       - [Advanced Install](#advanced-install)
     - [Train GenoBoost Model](#train-genoboost-model)
       - [Simplest Usage](#simplest-usage)
@@ -52,6 +53,8 @@ $ genoboost train \
 
 ## <a name="news"></a>News
 
+- [v1.2.0](https://github.com/rickyota/genoboost/releases/tag/v1.2.0) (Dec 28, 2024)
+    - Clean code and remove some requirements for plink2.
 - [v1.1.0](https://github.com/rickyota/genoboost/releases/tag/v1.1.0) (May 23, 2024)
     - Clean code.
 - [v1.0.8](https://github.com/rickyota/genoboost/releases/tag/v1.0.8) (Nov 25, 2023)
@@ -84,11 +87,11 @@ For now, the input genotype format is allowed for plink1 or plink2 only.
 
 If you want to input plink1, download a compiled program for Linux (tested on Rocky Linux<=8.9), macOS (tested on <=14.3.1), and Windows (not tested) from [here][release]. This should take less than 1 minute.
 
-#### <a name="install-plink2"></a>Plink2 Input
+#### <a name="install-plink2-compile"></a>Plink2 Input (compile)
 
-If you want to input plink2 genotype file, you have to compile it by yourself as below. You can use plink1 format as well.
+If you want to input plink2 genotype file, you can compile program by yourself as below or [use docker or singularity](#advanced-installation). You can use plink1 format as well.
 
-First, install `rust` as instructed [here][rust-install], `cmake>=3.14`, and `clang` if not installed. Then,
+First, install `rust` as instructed [here][rust-install] if not installed. Then,
 
 ```bash
 git clone https://github.com/rickyota/genoboost.git
@@ -98,10 +101,6 @@ cp ./projects_rust/target/release/genoboost ./genoboost
 ```
 
 and you can use `genoboost` program. This should take less than 5 minutes.
-
-#### <a name="install-advanced"></a>Advanced Install
-
-See [Advanced Guide](#advanced-guide) for docker or singularity users.
 
 Using arm architecture, including Macbook M1 and M2 chips, will stop or slow down the software due to the unavailability of SIMD.
 I plan to deal with it in the future.

@@ -61,16 +61,26 @@ impl Snvs {
         snvs
     }
 
+    pub fn new_plink_use_snvs_and_set(
+        fin_genot: &GenotFile,
+        use_snvs: Option<&[bool]>,
+        m: Option<usize>, // avoid loading again
+        set_snv_buf: Option<&[u8]>,
+    ) -> Self {
+        let snvs = Self::new_plink_use_snvs(fin_genot, use_snvs, m);
+
+        let mut set_snv_ids = snv::load_group_snvs_buf(set_snv_buf);
+
+        let mut snv_ids = snvs.snv_ids().to_vec();
+
+        snv_ids.append(&mut set_snv_ids);
+
+        let snvs = Self::new_from_snv_ids(snv_ids);
+        snvs
+    }
+
     pub fn new_from_snv_ids(snv_ids: Vec<SnvId>) -> Self {
         Self::new(snv_ids, None)
-        //let snvs_n = snvs.len();
-        //// what for?
-        //let snv_indexs = snvs.into_iter().collect();
-        //Self {
-        //    snv_indexs,
-        //    mafs: None,
-        //    snvs_n,
-        //}
     }
 
     // tmp
@@ -83,6 +93,7 @@ impl Snvs {
         //}
     }
 
+    // TODO: new_check() check len
     pub fn new(snv_ids: Vec<SnvId>, mafs: Option<Vec<f64>>) -> Self {
         let snvs_n = snv_ids.len();
         Self {

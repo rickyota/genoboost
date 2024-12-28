@@ -51,6 +51,7 @@ fn boosting_iter_snv(
     extract_snvs: Option<&HashSet<usize>>,
     dataset_val: Option<&Dataset>,
     scores_val: &mut SampleScore,
+    alphas_prev: Option<&Vec<f64>>,
 ) -> WgtBoost {
     let genot = dataset.genot();
     let phe = dataset.samples().phe_unwrap();
@@ -64,6 +65,7 @@ fn boosting_iter_snv(
         boost_param,
         extract_snvs,
         None,
+        alphas_prev,
     );
 
     let mut wgt = loss::search_min_loss_gt(loss, iteration, dataset, boost_param, extract_snvs);
@@ -526,6 +528,7 @@ pub fn boosting<W: std::io::Write>(
                 None,
                 None,
                 &mut SampleScore::new_empty(),
+                None,
             );
 
             // legacy
@@ -576,6 +579,7 @@ fn create_extract_snvs_batch(
     sample_weight: &mut SampleWeight,
     boost_param: &BoostParam,
     extract_snvs: Option<&HashSet<usize>>,
+    alphas_prev: Option<&Vec<f64>>,
 ) -> (HashSet<usize>, Option<f64>) {
     let mut loss_decrease_by;
 
@@ -602,6 +606,7 @@ fn create_extract_snvs_batch(
             boost_param,
             extract_snvs,
             None,
+            alphas_prev,
         );
         let loss_first = loss.clone();
 
@@ -638,6 +643,7 @@ fn create_extract_snvs_batch(
             boost_param,
             extract_snvs,
             None,
+            alphas_prev,
         );
 
         // the larger, the more disequilibrium
@@ -656,6 +662,7 @@ fn create_extract_snvs_batch(
             boost_param,
             extract_snvs,
             None,
+            alphas_prev,
         );
         loss
     };
@@ -814,6 +821,7 @@ fn create_initial_interaction(
     //extract_snvs_interaction: Vec<(usize, usize)>,
     dout: Option<&DoutParaFile>,
     finitial_snvs: Option<&Path>,
+    is_initial_only: bool, // if true, returned vec will not be used. Focus on writing down to file.
 ) -> Vec<(usize, usize)> {
     // first, calculate loss of single snvs
     // This uses cov adjustment
@@ -827,6 +835,7 @@ fn create_initial_interaction(
         boost_param,
         None,
         Some(&mut alphas_single),
+        None,
     );
 
     let mut writer_loss = dout.unwrap().bufwriter_floss_initial_single();
@@ -870,6 +879,7 @@ fn create_initial_interaction(
 
     // for each file
     let mut loss_here = loss.clone();
+    // to write down only
     let mut alphas = vec![];
 
     // corresponding to loss
@@ -914,8 +924,15 @@ fn create_initial_interaction(
             // if .loss or .loss.gz exists
             log::debug!("skip file_i {:?}", file_i);
 
-            // BUG: loss.serach_topprop should be done
-            continue;
+            if is_initial_only {
+                continue;
+            } else {
+                unimplemented!("ny");
+                // BUG: loss.serach_topprop should be done
+                // written by copilot
+                //let mut reader_loss = floss_initial.open_bufread();
+                //loss_here.read_initial_reader(&mut reader_loss, &extract_snvs_interaction_file_i);
+            }
         } else {
             //log::debug!("do not skip file_i {:?}", file_i);
 
@@ -946,8 +963,7 @@ fn create_initial_interaction(
             .map(|(i, _)| *i)
             .collect::<Vec<(usize, usize)>>();
 
-        //extract_snvs_interaction.extend(extract_snvs_interaction_filter);
-        // do not save alphas
+        // do not use alphas anymore
     }
 
     let (use_snvs, _) = loss.search_topprop_interaction_n(filter_size_all);
@@ -1508,9 +1524,11 @@ pub fn boosting_batch<W: std::io::Write>(
     // now in boost_param
     //nsnvs_monitor: Option<Vec<usize>>,
     //nsnvs_monitor: Option<&[usize]>,
-    fscore_start: Option<&Path>,
+    //fscore_start: Option<&Path>,
+    //fscore_start: Option<&Vec<u8>>,
+    fscore_start: Option<&[u8]>,
 ) -> Option<(usize, f64)> {
-    if !boost_param.cov_way().unwrap().is_first() {
+    if !(boost_param.cov_way().is_none() || boost_param.cov_way().unwrap().is_first()) {
         panic!("Should indicate CovWay::First in boosting_batch()")
     }
 
@@ -1523,7 +1541,9 @@ pub fn boosting_batch<W: std::io::Write>(
         0
     };
     let (mut scores, mut scores_val) = if let Some(fscore_start) = fscore_start {
-        SampleScore::new_from(
+        log::debug!("fscore_start");
+        //SampleScore::new_from(
+        SampleScore::new_from_vec(
             fscore_start,
             dataset.samples().names(),
             dataset_val.map(|x| x.samples().names()),
@@ -1533,6 +1553,7 @@ pub fn boosting_batch<W: std::io::Write>(
         let scores_val = SampleScore::new(n_val);
         (scores, scores_val)
     };
+    log::debug!("fscore_start[0]: {}",scores.scores()[0]);
     assert_eq!(scores_val.n(), n_val);
 
     let phe = dataset.samples().phe_unwrap();
@@ -1564,6 +1585,8 @@ pub fn boosting_batch<W: std::io::Write>(
     let m = dataset.snvs().snvs_n();
     let mut loss = LossStruct::new(boost_param.boost_type(), m);
     let mut wgts = WgtBoosts::new(boost_param.boost_type());
+
+    let mut alphas_prev = vec![0.0; m];
 
     let t_start;
     //if is_resume && wgt_boost::io::is_exist_wgt_nonzero(dout.unwrap()) {
@@ -1600,18 +1623,20 @@ pub fn boosting_batch<W: std::io::Write>(
     let mut ti = t_start;
 
     // first cov: not in while loop to save scores_val_cov.
-    {
-        let p = boosting_covs(
-            &mut wgts,
-            dataset,
-            &mut scores,
-            &mut sample_weight,
-            ti,
-            dataset_val,
-            &mut scores_val,
-        );
-        wgts.write_wgt_writer(writer);
-        ti += p;
+    if fscore_start.is_none() {
+        {
+            let p = boosting_covs(
+                &mut wgts,
+                dataset,
+                &mut scores,
+                &mut sample_weight,
+                ti,
+                dataset_val,
+                &mut scores_val,
+            );
+            wgts.write_wgt_writer(writer);
+            ti += p;
+        }
     }
 
     let scores_val_cov = scores_val.clone_align();
@@ -1647,6 +1672,7 @@ pub fn boosting_batch<W: std::io::Write>(
                 &mut sample_weight,
                 boost_param,
                 None,
+                Some(&alphas_prev),
             );
             bi = 0;
 
@@ -1669,7 +1695,14 @@ pub fn boosting_batch<W: std::io::Write>(
             Some(&snvs_batch),
             dataset_val,
             &mut scores_val,
+            Some(&alphas_prev),
         );
+
+        // renew alphas_prev
+        let mi = wgt.wgt().kind().snv_wgt().index().unwrap();
+        if boost_param.prior().is_some(){
+            alphas_prev[mi] += wgt.model().coef().linearconst_f64().1;
+        }
 
         wgts.add_wgt(wgt.clone());
 
@@ -2140,6 +2173,7 @@ pub fn boosting_batch_interaction<W: std::io::Write>(
             boost_param,
             dout,
             finitial_snvs,
+            is_initial_only,
         )
     } else {
         vec![]
@@ -2175,6 +2209,7 @@ pub fn boosting_batch_interaction<W: std::io::Write>(
                 &scores,
                 &mut sample_weight,
                 boost_param,
+                None,
                 None,
             );
             log::debug!("Batch wgt size {}", snvs_batch.len());

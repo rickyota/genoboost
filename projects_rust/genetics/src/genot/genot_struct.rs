@@ -39,6 +39,9 @@ pub struct Genot(CMatrix);
 #[derive(Debug, PartialEq, Eq)]
 pub struct GenotMut<'a>(CMatrixMut<'a>);
 
+//#[derive(Copy)]
+//&mut GenotMut;
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct GenotSnv(CVec);
 
@@ -134,6 +137,18 @@ impl GenotSnv {
     }
     pub fn new_empty(n: usize) -> GenotSnv {
         GenotSnv(CVec::new_empty(n, 2))
+    }
+
+    pub fn fill_0(&mut self) {
+        let v = self.inner_mut_vector();
+        // this will be compiled to memset:
+        // https://users.rust-lang.org/t/fastest-way-to-zero-an-array/39222/2
+        v.iter_mut().for_each(|x| *x = 0u8);
+    }
+
+    fn inner_mut_vector(&mut self) -> &mut Vec<u8> {
+        self.0.inner_mut_vector()
+        //self.0.inner_mut_vector()
     }
 }
 
@@ -312,6 +327,29 @@ mod tests {
         let mut g = GenotSnv::new(&vec);
 
         g.as_genot_snv_mut_snv().reverse_allele();
+
+        assert_eq!(&g.vals(), &vec_exp);
+    }
+
+    #[test]
+    fn test_or_binary() {
+        let vec = vec![0, 0, 0, 0, 1, 1, 1, 1, 3, 3, 3, 3];
+        let vec2 = vec![0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3];
+        let vec_exp = vec![0, 1, 1, 3, 1, 1, 1, 3, 3, 3, 3, 3];
+        let mut g = GenotSnv::new(&vec);
+        let g2 = GenotSnv::new(&vec2);
+
+        g.or_binary(&g2.as_genot_snv());
+
+        assert_eq!(&g.vals(), &vec_exp);
+    }
+
+    #[test]
+    fn test_fill_0() {
+        let vec = vec![0u8, 1, 2, 3, 0, 1, 2];
+        let vec_exp = vec![0; 7];
+        let mut g = GenotSnv::new(&vec);
+        g.fill_0();
 
         assert_eq!(&g.vals(), &vec_exp);
     }

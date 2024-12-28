@@ -144,6 +144,16 @@ impl WgtKind {
         }
         panic!("This wgtkind is not snv interaction.");
     }
+
+    pub fn set_a1_freq(&mut self, a1_freq: Option<f64>) {
+        if let WgtKind::Snv(snv_wgt) = self {
+            snv_wgt.set_freq(a1_freq);
+            return;
+        }
+        panic!("This wgtkind is not single snv.");
+    }
+
+    //pub fn set_snv_index_interaction(&mut self, mi_1: Option<usize>, mi_2: Option<usize>) {
 }
 
 /*
@@ -225,6 +235,10 @@ impl SnvWgt {
         check_set_snv_index(index, self.index());
 
         self.set_index(index);
+    }
+
+    pub fn set_freq(&mut self, a1_freq: Option<f64>) {
+        self.maf = a1_freq;
     }
 }
 

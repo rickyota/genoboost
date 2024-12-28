@@ -4,6 +4,7 @@ use crate::{genot_io, vec, Chrom};
 use crate::{genotype, textfile};
 
 use rayon::prelude::*;
+use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::io::{prelude::*, BufRead, BufReader, Read, SeekFrom};
@@ -86,21 +87,7 @@ fn load_buf_size_max(fin_genot: &GenotFile) -> usize {
     buf_size_max
 }
 
-/// Sequentially load part of bed and convert into predictions since bed could be too large to load on mem.
-/// predictions: m*2*n
-// load whole is fastest
-pub fn generate_genot_plink(
-    fin_genot: &GenotFile,
-    m: usize,
-    n: usize,
-    use_snvs: Option<&[bool]>,
-    use_samples: Option<&[bool]>,
-    //use_missing: bool,
-    fill_missing_mode: bool,
-    mem: Option<usize>,
-) -> Genot {
-    log::debug!("to prepare Genot m, n: {}, {}", m, n);
-
+fn mem_buf(m: usize, n: usize, mem: Option<usize>) -> usize {
     //let mem = alloc::get_available_memory();
     let mem_avail = match mem {
         Some(x) => Some(x),
@@ -133,21 +120,102 @@ pub fn generate_genot_plink(
         }
     };
 
-    //match mem {
-    //    Some(x) => {
-    //        log::debug!(
-    //            "genot vs available mem, {:.3} bytes vs {:.3} bytes",
-    //            genot_byte,
-    //            x
-    //        );
-    //        if genot_byte > x {
-    //            panic!("Memory insufficient on preparing Genot.")
-    //        }
-    //    }
+    mem_buf
+}
+
+fn buf_read(fin_genot: &GenotFile, chrom_i: Option<&Chrom>) -> BufReader<File> {
+    // using  File.read() did not speed up
+    //let fin_chrom = plink::fname_chrom(fin, Some(chrom_i));
+    // 512 KB
+    //let reader_cap = 512usize * 1024;
+    // 1 MB
+    let reader_cap = 1usize * 1024 * 1024;
+    let reader = BufReader::with_capacity(
+        reader_cap,
+        File::open(fin_genot.genotype_file(chrom_i)).unwrap(),
+    );
+    reader
+}
+
+fn buf_size_limit(mem: Option<usize>) -> usize {
+    let buf_size_limit = match mem {
+        Some(x) => x.min(BUF_SIZE_BED_MAX),
+        None => {
+            log::debug!(
+                "Could not get available memory; assume there is {:.3} GB available memory.",
+                alloc::mem_gb(BUF_SIZE_BED_MAX)
+            );
+            BUF_SIZE_BED_MAX
+        }
+    };
+    log::debug!("buf_size_limit: {} GB", alloc::mem_gb(buf_size_limit));
+    buf_size_limit
+}
+
+fn buf_size_max(mem: Option<usize>, fin_genot: &GenotFile) -> usize {
+    let buf_size_limit = buf_size_limit(mem);
+    //let buf_size_limit = match mem {
+    //    Some(x) => x.min(BUF_SIZE_BED_MAX),
     //    None => {
-    //        log::info!("Could not get available memory.");
+    //        log::debug!(
+    //            "Could not get available memory; assume there is {:.3} GB available memory.",
+    //            alloc::mem_gb(BUF_SIZE_BED_MAX)
+    //        );
+    //        BUF_SIZE_BED_MAX
     //    }
     //};
+
+    log::debug!("buf_size_limit: {:.3} GB", alloc::mem_gb(buf_size_limit));
+
+    let buf_size_max = load_buf_size_max(fin_genot).min(buf_size_limit);
+
+    buf_size_max
+}
+
+pub fn group_to_m_in_chrom(
+    group_to_m_in: Option<&HashMap<usize, Vec<usize>>>,
+    m_in_begin: usize,
+    m_in_end: usize,
+) -> Option<HashMap<usize, Vec<usize>>> {
+    if group_to_m_in.is_none() {
+        return None;
+    }
+
+    let mut group_to_m_in_chrom = HashMap::new();
+    let group_to_m_in = group_to_m_in.unwrap();
+
+    for (group_i, m_in_set) in group_to_m_in.iter() {
+        let m_in_set_chrom: Vec<usize> = m_in_set
+            .iter()
+            .filter(|&mi| m_in_begin <= *mi && *mi < m_in_end)
+            .map(|&mi| mi - m_in_begin)
+            .collect();
+        if !m_in_set_chrom.is_empty() {
+            group_to_m_in_chrom.insert(*group_i, m_in_set_chrom);
+        }
+    }
+
+    Some(group_to_m_in_chrom)
+}
+
+/// Sequentially load part of bed and convert into predictions since bed could be too large to load on mem.
+/// predictions: m*2*n
+// load whole is fastest
+pub fn generate_genot_plink(
+    fin_genot: &GenotFile,
+    m: usize, // = m_snv
+    n: usize,
+    use_snvs: Option<&[bool]>,
+    use_samples: Option<&[bool]>,
+    //use_missing: bool,
+    fill_missing_mode: bool,
+    mem: Option<usize>,
+    group_to_m_in: Option<HashMap<usize, Vec<usize>>>,
+    //m_set: Option<usize>,
+) -> Genot {
+    log::debug!("to prepare Genot m, n: {}, {}", m, n);
+
+    let mem_buf = mem_buf(m, n, mem);
 
     // for use_snvs=None
     let use_snvs_v = vec![true; m];
@@ -160,10 +228,16 @@ pub fn generate_genot_plink(
     let mut g = Genot::new_zeros(m, n);
     //log::debug!("done preparing Genot");
 
+    let (mut g_snvs, mut g_group) = if group_to_m_in.is_some() {
+        let (g_snvs, g_group) = g.split_genot(m);
+        (g_snvs, Some(g_group))
+    } else {
+        (g.as_genot_mut(), None)
+    };
+
     // Two patterns to assign predictions
     // bed file is split into chrom or not
     let is_split_chrom = fin_genot.judge_split_chrom();
-    //let is_split_chrom = genot_io::judge_split_chrom(fin);
 
     if is_split_chrom {
         let mut m_begin = 0;
@@ -176,28 +250,13 @@ pub fn generate_genot_plink(
         //let mem = alloc::get_available_memory();
         //log::debug!("available mem: {:?} bytes", mem);
 
-        let buf_size_limit = match mem {
-            Some(x) => x.min(BUF_SIZE_BED_MAX),
-            None => {
-                log::debug!(
-                    "Could not get available memory; assume there is {:.3} GB available memory.",
-                    alloc::mem_gb(BUF_SIZE_BED_MAX)
-                );
-                BUF_SIZE_BED_MAX
-            }
-        };
+        let buf_size_max = buf_size_max(mem, fin_genot);
 
-        //let buf_size_limit = mem.map_or_else(|| BUF_SIZE_BED_MAX, |x| x.min(BUF_SIZE_BED_MAX));
-        log::debug!("buf_size_limit: {:.3} GB", alloc::mem_gb(buf_size_limit));
-
-        let buf_size_max = load_buf_size_max(fin_genot).min(buf_size_limit);
-        //let buf_size_max = load_buf_size_max(fin, gfmt).min(buf_size_limit);
         log::debug!("buf_size_max {}", buf_size_max);
         let mut buf: Vec<B8_2> = vec![0; buf_size_max];
         for chrom_i in Chrom::variants().iter() {
             log::debug!("Loading chromosome {}", chrom_i);
             let m_in_chrom = genot_io::compute_num_snv_file_chrom(fin_genot, Some(chrom_i));
-            //let m_in_chrom = genot_io::compute_num_snv_file_chrom(fin, gfmt, Some(chrom_i));
             if m_in_chrom.is_none() {
                 continue;
             }
@@ -207,70 +266,133 @@ pub fn generate_genot_plink(
             // count non-zero
             let m_chrom = vec::count_true(&use_snvs[m_in_begin..m_in_end]);
             let m_end = m_begin + m_chrom;
-
             if m_chrom == 0 {
                 m_in_begin = m_in_end;
                 continue;
             }
 
+            let group_to_m_in_chrom =
+                group_to_m_in_chrom(group_to_m_in.as_ref(), m_in_begin, m_in_end);
+
             // TODO
             //plink::check_valid_bed(fin_chrom, None, m_in_chrom, n_in).unwrap();
 
-            // using  File.read() did not speed up
-            //let fin_chrom = plink::fname_chrom(fin, Some(chrom_i));
-            // 512 KB
-            let reader_cap = 512usize * 1024;
-            let reader = BufReader::with_capacity(
-                reader_cap,
-                File::open(
-                    fin_genot.genotype_file(Some(chrom_i)),
-                    //genot_io::fname_plinks_genot(&fin_genot, Some(chrom_i))
-                )
-                .unwrap(),
-            );
-            //BufReader::new(File::open(plink::fname_bed(&fin_chrom, None)).unwrap());
+            let reader = buf_read(fin_genot, Some(chrom_i));
 
             // reuse buf
-            buf = assign_genot(
-                &mut g.as_genot_snvs_mut(m_begin, m_end),
+            buf = assign_genot_toggle(
+                &mut g_snvs.as_genot_snvs_mut(m_begin, m_end),
                 reader,
                 &use_snvs[m_in_begin..m_in_end],
                 use_samples,
                 Some(buf),
                 Some(mem_buf),
+                g_group.as_mut(),
+                group_to_m_in_chrom.as_ref(),
             );
             m_begin = m_end;
             m_in_begin = m_in_end;
         }
         assert_eq!(m_in_begin, use_snvs.len(), "Sth wrong.");
     } else {
-        let reader = BufReader::new(
-            File::open(
-                fin_genot.genotype_file(None),
-                //genot_io::fname_plinks_genot(&fin, gfmt, None)
-            )
-            .unwrap(),
-        );
-        assign_genot(
-            &mut g.as_genot_mut(),
+        let reader = buf_read(fin_genot, None);
+
+        assign_genot_toggle(
+            &mut g_snvs.as_genot_mut(),
             reader,
             use_snvs,
             use_samples,
             None,
             Some(mem_buf),
+            g_group.as_mut(),
+            group_to_m_in.as_ref(),
         );
     }
 
     // missing
     //if !use_missing {
     if fill_missing_mode {
+        // print missing rate for group
+        if let Some(g_group) = &mut g_group {
+            let group_missing_count: Vec<usize> = g_group
+                .iter_snv()
+                .par_bridge()
+                .map(|g_snv| g_snv.count_missing())
+                .collect();
+
+            let (hist_missing, hist_bins) = vec::histogram(&group_missing_count, 10);
+            log::info!("Histgram of missing count for group");
+            hist_bins
+                .iter()
+                .zip(hist_missing.iter())
+                .for_each(|(bin, count)| {
+                    log::info!("<{}: {}", bin, count);
+                });
+            log::info!(
+                ">={}: {}",
+                hist_bins.last().unwrap(),
+                hist_missing.last().unwrap()
+            );
+        }
+
+        // both snvs and group
         g.iter_snv_mut()
             .par_bridge()
             .for_each(|mut g_snv| g_snv.fill_missing_mode());
-        //.for_each(|mut g_snv| super::fill_missing_snv(&mut g_snv));
+
+        //g_snvs
+        //    .iter_snv_mut()
+        //    .par_bridge()
+        //    .for_each(|mut g_snv| g_snv.fill_missing_mode());
     }
 
     g
+}
+
+
+fn assign_genot_toggle<R: BufRead + Seek>(
+    g_chrom: &mut GenotMut,
+    mut reader: R,
+    use_snvs: &[bool],
+    use_samples: Option<&[bool]>,
+    buf: Option<Vec<B8_2>>,
+    mem: Option<usize>,
+    // mut is necessary
+    // https://stackoverflow.com/questions/74763962/when-is-mut-required-when-passing-an-optionmut-t
+    mut g_group: Option<&mut GenotMut>,
+    group_to_m_in: Option<&HashMap<usize, Vec<usize>>>,
+) -> Vec<B8_2> {
+
+
+    let m = vec::count_true(&use_snvs);
+
+    //if (m as f64)/(use_snvs.len() as f64)<0.1{
+
+    // error on ukbrap
+    //    log::debug!("use load part()");
+    //    assign_genot_loadpart(
+    //        g_chrom,
+    //        reader,
+    //        use_snvs,
+    //        use_samples,
+    //        buf,
+    //        mem,
+    //        g_group,
+    //        group_to_m_in,
+    //        )
+    //}else{
+    //    log::debug!("use load whole()");
+    assign_genot(
+            g_chrom,
+            reader,
+            use_snvs,
+            use_samples,
+            buf,
+            mem,
+            g_group,
+            group_to_m_in,
+            )
+    //}
 }
 
 /*
@@ -313,6 +435,10 @@ fn assign_genot<R: BufRead + Seek>(
     use_samples: Option<&[bool]>,
     buf: Option<Vec<B8_2>>,
     mem: Option<usize>,
+    // mut is necessary
+    // https://stackoverflow.com/questions/74763962/when-is-mut-required-when-passing-an-optionmut-t
+    mut g_group: Option<&mut GenotMut>,
+    group_to_m_in: Option<&HashMap<usize, Vec<usize>>>,
 ) -> Vec<B8_2> {
     let m_in_chrom = use_snvs.len();
 
@@ -320,39 +446,17 @@ fn assign_genot<R: BufRead + Seek>(
         Some(v) => v.len(),
         None => g_chrom.n(),
     };
-    //let n_in = if let Some(v) = use_samples {
-    //    v.len()
-    //} else {
-    //    g_chrom.n()
-    //};
-
-    //plink::check_valid_bed(fin_chrom, None, m_in_chrom, n_in).unwrap();
 
     // FIXME: available mem?
     // check if 32 GB? 16GB? remains or not
     // reading smaller than buf_size is not error but reason is unknown
     // [here](https://doc.rust-lang.org/std/io/trait.Read.html#tymethod.read)
     // -> to deal with this, every time use Seek to change position
-    //let buf_size_limit: usize = BUF_SIZE_BED_LIMIT;
-    let buf_size_limit: usize = match mem {
-        Some(x) => x.min(BUF_SIZE_BED_MAX),
-        None => {
-            // when calling assign_genot() directly
-            log::debug!(
-                "Could not get available memory; assume there is {} GB available memory.",
-                alloc::mem_gb(BUF_SIZE_BED_MAX)
-            );
-            BUF_SIZE_BED_MAX
-        }
-    };
-    log::debug!("buf_size_limit: {} GB", alloc::mem_gb(buf_size_limit));
+    let buf_size_limit = buf_size_limit(mem);
 
-    //let buf_size_limit: usize = 64 * 1024 * 1024 * 1024;
-    //let buf_size_limit: usize = 4 * 1024 * 1024 * 1024;
     let byte_per_snv = bed_per_snv_size(n_in);
-    //let byte_per_snv = genot_io::bed_per_snv_size(n_in);
-    let but_num_snv_limit: usize = buf_size_limit / byte_per_snv;
-    let buf_num_snv: usize = but_num_snv_limit.min(m_in_chrom);
+    let buf_num_snv_limit: usize = buf_size_limit / byte_per_snv;
+    let buf_num_snv: usize = buf_num_snv_limit.min(m_in_chrom);
     let buf_size: usize = buf_num_snv * byte_per_snv;
     assert_eq!(buf_size % byte_per_snv, 0);
     assert!(buf_size <= buf_size_limit);
@@ -364,7 +468,6 @@ fn assign_genot<R: BufRead + Seek>(
         Some(v) => v,
         None => vec![0; buf_size],
     };
-    //let mut buf: Vec<B8_2> = vec![0; buf_size];
 
     let mut m_in_begin_loaded = 0;
     let mut m_begin_loaded = 0;
@@ -396,9 +499,6 @@ fn assign_genot<R: BufRead + Seek>(
             // This might be smaller than buf
             let buf_size_ = m_in_read * byte_per_snv;
             buf.resize(buf_size_, 0);
-            //unsafe {
-            //    buf.set_len(buf_size_);
-            //}
             log::debug!("buf_size_: {}", buf_size_);
             assert_eq!(buf_size_ % byte_per_snv, 0);
             assert_eq!(buf.len(), buf_size_);
@@ -425,8 +525,52 @@ fn assign_genot<R: BufRead + Seek>(
                     let m_in_read_i = m_to_m_in[&mi_loaded];
                     let buf_mi = &buf[m_in_read_i * byte_per_snv..(m_in_read_i + 1) * byte_per_snv];
 
-                    assign_pred_from_bed(&mut g_snv, &buf_mi, use_samples);
+                    assign_gsnv_from_bed(&mut g_snv, &buf_mi, use_samples);
                 });
+
+            // https://stackoverflow.com/questions/74763962/when-is-mut-required-when-passing-an-optionmut-t
+            if let Some(g_group) = &mut g_group {
+                let group_to_m_in = group_to_m_in.unwrap();
+
+                let n = match use_samples {
+                    Some(v) => vec::count_true(v),
+                    None => n_in,
+                };
+
+                g_group
+                    .iter_snv_mut()
+                    .enumerate()
+                    .par_bridge()
+                    .for_each_with(
+                        GenotSnv::new_empty(n),
+                        |g_snv_tmp, (mi_loaded, mut g_snv)| {
+                            let group_ids_mi = group_to_m_in.get(&mi_loaded);
+
+                            if let Some(group_ids_mi) = group_ids_mi {
+                                group_ids_mi.iter().for_each(|&group_id| {
+                                    let m_in_read_i = m_to_m_in[&group_id];
+                                    let buf_mi = &buf[m_in_read_i * byte_per_snv
+                                        ..(m_in_read_i + 1) * byte_per_snv];
+
+                                    // initialize g_snv_tmp
+                                    g_snv_tmp.fill_0();
+
+                                    assign_gsnv_from_bed(
+                                        &mut g_snv_tmp.as_genot_snv_mut_snv(),
+                                        &buf_mi,
+                                        use_samples,
+                                    );
+
+                                    g_snv.or_binary(&g_snv_tmp.as_genot_snv());
+                                });
+                            }
+                            // otherwise, do nothing
+                        },
+                    );
+            }
+
+            // Error
+            //if let Some(x) = g_group {
         }
 
         m_begin_loaded = m_end_loaded;
@@ -509,166 +653,261 @@ fn assign_predictions_whole<R: BufRead + Seek>(
         });
 } */
 
-/* // TODO: use SIMD
-// slower using .read() than .read_exact()
-// use when file size is too large
-fn assign_predictions_chunk_old<R: BufRead + Seek>(
+// // TODO: use SIMD
+//// slower using .read() than .read_exact()
+//// use when file size is too large
+//fn assign_predictions_chunk_old2<R: BufRead + Seek>(
+//    g_chrom: &mut GenotMut,
+//    mut reader: R,
+//    use_snvs: &[bool],
+//    use_samples: Option<&[bool]>,
+//    //buf: Option<Vec<B8_2>>,
+//    mem: Option<usize>,
+//    // mut is necessary
+//    // https://stackoverflow.com/questions/74763962/when-is-mut-required-when-passing-an-optionmut-t
+//    mut g_group: Option<&mut GenotMut>,
+//    group_to_m_in: Option<&HashMap<usize, Vec<usize>>>,
+//) {
+//    let m_in_chrom = use_snvs.len();
+//
+//    let n_in = match use_samples {
+//        Some(v) => v.len(),
+//        None => g_chrom.n(),
+//    };
+//
+//    //plink::check_valid_bed(fin_chrom, None, m_in_chrom, n_in).unwrap();
+//
+//    // check if 32 GB? 16GB? remains or not
+//    // reading smaller than buf_size is not error but reason is unknown
+//    // [here](https://doc.rust-lang.org/std/io/trait.Read.html#tymethod.read)
+//    // -> to deal with this, every time use Seek to change position
+//    //let buf_size_limit: usize = 64 * 1024 * 1024 * 1024;
+//    let buf_size_limit: usize = 4 * 1024 * 1024 * 1024;
+//
+//    let byte_per_snv = bed_per_snv_size(n_in);
+//    let buf_num_snv_limit: usize = buf_size_limit / byte_per_snv;
+//    let buf_num_snv: usize = buf_num_snv_limit.min(m_in_chrom);
+//    let buf_size: usize = buf_num_snv * byte_per_snv;
+//    assert_eq!(buf_size % byte_per_snv, 0);
+//    assert!(buf_size <= buf_size_limit);
+//
+//    //let mut reader = BufReader::new(File::open(plink::fname_bed(fin_chrom, None)).unwrap());
+//    // TODO: check buf_size < available
+//    let mut buf: Vec<B8_2> = vec![0; buf_size];
+//
+//    let mut m_in_begin_loaded = 0;
+//    let mut m_begin_loaded = 0;
+//    // read buf length in one loop
+//    loop {
+//        //log::debug!(
+//        //    "m_in_begin, m_begin {},{}",
+//        //    m_in_begin_loaded, m_begin_loaded
+//        //);
+//
+//        // next start is m_in_begin_load
+//        let buf_next_begin = 3 + m_in_begin_loaded * byte_per_snv;
+//        //log::debug!("buf_next_begin {}", buf_next_begin);
+//        reader.seek(SeekFrom::Start(buf_next_begin as u64)).unwrap();
+//        // https://stackoverflow.com/questions/37079342/what-is-the-most-efficient-way-to-read-a-large-file-in-chunks-without-loading-th
+//        // use fill() might be fast?
+//        // This might be smaller than buf
+//        // read_exact??
+//        //let loaded_byte = reader.read_exact(&mut buf).unwrap();
+//        let loaded_byte = reader.read(&mut buf).unwrap();
+//        //if loaded_byte != buf_size, last buffer or could not load whole buffer
+//        log::debug!("loaded: {} {}", loaded_byte, buf_size);
+//        //}
+//        if loaded_byte == 0 {
+//            // all buf read
+//            break;
+//        } else {
+//            //log::debug!("buf {:?}", buf.len());
+//            // might fail when only part was loaded
+//            //assert_eq!(loaded_byte % byte_per_snv, 0);
+//            let m_in_read = loaded_byte / byte_per_snv;
+//            // if m_in_read==0, loaded_byte < byte_per_snv, which means loaded_byte is less than one SNV.
+//            assert!(m_in_read > 0, "loaded_byte is less than byte of one SNV.");
+//
+//            // x plan 1 create vec of pred_use and  pred_use.iter()...
+//            //  -> unsafe when pred_use is duplicated
+//            // x plan 2 predictions.par_chunks_mut().filter(use)
+//            // o plan 3 predictions_chrom[m_buf..m_buf_end].par_chunks_mut()
+//
+//            let m_in_end_loaded = m_in_begin_loaded + m_in_read;
+//            let use_snvs_loaded = &use_snvs[m_in_begin_loaded..m_in_end_loaded];
+//
+//            let (m_to_m_in, m_read) = genot_index::create_m_to_m_in(use_snvs_loaded);
+//
+//            // here for when m_read==0
+//            // or move below and do not continue for m_read==0 since unnecessary
+//            //m_in_begin_loaded = m_in_end_loaded;
+//
+//            //if m_read == 0 {
+//            //    continue;
+//            //}
+//
+//            let m_end_loaded = m_begin_loaded + m_read;
+//
+//            //log::debug!("m_in_end, m_end {},{}", m_in_end_loaded, m_end_loaded);
+//
+//            let mut g_chrom_part = g_chrom.as_genot_snvs_mut(m_begin_loaded, m_end_loaded);
+//
+//            g_chrom_part
+//                .iter_snv_mut()
+//                .enumerate()
+//                .par_bridge()
+//                .for_each(|(mi_loaded, mut g_snv)| {
+//                    let m_in_read_i = m_to_m_in[&mi_loaded];
+//                    let buf_mi = &buf[m_in_read_i * byte_per_snv..(m_in_read_i + 1) * byte_per_snv];
+//
+//                    assign_pred_from_bed(&mut g_snv, &buf_mi, use_samples);
+//                });
+//
+//            m_begin_loaded = m_end_loaded;
+//            // bug! when m_read==0, will not renewed
+//            m_in_begin_loaded = m_in_end_loaded;
+//        }
+//    }
+//    assert_eq!(m_in_chrom, m_in_begin_loaded);
+//}
+
+
+
+
+// error on rap
+// rayon impossible since cannot read inside
+fn assign_genot_loadpart<R: BufRead + Seek>(
     g_chrom: &mut GenotMut,
     mut reader: R,
     use_snvs: &[bool],
     use_samples: Option<&[bool]>,
-) {
-    let m_in_chrom = use_snvs.len();
+    // no use inside
+    buf_in: Option<Vec<B8_2>>,
+    _mem: Option<usize>,
+    mut g_group: Option<&mut GenotMut>,
+    group_to_m_in: Option<&HashMap<usize, Vec<usize>>>,
+)->Vec<B8_2> {
 
-    let n_in = if let Some(v) = use_samples {
-        v.len()
-    } else {
-        g_chrom.n()
-    };
-
-    //plink::check_valid_bed(fin_chrom, None, m_in_chrom, n_in).unwrap();
-
-    // check if 32 GB? 16GB? remains or not
-    // reading smaller than buf_size is not error but reason is unknown
-    // [here](https://doc.rust-lang.org/std/io/trait.Read.html#tymethod.read)
-    // -> to deal with this, every time use Seek to change position
-    //let buf_size_limit: usize = 64 * 1024 * 1024 * 1024;
-    let buf_size_limit: usize = 4 * 1024 * 1024 * 1024;
-    let byte_per_snv = plink::bed_per_snv_size(n_in);
-    let num_snv_per_buf: usize = buf_size_limit / byte_per_snv;
-    let buf_num_snv: usize = num_snv_per_buf.min(m_in_chrom);
-    let buf_size: usize = buf_num_snv * byte_per_snv;
-    assert_eq!(buf_size % byte_per_snv, 0);
-    assert!(buf_size <= buf_size_limit);
-
-    //let mut reader = BufReader::new(File::open(plink::fname_bed(fin_chrom, None)).unwrap());
-    // TODO: check buf_size < available
-    let mut buf: Vec<B8_2> = vec![0; buf_size];
-
-    let mut m_in_begin_loaded = 0;
-    let mut m_begin_loaded = 0;
-    // read buf length in one loop
-    loop {
-        //log::debug!(
-        //    "m_in_begin, m_begin {},{}",
-        //    m_in_begin_loaded, m_begin_loaded
-        //);
-
-        // next start is m_in_begin_load
-        let buf_next_begin = 3 + m_in_begin_loaded * byte_per_snv;
-        //log::debug!("buf_next_begin {}", buf_next_begin);
-        reader.seek(SeekFrom::Start(buf_next_begin as u64)).unwrap();
-        // https://stackoverflow.com/questions/37079342/what-is-the-most-efficient-way-to-read-a-large-file-in-chunks-without-loading-th
-        // use fill() might be fast?
-        // This might be smaller than buf
-        // read_exact??
-        //let loaded_byte = reader.read_exact(&mut buf).unwrap();
-        let loaded_byte = reader.read(&mut buf).unwrap();
-        //if loaded_byte != buf_size, last buffer or could not load whole buffer
-        log::debug!("loaded: {} {}", loaded_byte, buf_size);
-        //}
-        if loaded_byte == 0 {
-            // all buf read
-            break;
-        } else {
-            //log::debug!("buf {:?}", buf.len());
-            // might fail when only part was loaded
-            //assert_eq!(loaded_byte % byte_per_snv, 0);
-            let m_in_read = loaded_byte / byte_per_snv;
-            // if m_in_read==0, loaded_byte < byte_per_snv, which means loaded_byte is less than one SNV.
-            assert!(m_in_read > 0, "loaded_byte is less than byte of one SNV.");
-
-            // x plan 1 create vec of pred_use and  pred_use.iter()...
-            //  -> unsafe when pred_use is duplicated
-            // x plan 2 predictions.par_chunks_mut().filter(use)
-            // o plan 3 predictions_chrom[m_buf..m_buf_end].par_chunks_mut()
-
-            let m_in_end_loaded = m_in_begin_loaded + m_in_read;
-            let use_snvs_loaded = &use_snvs[m_in_begin_loaded..m_in_end_loaded];
-
-            let (m_to_m_in, m_read) = genot_index::create_m_to_m_in(use_snvs_loaded);
-
-            // here for when m_read==0
-            // or move below and do not continue for m_read==0 since unnecessary
-            //m_in_begin_loaded = m_in_end_loaded;
-
-            //if m_read == 0 {
-            //    continue;
-            //}
-
-            let m_end_loaded = m_begin_loaded + m_read;
-
-            //log::debug!("m_in_end, m_end {},{}", m_in_end_loaded, m_end_loaded);
-
-            let mut g_chrom_part = g_chrom.as_genot_snvs_mut(m_begin_loaded, m_end_loaded);
-
-            g_chrom_part
-                .iter_snv_mut()
-                .enumerate()
-                .par_bridge()
-                .for_each(|(mi_loaded, mut g_snv)| {
-                    let m_in_read_i = m_to_m_in[&mi_loaded];
-                    let buf_mi = &buf[m_in_read_i * byte_per_snv..(m_in_read_i + 1) * byte_per_snv];
-
-                    assign_pred_from_bed(&mut g_snv, &buf_mi, use_samples);
-                });
-
-            m_begin_loaded = m_end_loaded;
-            // bug! when m_read==0, will not renewed
-            m_in_begin_loaded = m_in_end_loaded;
-        }
+    if g_group.is_some(){
+        unimplemented!("ny");
     }
-    assert_eq!(m_in_chrom, m_in_begin_loaded);
-} */
+    if group_to_m_in.is_some(){
+        unimplemented!("ny");
+    }
 
-/* // rayon impossible since cannot read inside
-pub fn assign_predictions_file_loadpart(
-    g_chrom: &mut GenotMut,
-    fin_chrom: &str,
-    use_snvs: &[bool],
-    use_samples: &[bool],
-) {
-    let m_in_chrom = use_snvs.len();
-    // log::debug!("use_samples: {:?}", use_samples);
+
+    //let m_in_chrom = use_snvs.len();
 
     // assume m and m_in in m_to_m_in are sorted
     // FIXME: use_snvs should be only chrom
     //let m_to_m_in = create_m_chrom_to_m_in_chrom(use_snvs);
     //let m_in_to_m = create_m_in_to_m_chrom(use_snvs, m_begin);
 
-    let n_in = use_samples.len();
+    let n_in = match use_samples {
+        Some(v) => v.len(),
+        None => g_chrom.n(),
+    };
 
     // for debug
     //log::debug!("ys[0]:{:#010b}", ys[0]);
 
-    plink::check_valid_bed(fin_chrom, None, m_in_chrom, n_in).unwrap();
+    //plink::check_valid_bed(fin_chrom, None, m_in_chrom, n_in).unwrap();
 
-    let (m_to_m_in, m_for_read) = genot_index::create_m_to_m_in(use_snvs);
+    let (m_to_m_in, m_read) = genotype::create_m_to_m_in(use_snvs);
+    //let (m_to_m_in, m_for_read) = genot_index::create_m_to_m_in(use_snvs);
 
-    let byte_per_snv = plink::bed_per_snv_size(n_in);
+    let byte_per_snv = bed_per_snv_size(n_in);
+    //let byte_per_snv = plink::bed_per_snv_size(n_in);
     let buf_size = byte_per_snv;
 
-    let mut reader = BufReader::new(File::open(plink::fname_bed(fin_chrom, None)).unwrap());
+    //let mut reader = BufReader::new(File::open(plink::fname_bed(fin_chrom, None)).unwrap());
     let mut buf: Vec<B8_2> = vec![0; buf_size];
+    assert_eq!(buf.len(), buf_size);
 
-    assert_eq!(g_chrom.m(), m_for_read, "Sth wrong");
+    assert_eq!(g_chrom.m(), m_read, "Sth wrong");
 
     // rayon impossible since cannot seek
     g_chrom
         .iter_snv_mut()
         .enumerate()
         .for_each(|(m_read_i, mut g_snv)| {
+
+            log::debug!("m_read_i: {}", m_read_i);
+
+            // for debug
+            log::debug!("m_read_in: {}", m_to_m_in[&m_read_i]);
             let buf_begin = 3 + m_to_m_in[&m_read_i] * byte_per_snv;
             reader.seek(SeekFrom::Start(buf_begin as u64)).unwrap();
-            let loaded_byte = reader.read(&mut buf).unwrap();
-            assert_eq!(loaded_byte, byte_per_snv);
+            reader.read_exact(&mut buf).unwrap();
+            assert_eq!(buf.len(), buf_size);
+            //let loaded_byte = reader.read(&mut buf).unwrap();
+            //assert_eq!(loaded_byte, byte_per_snv);
 
             //let g_snv = g_chrom.to_genot_twin_snv_mut(m_read_i);
             //let pred = predictions_snv_s_mut(predictions_chrom, m_read_i, n);
-            assign_pred_from_bed(&mut g_snv, &buf, use_samples);
+            assign_gsnv_from_bed(&mut g_snv, &buf, use_samples);
         });
-} */
 
+
+    // return buf
+    // TODO: all right when calling assign_genot() after loadpart
+    match buf_in {
+        Some(v) => v,
+        None => buf,
+    }
+    
+}
+
+
+
+//// rayon impossible since cannot read inside
+//pub fn assign_genot_file_loadpart(
+//    g_chrom: &mut GenotMut,
+//    fin_chrom: &str,
+//    use_snvs: &[bool],
+//    use_samples: &[bool],
+//) {
+//    let m_in_chrom = use_snvs.len();
+//    // log::debug!("use_samples: {:?}", use_samples);
+//
+//    // assume m and m_in in m_to_m_in are sorted
+//    // FIXME: use_snvs should be only chrom
+//    //let m_to_m_in = create_m_chrom_to_m_in_chrom(use_snvs);
+//    //let m_in_to_m = create_m_in_to_m_chrom(use_snvs, m_begin);
+//
+//    let n_in = use_samples.len();
+//
+//    // for debug
+//    //log::debug!("ys[0]:{:#010b}", ys[0]);
+//
+//    plink::check_valid_bed(fin_chrom, None, m_in_chrom, n_in).unwrap();
+//
+//    let (m_to_m_in, m_for_read) = genot_index::create_m_to_m_in(use_snvs);
+//
+//    let byte_per_snv = plink::bed_per_snv_size(n_in);
+//    let buf_size = byte_per_snv;
+//
+//    let mut reader = BufReader::new(File::open(plink::fname_bed(fin_chrom, None)).unwrap());
+//    let mut buf: Vec<B8_2> = vec![0; buf_size];
+//
+//    assert_eq!(g_chrom.m(), m_for_read, "Sth wrong");
+//
+//    // rayon impossible since cannot seek
+//    g_chrom
+//        .iter_snv_mut()
+//        .enumerate()
+//        .for_each(|(m_read_i, mut g_snv)| {
+//            let buf_begin = 3 + m_to_m_in[&m_read_i] * byte_per_snv;
+//            reader.seek(SeekFrom::Start(buf_begin as u64)).unwrap();
+//            let loaded_byte = reader.read(&mut buf).unwrap();
+//            assert_eq!(loaded_byte, byte_per_snv);
+//
+//            //let g_snv = g_chrom.to_genot_twin_snv_mut(m_read_i);
+//            //let pred = predictions_snv_s_mut(predictions_chrom, m_read_i, n);
+//            assign_pred_from_bed(&mut g_snv, &buf, use_samples);
+//        });
+//}
+//
 pub fn bed_per_snv_size(n: usize) -> usize {
     (n + 3) / 4
 }
@@ -726,22 +965,28 @@ pub fn check_valid_bed(
     Ok(bed_size)
 }
 
-pub fn assign_pred_from_bed(pred: &mut GenotSnvMut, buf_mi: &[B8_2], use_samples: Option<&[bool]>) {
+/// g_snv must be all false
+/// use g_snv.fill_0() to make sure
+pub fn assign_gsnv_from_bed(
+    g_snv: &mut GenotSnvMut,
+    buf_mi: &[B8_2],
+    use_samples: Option<&[bool]>,
+) {
     if let Some(use_sample) = use_samples {
         let mut ni = 0;
         for (n_in_i, v) in use_sample.iter().enumerate() {
             if *v {
                 // bedcode
                 let bcode = buf_to_ped_code(buf_mi, n_in_i);
-                pred.set_bed_code_init_unchecked(bcode, ni);
+                g_snv.set_bed_code_init_unchecked(bcode, ni);
                 ni += 1;
             }
         }
     } else {
-        for ni in 0..pred.n() {
+        for ni in 0..g_snv.n() {
             // bedcode
             let bcode = buf_to_ped_code(buf_mi, ni);
-            pred.set_bed_code_init_unchecked(bcode, ni);
+            g_snv.set_bed_code_init_unchecked(bcode, ni);
         }
     }
 }
@@ -986,7 +1231,45 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_predictions_whole() {
+    fn test_group_to_m_in_chrom() {
+        let group_to_m_in: HashMap<usize, Vec<usize>> = HashMap::from_iter(vec![
+            (0, vec![0, 1]),
+            (1, vec![2, 3]),
+            (2, vec![4, 5]),
+            (3, vec![6, 7]),
+            (4, vec![8, 9]),
+            (5, vec![10, 5]),
+        ]);
+
+        let m_in_begin = 3;
+        let m_in_end = 7;
+
+        let group_to_m_in_chrom = group_to_m_in_chrom(Some(&group_to_m_in), m_in_begin, m_in_end);
+
+        // extracted in the range
+        // (1, [3])
+        // (2, [4, 5])
+        // (3, [6])
+        // (5, [5])
+        //
+        // after adjusting for m_in_begin
+        // (1, [0])
+        // (2, [1, 2])
+        // (3, [3])
+        // (5, [2])
+        //
+        let group_to_m_in_chrom_ans: HashMap<usize, Vec<usize>> = HashMap::from_iter(vec![
+            (1, vec![0]),
+            (2, vec![1, 2]),
+            (3, vec![3]),
+            (5, vec![2]),
+        ]);
+
+        assert_eq!(group_to_m_in_chrom.unwrap(), group_to_m_in_chrom_ans);
+    }
+
+    #[test]
+    fn test_generate_genot_plink_whole() {
         let (fin_genot, _, m, n, use_snvs, use_samples) = setup_test();
         //let gfmt = GenotFormat::Plink1;
         //let use_snvs = vec![true; use_snvs.len()];
@@ -999,6 +1282,7 @@ mod tests {
             Some(&use_snvs),
             Some(&use_samples),
             false,
+            None,
             None,
         );
         //let g = generate_genot_plink(&fin, gfmt, m, n, Some(&use_snvs), Some(&use_samples), true);
@@ -1017,18 +1301,18 @@ mod tests {
     } */
 
     #[test]
-    fn test_assign_pred_from_bed() {
+    fn test_assign_gsnv_from_bed() {
         let mut g = GenotSnv::new_empty(4);
         // [2, 0, 3, 0, 1, 0]
         let pbuf = vec![0b11_01_11_00, 0b00_00_11_10];
 
         let use_samples = vec![true, false, true, true, true, false];
-        assign_pred_from_bed(&mut g.as_genot_snv_mut_snv(), &pbuf, Some(&use_samples));
+        assign_gsnv_from_bed(&mut g.as_genot_snv_mut_snv(), &pbuf, Some(&use_samples));
         assert_eq!(g.vals(), vec![2, 3, 0, 1]);
     }
 
     #[test]
-    fn test_assign_predictions() {
+    fn test_assign_genot() {
         let mut g = Genot::new_zeros(2, 3);
 
         let reader: Vec<u8> = vec![0x6c, 0x1b, 0x01, 0b00_01_11_00, 0b00_10_00_11];
@@ -1041,10 +1325,58 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
         );
 
         assert_eq!(g.vals_snv(0), vec![2, 0, 3]);
         assert_eq!(g.vals_snv(1), vec![0, 2, 1]);
+    }
+
+    #[test]
+    fn test_assign_genot_group() {
+        let mut g_snvs = Genot::new_zeros(3, 5);
+        let mut g_group = Genot::new_zeros(2, 5);
+
+        let group_m_to_m_in: HashMap<usize, Vec<usize>> =
+            HashMap::from_iter(vec![(0, vec![0, 1]), (1, vec![0, 1, 2])]);
+        //HashMap::from_iter(vec![(1, vec![0, 1, 2])]);
+
+        // snv0: [0, 0, 0, 1, 3]
+        // snv1: [0, 0, 1, 0, 0]
+        // snv2: [0, 1, 2, 3, 1]
+        // set0: snv0,1
+        // set1:  snv0,1,2
+        // set0: [0, 0, 1, 1, 3]
+        // set1:  [0, 1, 1, 3, 3]
+        let reader: Vec<u8> = vec![
+            0x6c,
+            0x1b,
+            0x01,
+            0b10_11_11_11,
+            0b00_00_00_01,
+            0b11_10_11_11,
+            0b00_00_00_11,
+            0b01_00_10_11,
+            0b00_00_00_10,
+        ];
+        let mut cur = Cursor::new(reader.as_slice());
+        assign_genot(
+            &mut g_snvs.as_genot_mut(),
+            &mut cur,
+            &[true, true, true],
+            None,
+            None,
+            None,
+            Some(&mut g_group.as_genot_mut()),
+            Some(&group_m_to_m_in),
+        );
+
+        assert_eq!(g_snvs.vals_snv(0), vec![0, 0, 0, 1, 3]);
+        assert_eq!(g_snvs.vals_snv(1), vec![0, 0, 1, 0, 0]);
+        assert_eq!(g_snvs.vals_snv(2), vec![0, 1, 2, 3, 1]);
+        assert_eq!(g_group.vals_snv(0), vec![0, 0, 1, 1, 3]);
+        assert_eq!(g_group.vals_snv(1), vec![0, 1, 1, 3, 3]);
     }
 
     /*

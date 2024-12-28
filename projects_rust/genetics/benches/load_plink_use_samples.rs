@@ -31,13 +31,13 @@ pub fn bench_set_bed(c: &mut Criterion) {
 
     group.bench_with_input(BenchmarkId::new("Whole", n), &n, |b, _| {
         b.iter(|| {
-            genot_io::load::plink::assign_pred_from_bed(&mut g.as_genot_snv_mut_snv(), &buf_mi, None);
+            genot_io::load::plink::assign_gsnv_from_bed(&mut g.as_genot_snv_mut_snv(), &buf_mi, None);
             g.len_n();
         })
     });
     group.bench_with_input(BenchmarkId::new("Part", n), &n, |b, _| {
         b.iter(|| {
-            genot_io::load::plink::assign_pred_from_bed(
+            genot_io::load::plink::assign_gsnv_from_bed(
                 &mut g.as_genot_snv_mut_snv(),
                 &buf_mi,
                 Some(&use_samples),

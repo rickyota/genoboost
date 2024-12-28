@@ -19,7 +19,8 @@ struct Cli {
     threads: Option<usize>,
     #[arg(long, global = true, help = "Verbose")]
     verbose: bool,
-    #[arg(long, global = true, help = "Memory [GB]")]
+    //#[arg(long, global = true, help = "Memory [GB]")]
+    #[arg(long, global = true, help = "Memory [MB]")]
     memory: Option<usize>,
 }
 
@@ -41,7 +42,7 @@ struct ScoreArgs {
     genot_format: GenotFormatArg,
     #[arg(long)]
     dir_wgt: Option<String>,
-    #[arg(long)]
+    #[arg(long, help = ".zst is allowed.")]
     file_wgt: Option<String>,
     #[arg(long)]
     file_sample: Option<String>,
@@ -123,7 +124,8 @@ fn main() {
     // otherwise, use default thread number
     log::debug!("num_thread set: {}", rayon::current_num_threads());
 
-    let mem = cli.memory.map(|x| x * 1024 * 1024 * 1024);
+    let mem = cli.memory.map(|x| x * 1024 * 1024);
+    //let mem = cli.memory.map(|x| x * 1024 * 1024 * 1024);
     log::debug!("Memory : {:?} Byte", mem);
 
     match cli.command {
@@ -145,9 +147,8 @@ fn main() {
             let cov_name = args.cov;
             let fin_sample = args.file_sample.map(|x| PathBuf::from(x));
 
-            let mut dfile = DatasetFile::new(
-                fin_genot, fin_phe, None, cov_name, None, fin_sample, None, None,
-            );
+            let mut dfile =
+                DatasetFile::new(fin_genot, fin_phe, None, cov_name, None, fin_sample, None);
             dfile.reads();
             let dfile = dfile;
             dfile.check_valid_fin();

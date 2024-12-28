@@ -9,14 +9,14 @@
 //pub mod samples;
 //pub mod snvs;
 
+use rayon::iter::{ParallelBridge, ParallelIterator};
+use std::collections::HashMap;
+use std::time::Instant;
+
 use crate::dataset_file::DatasetFile;
 use crate::genot::prelude::*;
 use crate::genot_io;
-//genot::{BaseGenot, BaseGenotMut, BaseGenotSnv, BaseGenotSnvMut},
-//use crate::{sample, snv, vec, wgt::WgtTrait, GenotFormat, Samples, Snvs, Wgts};
 use crate::{sample, snv, vec, wgt::WgtTrait, GenotFile, Samples, Snvs, Wgts};
-use rayon::iter::{ParallelBridge, ParallelIterator};
-use std::time::Instant;
 
 // 8 x 1 bit
 //type B8 = u8;
@@ -89,6 +89,7 @@ impl Dataset {
             dfile.phe_name(),
             dfile.cov_name(),
             dfile.snv_buf(),
+            dfile.snv_set_buf(),
             sample_buf,
             //dfile.sample_buf(),
             filt_snv,
@@ -113,6 +114,7 @@ impl Dataset {
         phe_name: Option<&str>,
         cov_name: Option<&str>,
         snv_buf: Option<&[u8]>,
+        group_snv_buf: Option<&[u8]>,
         sample_buf: Option<&[u8]>,
         // TODO: merge filt_snv and fin_snv into use_snvs,
         filt_snv: Option<&[bool]>,
@@ -131,20 +133,40 @@ impl Dataset {
         // load snvs
         let snvs_in = genot_io::load_snvs(fin_genot);
         //let snvs_in = plink::load_snvs(fin, m_in);
-        let (mut use_snvs, mut m) = snv::make_use_snvs_buf(snv_buf, &snvs_in);
+        let (mut use_snvs, mut m_snv) = snv::make_use_snvs_buf(snv_buf, &snvs_in);
+        log::debug!("m_snv: {}", m_snv);
 
+        // filter snv only for use_snvs not for set_snvs
         if let Some(filt_snv_) = filt_snv {
-            log::debug!("filt_snv before m: {}", m);
-            assert_eq!(filt_snv_.len(), m);
+            log::debug!("filt_snv before m: {}", m_snv);
+            assert_eq!(filt_snv_.len(), m_snv);
             use_snvs = vec::and_in_bool_vec(&use_snvs, filt_snv_);
-            m = vec::count_true(&use_snvs);
-            log::debug!("filt_snv m: {}", m);
+            m_snv = vec::count_true(&use_snvs);
+            log::debug!("filt_snv m_snv: {}", m_snv);
         }
 
-        if m == 0 {
+        // load snv set
+        //let (use_set_snvs, m_set) = snv::make_set_snvs_buf(set_snv_buf, &snvs_in);
+        //assert_eq!(use_set_snvs.len(), use_snvs.len());
+        //log::debug!("m_set: {}", m_set);
+
+        let (group_to_m_in, m_set) = snv::make_group_to_m_in_buf(group_snv_buf, &snvs_in);
+        //let set_snvs_use = snv::load_set_snvs_buf(set_snv_buf.unwrap());
+        //let set_to_m_in = snv::load_set_to_m_in(set_snvs_use, &snvs_in);
+
+        // later
+        //if m_set != 0 {
+        //    //  set snvs exist
+        //    use_snvs = vec::or_bool_vec(&use_snvs, &use_set_snvs);
+        //    m_snv = vec::count_true(&use_snvs);
+        //    log::debug!("m_snv after merge with snv set: {}", m_snv);
+        //}
+
+        //if m_snv == 0 {
+        if (m_snv == 0) && (m_set == 0) {
             panic!("Using SNVs are zero. Please check fin_snv.")
         }
-        log::debug!("m: {}", m);
+        log::debug!("m_snv: {}", m_snv);
 
         let (use_samples, n) = sample::make_use_samples_buf(sample_buf, fin_genot);
         if n == 0 {
@@ -157,12 +179,15 @@ impl Dataset {
             phe_buf,
             phe_name,
             cov_name,
+            group_snv_buf,
             Some(&use_snvs),
+            //Some(&use_set_snvs),
             Some(&use_samples),
             fill_missing,
             make_major_a2_train,
             snvs_train,
             mem,
+            group_to_m_in,
         )
     }
 
@@ -171,14 +196,28 @@ impl Dataset {
         phe_buf: Option<&[u8]>,
         phe_name: Option<&str>,
         cov_name: Option<&str>,
+        set_snv_buf: Option<&[u8]>,
         use_snvs: Option<&[bool]>,
+        //use_set_snvs: Option<&[bool]>,
         use_samples: Option<&[bool]>,
         fill_missing: bool,
         make_major_a2_train: bool,
         snvs_train: Option<&Snvs>, //for fill_missing and make_major_a2_train of vali
         mem: Option<usize>,
+        group_to_m_in: Option<HashMap<usize, Vec<usize>>>,
     ) -> Self {
         let start = Instant::now();
+
+        //let use_snvs_or_set = match use_snvs {
+        //    Some(use_snvs) => match use_set_snvs {
+        //        // use both
+        //        Some(use_set_snvs) => Some(vec::or_bool_vec(use_snvs, use_set_snvs)),
+        //        // use_snvs only
+        //        None => Some(use_snvs.to_vec()),
+        //    },
+        //    // use all snvs
+        //    None => None,
+        //};
 
         let m = match use_snvs {
             Some(x) => vec::count_true(x),
@@ -191,50 +230,32 @@ impl Dataset {
         };
 
         // do not fill missing here since validation dataset requires maf to fill missing; below
-        let genot =
-            genot_io::load::generate_genot(fin_genot, m, n, use_snvs, use_samples, false, mem);
+        let genot = genot_io::load::generate_genot(
+            fin_genot,
+            m,
+            n,
+            use_snvs,
+            //use_snvs_or_set.as_deref(),
+            use_samples,
+            false,
+            mem,
+            group_to_m_in,
+        );
+        //genot_io::load::generate_genot(fin_genot, m, n, use_snvs, use_samples, false, mem);
 
-        let samples =
-            Samples::new_plink(fin_genot, phe_buf, phe_name, cov_name, use_samples, Some(n));
-        //// TODO: should be done in Samples:new()
-        //let sample_id_to_n = samples::create_sample_id_to_n(fin, gfmt, use_samples);
-        //let ys: Option<Vec<bool>> =
-        //    genot_io::load_ys_buf_option(fin, gfmt, phe_buf, phe_name, &sample_id_to_n);
-        //let covs: Option<Covs> =
-        //    cov_name.map(|x| Covs::new(phe_buf, fin, gfmt, x, &sample_id_to_n));
-        ////let covs: Option<Covs> = match cov_name {
-        ////    Some(cov_name) => Some(Covs::new(phe_buf, fin, gfmt, cov_name, &sample_id_to_n)),
-        ////    None => None,
-        ////};
-        //let samples_id = genot_io::load_samples_id(fin, gfmt, use_samples);
-        //let samples = Samples::new(ys.as_deref(), Some(samples_id), covs, n);
+        let samples = Samples::new_plink(
+            fin_genot,
+            phe_buf,
+            phe_name,
+            cov_name,
+            use_samples,
+            Some(n),
+            true,
+        );
 
-        let snvs = Snvs::new_plink_use_snvs(fin_genot, use_snvs, Some(m));
-        //let snvs_in = genot_io::load_snvs(fin, gfmt);
-        //let snv_indexs = match use_snvs {
-        //    Some(x) => snv::extract_snvs_consume(snvs_in, x, m),
-        //    None => snvs_in,
-        //};
-        //let snvs = Snvs::new_data_from_snv_index(snv_indexs);
-
-        //let sample_id_to_n = samples::create_sample_id_to_n(fin_genot, use_samples);
-
-        //// TODO: should be done in Samples:new()
-        //let ys: Option<Vec<bool>> =
-        //    genot_io::load_ys_buf_option(fin_genot, phe_buf, phe_name, &sample_id_to_n);
-        //let covs: Option<Covs> = match cov_name {
-        //    Some(cov_name) => Some(Covs::new(phe_buf, fin_genot, cov_name, &sample_id_to_n)),
-        //    None => None,
-        //};
-        //let samples_id = genot_io::load_samples_id(fin_genot, use_samples);
-        //let samples = Samples::new(ys.as_deref(), Some(samples_id), covs, n);
-
-        //let snvs_in = genot_io::load_snvs(fin_genot);
-        //let snv_indexs = match use_snvs {
-        //    Some(x) => snv::extract_snvs_consume(snvs_in, x, m),
-        //    None => snvs_in,
-        //};
-        //let snvs = Snvs::new_data_from_snv_index(snv_indexs);
+        let snvs = Snvs::new_plink_use_snvs_and_set(fin_genot, use_snvs, None, set_snv_buf);
+        // Snvs::new_plink_use_snvs_and_set(fin_genot, use_snvs, None, set_snv_buf.unwrap());
+        //let snvs = Snvs::new_plink_use_snvs(fin_genot, use_snvs, Some(m_snv));
 
         log::debug!(
             "It took {} seconds to create Dataset.",
@@ -473,6 +494,7 @@ impl Dataset {
             cov_name,
             Some(&use_samples),
             Some(n),
+            false,
         );
 
         // TODO: make (string, string) as key of hashmap
@@ -559,6 +581,7 @@ impl Dataset {
             //cov_name,
             dfile.sample_buf(),
             //sample_buf,
+            dfile.freq_buf(),
             wgts,
             fill_missing_in_dataset,
             allow_nonexist_snv,
@@ -576,6 +599,7 @@ impl Dataset {
         phe_buf: Option<&[u8]>,
         cov_name: Option<&str>,
         sample_buf: Option<&[u8]>,
+        freq_buf: Option<&[u8]>,
         wgts: &mut [Wgts],
         //wgts: &[WgtBoost],
         fill_missing_in_dataset: bool,
@@ -605,44 +629,8 @@ impl Dataset {
             cov_name,
             Some(&use_samples),
             Some(n),
+            false,
         );
-
-        //let sample_id_to_n = samples::create_sample_id_to_n(fin, gfmt, Some(&use_samples));
-
-        ////let ys: Vec<bool> = io_genot::load_ys_buf(fin, gfmt, phe_buf, phe_name, &sample_id_to_n);
-        ////let ys: Vec<bool> = io_genot::load_ys(fin, gfmt, fin_phe, phe_name, &use_samples);
-        //let covs: Option<Covs> = match cov_name {
-        //    Some(cov_name) => Some(Covs::new(phe_buf, fin, gfmt, cov_name, &sample_id_to_n)),
-        //    None => None,
-        //};
-        ////let ys: Vec<bool> = io_genot::load_ys(fin, gfmt, fin_phe, phe_name, &use_samples);
-        ////let covs: Option<Covs> = Covs::new_old(fin_cov, cov_name, &sample_id_to_n);
-        ////// covs could not exist
-        ////let covs: Option<Vec<Var>> =
-        ////    cov::load_vars(fin_cov, n_in, &sample_id_to_n, cov::CovKind::Cov);
-
-        //let sample_id_to_n = samples::create_sample_id_to_n(fin_genot, Some(&use_samples));
-
-        ////let ys: Vec<bool> = io_genot::load_ys_buf(fin, gfmt, phe_buf, phe_name, &sample_id_to_n);
-        ////let ys: Vec<bool> = io_genot::load_ys(fin, gfmt, fin_phe, phe_name, &use_samples);
-        //let covs: Option<Covs> = match cov_name {
-        //    Some(cov_name) => Some(Covs::new(phe_buf, fin_genot, cov_name, &sample_id_to_n)),
-        //    None => None,
-        //};
-        ////let ys: Vec<bool> = io_genot::load_ys(fin, gfmt, fin_phe, phe_name, &use_samples);
-        ////let covs: Option<Covs> = Covs::new_old(fin_cov, cov_name, &sample_id_to_n);
-        ////// covs could not exist
-        ////let covs: Option<Vec<Var>> =
-        ////    cov::load_vars(fin_cov, n_in, &sample_id_to_n, cov::CovKind::Cov);
-
-        //let samples_id = genot_io::load_samples_id(fin_genot, Some(&use_samples));
-
-        //let samples_id = genot_io::load_samples_id(fin, gfmt, Some(&use_samples));
-
-        //let samples = Samples::new_nophe(Some(samples_id), covs, n);
-
-        //let mut wgts: Vec<WgtBoost> = wgt_boost::io::load_wgts(fin_wgt);
-        //wgt_boost::io::set_covs(&mut wgts, covs.as_deref(), n);
 
         // set genotype index in wgt
         // TODO: argparse
@@ -653,6 +641,7 @@ impl Dataset {
             fin_genot,
             wgts,
             //&mut wgts,
+            freq_buf,
             n,
             Some(&use_samples),
             fill_missing_in_dataset,
@@ -660,6 +649,11 @@ impl Dataset {
             use_snv_pos,
             mem,
         );
+
+        // add freq to wgts
+        //let freqs_in = genot_io::load_freq(freq_buf);
+        // index
+        // is_reversed
 
         // TMP
         //for snv in genot.iter_snv() {

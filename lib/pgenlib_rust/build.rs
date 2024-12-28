@@ -1,60 +1,70 @@
-// https://rendered-obsolete.github.io/2018/09/30/rust-ffi-ci.html
-
-// later: https://rust-lang.github.io/rust-bindgen/non-system-libraries.html
-// if you have .o : https://rust-lang.github.io/rust-bindgen/tutorial-3.html
-
-// unnecessary?
-//extern crate bindgen;
-//use bindgen;
-
-use std::env;
-use std::path::PathBuf;
-
-use bindgen::CargoCallbacks;
-use cmake;
+use walkdir::WalkDir;
 
 fn main() {
+    let dirs = ["./lib/pgenlib/"];
+    // exclude src/unuse
+    //let dirs = [
+    //    "./lib/pgenlib/src/",
+    //    "./lib/pgenlib/src/include/",
+    //    "./lib/pgenlib/src/simde/",
+    //    "./lib/pgenlib/src/simde/x86",
+    //    "./lib/pgenlib/src/simde/x86/avx512",
+    //];
 
-    // cmake
-    let dst = cmake::build("src/pgenlib");
-    println!("cargo:rustc-link-search=native={}", dst.display());
-    println!("cargo:rustc-link-lib=dylib=stdc++");
-    // ok?
-    // should be same as project name in CMakeLists.txt
-    println!("cargo:rustc-link-lib=static=pgenlib");
-    
-    // [ref](https://stackoverflow.com/questions/50642574/how-can-i-specify-linker-flags-arguments-in-a-build-script)
+    // all files with .cc or .cpp
+    let cpps: Vec<String> = dirs
+        .map(|dir| {
+            WalkDir::new(dir)
+                .into_iter()
+                .map(|x| x.unwrap().path().display().to_string())
+        })
+        .into_iter()
+        .flatten()
+        .filter(|x| x.ends_with(".cpp") || x.ends_with(".cc"))
+        .collect();
+
+    // cannot print in build.rs
+    //println!("cpps: {:?}", cpps);
+
+    // how to add openmp?
+    // https://users.rust-lang.org/t/binding-openmp-c-function/40196/4
+
+    // should be .rs with #[cxx::bridge]
+    cxx_build::bridge("src/lib.rs")
+        .files(&cpps)
+        .flag_if_supported("-fopenmp")
+        .compile("pgenlib-bridge");
+
+    //.flag_if_supported("-static")
+
+    // seems not necessary
+    //.flag_if_supported("-std=c++")
+    //.flag_if_supported("-std=c++11")
+
+    // seems not necessary
+    //.flag_if_supported("-lgomp")
+
+    // arg for rustc compile
+    // This is same as
+    // $ export RUSTFLAGS='-C link-args=-fopenmp'
+    // Better use build.rs to make build.sh simple
+    //
     println!("cargo:rustc-link-arg=-fopenmp");
+    // seems not necessary
+    // [ref](https://github.com/rust-lang/cc-rs/issues/266)
+    //println!("cargo:rustc-link-lib=gomp");
 
-    println!("cargo:rustc-link-lib=gomp");
-    // added 230823
-    // [ref](https://github.com/rust-or/highs-sys/blob/master/build.rs)
-    //println!("cargo:rustc-link-lib=dylib=gomp");
-
-
-
-    // binding
-    let bindings = bindgen::Builder::default()
-        .header("src/pgenlib/pgenlibr_wrapc.hpp")
-        .parse_callbacks(Box::new(CargoCallbacks))
-        .clang_arg("-xc++")
-        .clang_arg("-std=c++11") 
-        .clang_arg("-stdlib=libc++") 
-        .allowlist_file("src/pgenlib/pgenlibr_wrapc.hpp")
-        .generate()
-        .expect("Unable to generate bindings");
-    //let bindings = bindgen::Builder::default()
-    //    .header("src/pgenlib/pgenlibr_wrapc.h")
-    //    .parse_callbacks(Box::new(CargoCallbacks))
-    //    .clang_arg("-xc++")
-    //    .clang_arg("-std=c++11") 
-    //    .allowlist_file("src/pgenlib/pgenlibr_wrapc.h")
-    //    .generate()
-    //    .expect("Unable to generate bindings");
-
-    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
-    bindings
-        .write_to_file(out_path.join("bindings.rs"))
-        .expect("Couldn't write bindings");
+    println!("cargo:rerun-if-changed=src/lib.rs");
+    // all cpp and h
+    dirs.map(|dir| {
+        WalkDir::new(dir)
+            .into_iter()
+            .map(|x| x.unwrap().path().display().to_string())
+    })
+    .into_iter()
+    .flatten()
+    .filter(|x| {
+        x.ends_with(".cpp") || x.ends_with(".cc") || x.ends_with(".hpp") || x.ends_with(".h")
+    })
+    .for_each(|x| println!("cargo:rerun-if-changed={:?}", x));
 }
-

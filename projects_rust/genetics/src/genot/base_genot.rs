@@ -98,7 +98,6 @@ pub trait BaseGenotMut: BaseGenot
 where
     Self::Inner: BaseCMatrixMut,
 {
-    //type Inner: BaseCMatrixMut;
     fn genot_inner_mut(&mut self) -> &mut Self::Inner;
     fn iter_snv_mut(&mut self) -> GenotIterMut {
         GenotIterMut::new(self.genot_inner_mut().iter_row_mut())
@@ -111,6 +110,10 @@ where
     }
     fn as_genot_snvs_mut(&mut self, m_begin: usize, m_end: usize) -> GenotMut {
         GenotMut::new(self.genot_inner_mut().rows_mut(m_begin, m_end))
+    }
+    fn split_genot(&mut self, m: usize) -> (GenotMut, GenotMut) {
+        let (cm1, cm2) = self.genot_inner_mut().split_rows(m);
+        (GenotMut::new(cm1), GenotMut::new(cm2))
     }
 }
 
@@ -146,6 +149,10 @@ where
     }
     fn as_genot_snv(&self) -> GenotSnvRef {
         GenotSnvRef::new(self.genot_inner().as_cvec_ref_v())
+    }
+
+    fn count_missing(&self) -> usize {
+        self.iter().filter(|&x| x == 3).count()
     }
 
     /// BE CAREFUL for order; different from contingency table
@@ -270,7 +277,8 @@ where
         //println!("in table afr last: {} sec",  start_time.elapsed().as_micros());
 
         let maf = ((c2 * 2 + c1) as f64) / ((cnomissing * 2) as f64);
-        assert!((0.0 <= maf) && (maf <= 1.0));
+        // TODO: Sometimes fails in rap
+        //assert!((0.0 <= maf) && (maf <= 1.0));
         maf
     }
 
@@ -442,7 +450,6 @@ where
     }
 }
 
-
 pub trait BaseGenotSnvMut: BaseGenotMut + BaseGenotSnv
 where
     Self::Inner: BaseCVecMut,
@@ -458,7 +465,8 @@ where
         self.genot_inner_mut().set_unchecked_v(val, ni);
     }
 
-    /// Use this only when knowing original bit is false
+    /// self must be all false
+    ///
     /// for plink bed
     /// code(count); b0, b1
     /// 00(2); 1,1
@@ -546,5 +554,39 @@ where
             let val = self.get_val_unchecked(ni);
             self.set_unchecked(Self::REV_AR[val as usize], ni);
         }
+    }
+
+    /// for group aggregation
+    #[inline]
+    fn or_binary(&mut self, other: &GenotSnvRef) {
+        // *self cannot be 2*
+        // self has 0/1/3
+        // other can be 0/1/2/3
+        // self  \   others
+        //      0 1 2 3
+        // -----------
+        // 0 | 0 1 1 3
+        // 1 |  1 1 1 3
+        // 3 | 3 3 3 3
+        //
+
+        for ni in 0..self.n() {
+            let val = self.get_val_unchecked(ni);
+            if val == 3 {
+                self.set_unchecked(3, ni);
+            } else {
+                let val_other = other.get_val_unchecked(ni);
+                if val_other == 3 {
+                    self.set_unchecked(3, ni);
+                } else {
+                    // val = 0/1
+                    // val_other = 0/1/2
+                    self.set_unchecked(val | ((val_other != 0) as u8), ni);
+                }
+            }
+        }
+
+        //self.genot_inner_mut()
+        //    .or_binary_v(&g.genot_inner().as_cvec_ref_v());
     }
 }

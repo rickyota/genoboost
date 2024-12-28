@@ -76,6 +76,7 @@ pub trait BaseCVecMut: BaseCMatrixMut + BaseCVec {
     }
 
     fn set_col_unchecked_v(&mut self, vec: &[u8]) {
+        // TODO: set_vec_unchecked(vec, row_i=0)
         self.set_vec_unchecked(vec);
     }
 
@@ -83,6 +84,7 @@ pub trait BaseCVecMut: BaseCMatrixMut + BaseCVec {
         let (col_n, digit_n) = (self.col_n(), self.digit_n());
         CVecMut::new(self.inner_mut(), col_n, digit_n)
     }
+
 
     /*
     // TODO: check val<4

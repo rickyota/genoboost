@@ -96,7 +96,7 @@ pub fn run_score(
                 if is_resume {
                     log::debug!("--is-resume but --concat is set. Ignore --is-resume.");
                 }
-                //files_wgt_ori
+                // TODO: sort?
                 // only use files with concat_para
                 files_wgt_ori
                     .iter()
@@ -452,8 +452,16 @@ pub fn test_pgenlib(fin_genot: &GenotFile, _fin_sample: Option<&Path>) -> Genot 
     };
 
     println!("to generate");
-    let g =
-        genot_io::load::generate_genot(fin_genot, m_in, n_in, Some(&use_snvs), None, false, None);
+    let g = genot_io::load::generate_genot(
+        fin_genot,
+        m_in,
+        n_in,
+        Some(&use_snvs),
+        None,
+        false,
+        None,
+        None,
+    );
     println!("generated");
 
     for (si, snv) in g.iter_snv().enumerate() {

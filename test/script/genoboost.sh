@@ -3,6 +3,8 @@
 # GenoBoost training and score
 # requires `cargo`
 #
+# $ bash ./test/script/genoboost.sh
+#
 # occasionally does not stop
 
 set -eux

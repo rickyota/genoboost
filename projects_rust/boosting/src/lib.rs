@@ -116,7 +116,7 @@ pub fn run_boosting(
                     finitial_snv_interaction,
                 )
             } else {
-                let fscore_start = dfile.fin_score_start();
+                //let fscore_start = dfile.fin_score_start();
                 log::info!("Run boosting");
                 boosting_train::boosting_batch(
                     &mut writer,
@@ -126,7 +126,8 @@ pub fn run_boosting(
                     is_resume,
                     is_write_loss,
                     Some(&dout_para),
-                    fscore_start,
+                    //fscore_start,
+                    dfile.score_start_buf(),
                 )
             }
         };
@@ -153,10 +154,12 @@ pub fn run_boosting(
         let fpara_best = dout.get_fname_wgt_best_para();
         let para_best_string = wgt_io::create_best_para_buf(nsnv_acc_max, *lr);
         wgt_io::write_file_string(&fpara_best, para_best_string);
+        log::info!("Write wgt para to {:?}", fpara_best);
 
         let wgt_best_string = wgt_io::create_best_wgt_buf(dout, nsnv_acc_max, *lr, None);
         let fwgt_best = dout.get_fname_wgt_best();
         wgt_io::write_file_string(&fwgt_best, wgt_best_string);
+        log::info!("Write wgt to {:?}", fwgt_best);
     }
 }
 
@@ -194,7 +197,6 @@ pub fn run_boosting_integrate_cv(
 
             log::debug!("created samples for cross validation.");
 
-
             // run each
             for cvi in 0..cvn {
                 let (sample_idx_cvi, sample_idx_val_cvi) = &sample_idx_cvs[cvi];
@@ -212,7 +214,6 @@ pub fn run_boosting_integrate_cv(
                 dfile.update_sample_buf(sample_buf, sample_val_buf);
 
                 log::debug!("update sample buf.");
-
 
                 run_boosting_integrate(
                     &dout_cv,
@@ -288,7 +289,7 @@ pub fn run_boosting_integrate(
             make_major_a2_train,
             mem,
         );
-        log::debug!("dataset_val exists: {:?}",dataset_val.is_some());
+        log::debug!("dataset_val exists: {:?}", dataset_val.is_some());
         log::info!("Created dataset: {} sec", start_time.elapsed().as_secs());
 
         dout.create_dout();

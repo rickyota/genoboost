@@ -19,7 +19,6 @@ fn setup_vars(
         fin_snv.map(|x| x.to_path_buf()),
         fin_sample.map(|x| x.to_path_buf()),
         None,
-        None,
     );
     dfile.reads();
     // immutable

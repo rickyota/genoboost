@@ -2,6 +2,8 @@ pub mod plink;
 #[cfg(feature = "plink2")]
 pub mod plink2;
 
+use std::collections::HashMap;
+
 use crate::genot::prelude::*;
 use crate::{genot_io, vec, GenotFile};
 
@@ -93,6 +95,7 @@ pub fn generate_genot_simple(
         use_samples,
         fill_missing_mode,
         mem,
+        None,
     )
 }
 
@@ -104,6 +107,7 @@ pub fn generate_genot(
     use_samples: Option<&[bool]>,
     fill_missing_mode: bool,
     mem: Option<usize>,
+    group_to_m_in: Option<HashMap<usize, Vec<usize>>>,
 ) -> Genot {
     match fin_genot {
         GenotFile::Plink1(_) => plink::generate_genot_plink(
@@ -114,16 +118,22 @@ pub fn generate_genot(
             use_samples,
             fill_missing_mode,
             mem,
+            group_to_m_in,
         ),
-        GenotFile::Plink2(_) | GenotFile::Plink2Vzs(_) => call_generate_genot_plink2(
-            fin_genot,
-            m,
-            n,
-            use_snvs,
-            use_samples,
-            fill_missing_mode,
-            mem,
-        ),
+        GenotFile::Plink2(_) | GenotFile::Plink2Vzs(_) => {
+            if group_to_m_in.is_some() {
+                unimplemented!("group snv is not implemented for plink2")
+            }
+            call_generate_genot_plink2(
+                fin_genot,
+                m,
+                n,
+                use_snvs,
+                use_samples,
+                fill_missing_mode,
+                mem,
+            )
+        }
     }
 }
 

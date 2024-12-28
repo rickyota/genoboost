@@ -48,7 +48,8 @@ struct Cli {
     threads: Option<usize>,
     #[arg(long, global = true, help = "Verbose")]
     verbose: bool,
-    #[arg(long, global = true, help = "Memory [GB]")]
+    //#[arg(long, global = true, help = "Memory [GB]")]
+    #[arg(long, global = true, help = "Memory [MB]")]
     memory: Option<usize>,
 }
 
@@ -264,7 +265,8 @@ fn main() {
     // otherwise, use default thread number
     log::debug!("num_thread set: {}", rayon::current_num_threads());
 
-    let mem = cli.memory.map(|x| x * 1024 * 1024 * 1024);
+    let mem = cli.memory.map(|x| x * 1024 * 1024);
+    //let mem = cli.memory.map(|x| x * 1024 * 1024 * 1024);
     log::debug!("Memory : {:?} Byte", mem);
 
     match cli.command {
@@ -293,12 +295,10 @@ fn main() {
                 fin_snv,
                 fin_sample,
                 fin_sample_val,
-                None,
             );
             dfile.reads();
             //let dfile = dfile;
             dfile.check_valid_fin();
-
 
             let cross_vali: Option<usize> = if args.train_only {
                 None
@@ -307,7 +307,7 @@ fn main() {
             };
             let seed = args.seed;
 
-            let is_monitor=cross_vali.is_some();
+            let is_monitor = cross_vali.is_some();
             //let is_monitor = dfile.fin_sample_val().is_some();
             let is_resume = args.resume;
             let learning_rates: Vec<f64> = args.learning_rates;
@@ -372,7 +372,6 @@ fn main() {
             //let use_const_for_loss = false;
             let is_write_loss = args.write_loss;
 
-
             // Genoboost
             crate::boosting::run_boosting_integrate_cv(
                 &dout,
@@ -404,9 +403,8 @@ fn main() {
             let fin_sample = args.file_sample.map(|x| PathBuf::from(x));
             //let fin_cov = args.file_cov.map(|x| PathBuf::from(x));
 
-            let mut dfile = DatasetFile::new(
-                fin_genot, fin_phe, None, cov_name, None, fin_sample, None, None,
-            );
+            let mut dfile =
+                DatasetFile::new(fin_genot, fin_phe, None, cov_name, None, fin_sample, None);
             dfile.reads();
             let dfile = dfile;
             dfile.check_valid_fin();

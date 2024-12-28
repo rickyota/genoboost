@@ -342,6 +342,8 @@ pub trait BaseCMatrix {
 /// for CMatrix, CMatrixMut
 pub trait BaseCMatrixMut: BaseCMatrix {
     fn inner_mut(&mut self) -> &mut [B8];
+    // do not declare here since it is not used in BaseCMatrixMut
+    //fn inner_mut_vector(&mut self) -> &mut Vec<B8>;
 
     #[inline]
     fn inner_row_mut(&mut self, row_i: usize) -> &mut [B8] {
@@ -480,9 +482,10 @@ pub trait BaseCMatrixMut: BaseCMatrix {
     // TODO: check val<4
     // use set() since rowi and coli is guaranteed
     fn set_vec_unchecked(&mut self, vec: &[u8]) {
-        if self.digit_n() != 2 {
-            panic!("");
-        }
+        // TODO: check
+        //if self.digit_n() != 2 {
+        //    panic!("");
+        //}
         let col_n = self.col_n();
         for row_i in 0..self.row_n() {
             vec[row_i * col_n..(row_i + 1) * col_n]
@@ -600,4 +603,16 @@ pub trait BaseCMatrixMut: BaseCMatrix {
         }
     }
      */
+
+    fn split_rows(&mut self, row_i: usize) -> (CMatrixMut, CMatrixMut) {
+        let (row_n, col_n, digit_n) = (self.row_n(), self.col_n(), self.digit_n());
+        let (row_n0, row_n1) = (row_i, row_n - row_i);
+        let index_split = self.index_row_unchecked(row_i);
+        let (inner0, inner1) = self.inner_mut().split_at_mut(index_split);
+        let mut0 = CMatrixMut::new(inner0, row_n0, col_n, digit_n);
+        let mut1 = CMatrixMut::new(inner1, row_n1, col_n, digit_n);
+        assert_eq!(mut0.row_n(), row_i);
+        assert_eq!(mut1.row_n(), row_n - row_i);
+        (mut0, mut1)
+    }
 }

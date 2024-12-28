@@ -88,17 +88,23 @@ pub fn read_file_to_end(fin: &Path, compress: Option<&str>) -> Result<Vec<u8>, B
         }
         Some(compress) => match compress {
             "zst" => {
-                #[cfg(feature = "plink2")]
-                {
-                    buf = zstd::stream::decode_all(File::open(fin)?)?;
-                }
-                #[cfg(not(feature = "plink2"))]
-                {
-                    panic!("Use feature=plink2");
-                }
+                buf = zstd::stream::decode_all(File::open(fin)?)?;
             }
             _ => panic!("Unsupported compress type {}", compress),
         },
+        //Some(compress) => match compress {
+        //    "zst" => {
+        //        #[cfg(feature = "plink2")]
+        //        {
+        //            buf = zstd::stream::decode_all(File::open(fin)?)?;
+        //        }
+        //        #[cfg(not(feature = "plink2"))]
+        //        {
+        //            panic!("Use feature=plink2");
+        //        }
+        //    }
+        //    _ => panic!("Unsupported compress type {}", compress),
+        //},
     };
 
     Ok(buf)
@@ -258,7 +264,11 @@ pub fn load_table_buf(buf: &[u8], header: bool) -> Vec<Vec<String>> {
 /// return Vec<Vec<String>> (num_columns x num_lines)
 /// -> when openning file, option is natural. do unwrap() in that func.
 pub fn load_table(fin: &Path, header: bool) -> Vec<Vec<String>> {
-    let buf = read_file_to_end(fin, None).unwrap();
+    let buf = if fin.extension().unwrap() == "zst" {
+        read_file_to_end(fin, Some("zst")).unwrap()
+    } else {
+        read_file_to_end(fin, None).unwrap()
+    };
 
     load_table_buf(&buf[..], header)
 }

@@ -111,11 +111,18 @@ pub fn create_best_wgt_buf(
 
         // first get wgt of nsnv+1
         if rs_set.len() == nsnv_acc_max + 1 {
-            // iter is just before
-            itern = Some(wgti - 1);
+            // wgti -1 : last wgt index = iter is just before
+            // wgti -1 +1: last wgt index to number of snvs
+            itern = Some(wgti);
+            //itern = Some(wgti - 1);
             break;
         }
     }
+
+    log::debug!("rs_set len={:?}", rs_set.len());
+
+    log::debug!("itern={:?}", itern);
+    log::debug!("rs_set={:?}", rs_set);
 
     if itern.is_none() {
         panic!("Error in creating best_wgt_buf.");

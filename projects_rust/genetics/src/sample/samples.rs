@@ -49,6 +49,8 @@ impl Samples {
         cov_name: Option<&str>,
         use_samples: Option<&[bool]>,
         n: Option<usize>,
+        // for score
+        load_y: bool,
     ) -> Self {
         let n = match n {
             Some(x) => x,
@@ -63,8 +65,11 @@ impl Samples {
         let sample_id_to_n = create_sample_id_to_n_samples(&samples_id);
         //let sample_id_to_n = create_sample_id_to_n(fin_genot, use_samples);
 
-        let ys: Option<Vec<bool>> =
-            genot_io::load_ys_buf(fin_genot, phe_buf, phe_name, &sample_id_to_n);
+        let ys: Option<Vec<bool>> = if load_y {
+            genot_io::load_ys_buf(fin_genot, phe_buf, phe_name, &sample_id_to_n)
+        } else {
+            None
+        };
 
         let covs: Option<Covs> =
             cov_name.map(|x| Covs::new_buf(phe_buf, fin_genot, x, &sample_id_to_n));

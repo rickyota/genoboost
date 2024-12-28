@@ -17,7 +17,8 @@ struct Cli {
     threads: Option<usize>,
     #[arg(long, global = true, help = "Verbose")]
     verbose: bool,
-    #[arg(long, global = true, help = "Memory [GB]")]
+    //#[arg(long, global = true, help = "Memory [GB]")]
+    #[arg(long, global = true, help = "Memory [MB]")]
     memory: Option<usize>,
 }
 
@@ -33,7 +34,7 @@ enum Commands {
 struct ScoreArgs {
     #[arg(long)]
     dir_score: String,
-    #[arg(long)]
+    #[arg(long, help = ".zst is allowed.")]
     file_genot: String,
     #[arg(long, value_enum)]
     genot_format: GenotFormatArg,
@@ -49,6 +50,8 @@ struct ScoreArgs {
     //phe: Option<String>,
     #[arg(long)]
     cov: Option<String>,
+    #[arg(long)]
+    file_freq: Option<String>,
     #[arg(long)]
     resume: bool,
     #[arg(
@@ -139,7 +142,8 @@ fn main() {
     // otherwise, use default thread number
     log::debug!("num_thread set: {}", rayon::current_num_threads());
 
-    let mem = cli.memory.map(|x| x * 1024 * 1024 * 1024);
+    let mem = cli.memory.map(|x| x * 1024 * 1024);
+    //let mem = cli.memory.map(|x| x * 1024 * 1024 * 1024);
     log::debug!("Memory : {:?} Byte", mem);
 
     match cli.command {
@@ -154,10 +158,11 @@ fn main() {
             //let phe_name = args.phe;
             let cov_name = args.cov;
             let fin_sample = args.file_sample.map(|x| PathBuf::from(x));
+            let fin_freq = args.file_freq.map(|x| PathBuf::from(x));
 
-            let mut dfile = DatasetFile::new(
-                fin_genot, fin_phe, None, cov_name, None, fin_sample, None, None,
-            );
+            let mut dfile =
+                DatasetFile::new(fin_genot, fin_phe, None, cov_name, None, fin_sample, None);
+            dfile.update_file_freq(fin_freq);
             dfile.reads();
             let dfile = dfile;
             dfile.check_valid_fin();

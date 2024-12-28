@@ -2,6 +2,7 @@ use super::epsilon;
 use super::table;
 use super::BoostType;
 use super::LossStruct;
+use crate::boosting_param::Prior;
 use crate::boosting_train::coefficient;
 use crate::boosting_train::sample_weight::SampleWeight;
 use crate::{BoostParam, BoostParamCommonTrait, ContingencyTable, EffEps, Eps};
@@ -75,9 +76,13 @@ pub fn calc_loss_constada(
     extract_snvs: Option<&HashSet<usize>>,
     //skip_snv: &HashSet<usize>,
     alphas_save: Option<&mut Vec<f64>>,
+    alphas_prev: Option<&Vec<f64>>,
 ) {
     if alphas_save.is_some() {
         unimplemented!("alphas_save not implemented");
+    }
+    if alphas_prev.is_some() {
+        unimplemented!("alphas_prev not implemented");
     }
     unimplemented!("effeps not implemented");
 
@@ -723,9 +728,13 @@ pub fn calc_loss_freemodelmissing(
     extract_snvs: Option<&HashSet<usize>>,
     //skip_snv: &HashSet<usize>,
     alphas_save: Option<&mut Vec<f64>>,
+    alphas_prev: Option<&Vec<f64>>,
 ) {
     if alphas_save.is_some() {
         unimplemented!("alphas_save not implemented");
+    }
+    if alphas_prev.is_some() {
+        unimplemented!("alphas_prev not implemented");
     }
     unimplemented!("ny eff_eps");
 
@@ -865,10 +874,15 @@ pub fn calc_loss_logit(
     boost_param: &BoostParam,
     extract_snvs: Option<&HashSet<usize>>,
     alphas_save: Option<&mut Vec<f64>>,
+    alphas_prev: Option<&Vec<f64>>,
 ) {
-    if alphas_save.is_some() {
-        unimplemented!("alphas_save not implemented");
-    }
+    // do not use
+    //if alphas_save.is_some() {
+    //    unimplemented!("alphas_save not implemented");
+    //}
+    //if alphas_prev.is_some() {
+    //    unimplemented!("alphas_prev not implemented");
+    //}
 
     let genot = dataset.genot();
     let phe = dataset.samples().phe_unwrap();
@@ -1550,9 +1564,11 @@ pub fn calc_loss_logit_add(
     losss: &mut LossStruct,
     dataset: &Dataset,
     sample_weight: &SampleWeight,
-    _boost_param: &BoostParam,
+    boost_param: &BoostParam,
     extract_snvs: Option<&HashSet<usize>>,
     alphas_save: Option<&mut Vec<f64>>,
+    // for prior
+    alphas_prev: Option<&Vec<f64>>,
 ) {
     let genot = dataset.genot();
     assert_eq!(losss.inner_mut().len(), genot.m());
@@ -1564,23 +1580,28 @@ pub fn calc_loss_logit_add(
     log::debug!("loss_max_theory {}", loss_max_theory);
 
     unsafe {
-        if let Some(alphas_save_in) = alphas_save {
+        if let Some(Prior::Alpha { h2_snv, prior_r }) = boost_param.prior() {
+            let alphas_prev = alphas_prev.unwrap();
+            let mafs = dataset.snvs().mafs().unwrap();
             losss
                 .inner_mut()
                 .par_iter_mut()
-                .zip(alphas_save_in.par_iter_mut())
                 .enumerate()
-                .for_each(|(mi, (loss, alpha))| {
+                .for_each(|(mi, loss)| {
                     if extract_snvs.is_none() || extract_snvs.unwrap().contains(&mi) {
-                        let coef = coefficient::calculate_coef_logit_add(
+                        let coef = coefficient::calculate_coef_logit_add_prior_alpha(
                             &genot.to_genot_snv(mi),
                             sample_weight.wzs_pad().unwrap(),
                             sample_weight.wls_pad().unwrap(),
                             // no lr
+                            alphas_prev[mi],
+                            prior_r,
+                            mafs[mi],
+                            h2_snv,
                         );
-                        *alpha = coef.linearconst_f64().1;
 
                         //log::debug!("coef {:?}", coef);
+                        //*loss = calc_loss_logit_add_prior_alpha_mi()(
                         *loss = calc_loss_logit_add_mi()(
                             &genot.to_genot_snv(mi),
                             &coef,
@@ -1593,31 +1614,61 @@ pub fn calc_loss_logit_add(
                     }
                 });
         } else {
-            losss
-                .inner_mut()
-                .par_iter_mut()
-                .enumerate()
-                .for_each(|(mi, loss)| {
-                    if extract_snvs.is_none() || extract_snvs.unwrap().contains(&mi) {
-                        let coef = coefficient::calculate_coef_logit_add(
-                            &genot.to_genot_snv(mi),
-                            sample_weight.wzs_pad().unwrap(),
-                            sample_weight.wls_pad().unwrap(),
-                            // no lr
-                        );
+            if let Some(alphas_save_in) = alphas_save {
+                losss
+                    .inner_mut()
+                    .par_iter_mut()
+                    .zip(alphas_save_in.par_iter_mut())
+                    .enumerate()
+                    .for_each(|(mi, (loss, alpha))| {
+                        if extract_snvs.is_none() || extract_snvs.unwrap().contains(&mi) {
+                            let coef = coefficient::calculate_coef_logit_add(
+                                &genot.to_genot_snv(mi),
+                                sample_weight.wzs_pad().unwrap(),
+                                sample_weight.wls_pad().unwrap(),
+                                // no lr
+                            );
+                            *alpha = coef.linearconst_f64().1;
 
-                        //log::debug!("coef {:?}", coef);
-                        *loss = calc_loss_logit_add_mi()(
-                            &genot.to_genot_snv(mi),
-                            &coef,
-                            sample_weight.wls_pad().unwrap(),
-                            sample_weight.zs_pad().unwrap(),
-                            loss_max_theory,
-                        );
-                    } else {
-                        *loss = f64::NAN;
-                    }
-                });
+                            //log::debug!("coef {:?}", coef);
+                            *loss = calc_loss_logit_add_mi()(
+                                &genot.to_genot_snv(mi),
+                                &coef,
+                                sample_weight.wls_pad().unwrap(),
+                                sample_weight.zs_pad().unwrap(),
+                                loss_max_theory,
+                            );
+                        } else {
+                            *loss = f64::NAN;
+                        }
+                    });
+            } else {
+                losss
+                    .inner_mut()
+                    .par_iter_mut()
+                    .enumerate()
+                    .for_each(|(mi, loss)| {
+                        if extract_snvs.is_none() || extract_snvs.unwrap().contains(&mi) {
+                            let coef = coefficient::calculate_coef_logit_add(
+                                &genot.to_genot_snv(mi),
+                                sample_weight.wzs_pad().unwrap(),
+                                sample_weight.wls_pad().unwrap(),
+                                // no lr
+                            );
+
+                            //log::debug!("coef {:?}", coef);
+                            *loss = calc_loss_logit_add_mi()(
+                                &genot.to_genot_snv(mi),
+                                &coef,
+                                sample_weight.wls_pad().unwrap(),
+                                sample_weight.zs_pad().unwrap(),
+                                loss_max_theory,
+                            );
+                        } else {
+                            *loss = f64::NAN;
+                        }
+                    });
+            }
         }
     }
 }
@@ -1631,6 +1682,16 @@ unsafe fn calc_loss_logit_add_mi() -> unsafe fn(&GenotSnvRef, &Coef, &[f64], &[f
     }
     return calc_loss_logit_add_nosimd_mi;
 }
+
+//unsafe fn calc_loss_logit_add_prior_alpha_mi() -> unsafe fn(&GenotSnvRef, &Coef, &[f64], &[f64], f64) -> f64 {
+//    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+//    {
+//        if is_x86_feature_detected!("avx2") {
+//            return calc_loss_logit_add_simd_prior_alpha_mi;
+//        }
+//    }
+//    return calc_loss_logit_add_prior_alpha_nosimd_mi;
+//}
 
 /// only difference from logit is
 /// 1. coef is linearconst
@@ -1886,6 +1947,45 @@ unsafe fn calc_loss_logit_add_nosimd_mi(
     loss
 }
 
+unsafe fn calc_loss_logit_add_prior_alpha_nosimd_mi(
+    predicts: &GenotSnvRef,
+    coef: &Coef,
+    wls: &[f64],
+    zs: &[f64],
+    loss_max_theory: f64,
+) -> f64 {
+    let (constt, alphat) = coef.linearconst_f64();
+
+    if constt.is_nan() || alphat.is_nan() {
+        //log::debug!("coef is nan {}, {}", c, a);
+        return f64::NAN;
+    };
+
+    let s0 = constt;
+    let s1 = constt + alphat;
+    let s2 = constt + 2.0 * alphat;
+
+    let loss_least_square = predicts
+        .iter()
+        .zip(wls.iter())
+        .zip(zs.iter())
+        .map(|((p, w), z)| {
+            let f = match p {
+                0 => s0,
+                1 => s1,
+                2 => s2,
+                _ => panic!("wrong"),
+            };
+            let f_z = f - z;
+            w * f_z * f_z
+        })
+        .sum::<f64>();
+
+    let loss = 0.5 * (loss_least_square - loss_max_theory);
+
+    loss
+}
+
 //// unsafe is necessary with #[target_feature]
 //#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 //#[target_feature(enable = "avx2")]
@@ -2020,9 +2120,13 @@ pub fn calc_loss_logit_mhcnomissing(
     extract_snvs: Option<&HashSet<usize>>,
     //skip_snv: &HashSet<usize>,
     alphas_save: Option<&mut Vec<f64>>,
+    alphas_prev: Option<&Vec<f64>>,
 ) {
     if alphas_save.is_some() {
         unimplemented!("alphas_save not implemented");
+    }
+    if alphas_prev.is_some() {
+        unimplemented!("alphas_prev not implemented");
     }
     let genot = dataset.genot();
     let phe = dataset.samples().phe_unwrap();
@@ -2216,9 +2320,13 @@ pub fn calc_loss_logit_common(
     extract_snvs: Option<&HashSet<usize>>,
     //skip_snv: &HashSet<usize>,
     alphas_save: Option<&mut Vec<f64>>,
+    alphas_prev: Option<&Vec<f64>>,
 ) {
     if alphas_save.is_some() {
         unimplemented!("alphas_save not implemented");
+    }
+    if alphas_prev.is_some() {
+        unimplemented!("alphas_prev not implemented");
     }
     let genot = dataset.genot();
     let phe = dataset.samples().phe_unwrap();
@@ -2339,6 +2447,7 @@ pub fn calc_loss_logitaddinteraction(
         _boost_param,
         extract_snvs,
         None,
+        None,
     );
 
     // For Interaction
@@ -2349,53 +2458,6 @@ pub fn calc_loss_logitaddinteraction(
         _boost_param,
         extract_interaction,
     );
-
-    //unsafe {
-    //    // For Interaction
-
-    //    // common for interaction
-    //    let loss_max_theory = calc_loss_max_least_square_theory(
-    //        sample_weight.zs().unwrap(),
-    //        sample_weight.wls().unwrap(),
-    //    );
-    //    log::debug!("loss_max_theory {}", loss_max_theory);
-
-    //    //let func = ;
-
-    //    let mafs = dataset.snvs().mafs().unwrap();
-
-    //    // for interaction, len(loss) is len(extract_interaction)
-    //    losss
-    //        .inner_interaction_mut()
-    //        .par_iter_mut()
-    //        .zip(extract_interaction.par_iter())
-    //        .for_each(|(loss, snv_pair)| {
-    //            let (m1, m2) = *snv_pair;
-    //            let coef = coefficient::calculate_coef_logit_interaction(
-    //                &genot.to_genot_snv(m1),
-    //                &genot.to_genot_snv(m2),
-    //                sample_weight.wzs_pad().unwrap(),
-    //                sample_weight.wls_pad().unwrap(),
-    //                // no lr
-    //                mafs[m1],
-    //                mafs[m2],
-    //            );
-    //            //log::debug!("coef {:?}", coef);
-    //            //*loss = calculate_loss_gt_logit_add_simd_sm(
-    //            *loss = calc_loss_logit_interaction_mi()(
-    //                &genot.to_genot_snv(m1),
-    //                &genot.to_genot_snv(m2),
-    //                &coef,
-    //                sample_weight.wls_pad().unwrap(),
-    //                sample_weight.zs_pad().unwrap(),
-    //                mafs[m1],
-    //                mafs[m2],
-    //                //use_adjloss,
-    //                loss_max_theory,
-    //            );
-    //        });
-    //}
-    //}
 }
 
 // TODO: move to loss.rs? like calc_loss_logit()
@@ -2483,15 +2545,7 @@ unsafe fn calc_loss_logit_interaction_nosimd_mi(
     maf_2: f64,
     loss_max_theory: f64,
 ) -> f64 {
-    let (constt, alphat) = coef.linearconstinteraction_f64();
-
-    if constt.is_nan() || alphat.is_nan() {
-        //log::debug!("coef is nan {}, {}", c, a);
-        return f64::NAN;
-    };
-
-    unimplemented!();
-
+    unimplemented!()
 }
 
 /// assume no missing
@@ -2544,7 +2598,6 @@ unsafe fn calc_loss_logit_interaction_simd_mi(
         zs_pad,
         score_wgt,
     );
-
 
     let loss: f64;
     //if use_adjloss {
